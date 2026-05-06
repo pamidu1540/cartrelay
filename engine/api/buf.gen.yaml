@@ -1,0 +1,15 @@
+version: v1
+plugins:
+  # Go generation
+  - plugin: buf.build/protocolbuffers/go
+    out: .
+    opt: paths=source_relative
+  - plugin: buf.build/grpc/go
+    out: .
+    opt: paths=source_relative
+
+  # Python generation
+  - plugin: buf.build/protocolbuffers/python
+    out: ../../bot/src/api
+  - plugin: buf.build/grpc/python
+    out: ../../bot/src/api

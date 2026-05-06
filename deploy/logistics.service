@@ -1,0 +1,20 @@
+[Unit]
+Description=Logistics Engine Supervisor Service
+Requires=docker.service
+After=docker.service network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/logistics-system/deploy
+
+# Use the native CLI we compiled to boot the system
+ExecStart=/usr/local/bin/logistics start
+ExecStop=/usr/local/bin/logistics stop
+
+# Automatically restart if the system encounters an unexpected failure
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

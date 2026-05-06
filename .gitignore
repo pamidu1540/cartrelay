@@ -1,0 +1,20 @@
+# Environments and Secrets
+.env
+__pycache__/
+*.pyc
+.venv/
+
+# Databases and Sockets
+*.sock
+*.db
+*.db-journal
+/engine/data/
+
+# Compiled Binaries
+engine_bin
+logistics
+logistics.exe
+logistics-cli-linux
+
+# OS generated files
+.DS_Store
