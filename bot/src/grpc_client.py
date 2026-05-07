@@ -1,47 +1,71 @@
 import os
+import sys
 import grpc
+import logging
 from api import logistics_pb2, logistics_pb2_grpc
 
+logger = logging.getLogger(__name__)
+
 SOCKET_PATH = 'unix:///app/sockets/logistics.sock'
-INTERNAL_TOKEN = os.getenv('INTERNAL_TOKEN', '')
+
+# Ensure internal configurations exist immediately preventing silent empty authorizations over IPC headers 
+INTERNAL_TOKEN = os.getenv('INTERNAL_TOKEN')
+if not INTERNAL_TOKEN:
+    logger.critical("INTERNAL_TOKEN mapping missing in environments! Terminating immediately...")
+    sys.exit(1) 
+
 
 def _get_metadata():
     return (('x-internal-token', INTERNAL_TOKEN),)
 
 class EngineClient:
     def __init__(self):
-        self.channel = grpc.insecure_channel(SOCKET_PATH)
+        # Converted mapping to grpc.aio namespace safely opening asyncio concurrency support 
+        self.channel = grpc.aio.insecure_channel(SOCKET_PATH)
         self.stub = logistics_pb2_grpc.LogisticsEngineStub(self.channel)
+        
+        # Enforcing default execution lifespans natively without waiting permanently
+        self.DEFAULT_TIMEOUT = 8.0 
 
-    def check_health(self):
+    async def close(self):
+        """Cleanup routing required for soft docker tear-downs explicitly releasing domain socket locks!"""
+        if self.channel:
+            await self.channel.close()
+            logger.info("GRPC Engine domain socket safely released!")
+
+    async def check_health(self):
         req = logistics_pb2.Empty()
-        return self.stub.CheckHealth(req, metadata=_get_metadata())
+        return await self.stub.CheckHealth(req, metadata=_get_metadata(), timeout=3.0)
 
-    def get_catalog(self):
+    async def get_catalog(self):
         req = logistics_pb2.Empty()
-        return self.stub.GetCatalog(req, metadata=_get_metadata())
+        return await self.stub.GetCatalog(req, metadata=_get_metadata(), timeout=self.DEFAULT_TIMEOUT)
 
-    def calculate_quote(self, lat: float, lon: float, cart_dict: dict):
+    async def calculate_quote(self, lat: float, lon: float, cart_dict: dict):
+        # Typecasting protection safely packing dictionary payloads properly
         cart_items =[
-            logistics_pb2.CartItem(item_id=k, quantity=v['qty']) 
+            logistics_pb2.CartItem(item_id=str(k), quantity=int(v.get('qty', 0))) 
             for k, v in cart_dict.items()
         ]
+        
         req = logistics_pb2.QuoteRequest(
             user_lat=lat,
             user_lon=lon,
             cart_items=cart_items
         )
-        return self.stub.CalculateQuote(req, metadata=_get_metadata())
+        return await self.stub.CalculateQuote(req, metadata=_get_metadata(), timeout=12.0)
 
-    def place_order(self, user_id: int, username: str, quote_data, expected_total: float, receipt_text: str):
+    async def place_order(self, user_id: int, username: str, quote_data, expected_total: float, receipt_text: str):
         req = logistics_pb2.OrderRequest(
-            user_id=user_id,
-            username=username,
+            user_id=int(user_id),
+            username=str(username),
             quote_data=quote_data,
-            expected_total=expected_total,
-            receipt_text=receipt_text
+            expected_total=float(expected_total),
+            receipt_text=str(receipt_text)
         )
-        return self.stub.PlaceOrder(req, metadata=_get_metadata())
+        # Timeout configured generously depending on standard Engine database transactional latencies expected
+        return await self.stub.PlaceOrder(req, metadata=_get_metadata(), timeout=15.0)
 
-# Global singleton client
+
+# Singleton exported instance mapping properly across states
 engine = EngineClient()
