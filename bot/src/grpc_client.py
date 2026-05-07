@@ -8,30 +8,30 @@ logger = logging.getLogger(__name__)
 
 SOCKET_PATH = 'unix:///app/sockets/logistics.sock'
 
-# Ensure internal configurations exist immediately preventing silent empty authorizations over IPC headers 
+# Securing the environment mappings natively so it crashes fast instead of blindly failing connection binds later 
 INTERNAL_TOKEN = os.getenv('INTERNAL_TOKEN')
 if not INTERNAL_TOKEN:
-    logger.critical("INTERNAL_TOKEN mapping missing in environments! Terminating immediately...")
-    sys.exit(1) 
+    logger.critical("INTERNAL_TOKEN mapping missing! Setup environment .env vars for Supervisor explicitly.")
+    sys.exit(1)
 
 
 def _get_metadata():
     return (('x-internal-token', INTERNAL_TOKEN),)
 
+
 class EngineClient:
     def __init__(self):
-        # Converted mapping to grpc.aio namespace safely opening asyncio concurrency support 
+        # We enforce completely aio gRPC routing logic allowing 0 freeze issues via Async loops directly!
         self.channel = grpc.aio.insecure_channel(SOCKET_PATH)
         self.stub = logistics_pb2_grpc.LogisticsEngineStub(self.channel)
         
-        # Enforcing default execution lifespans natively without waiting permanently
         self.DEFAULT_TIMEOUT = 8.0 
 
     async def close(self):
-        """Cleanup routing required for soft docker tear-downs explicitly releasing domain socket locks!"""
+        """Allows Graceful shutdowns inside bot Supervisor without leaving sockets stranded forever!"""
         if self.channel:
             await self.channel.close()
-            logger.info("GRPC Engine domain socket safely released!")
+            logger.info("GRPC channel closed successfully.")
 
     async def check_health(self):
         req = logistics_pb2.Empty()
@@ -41,8 +41,12 @@ class EngineClient:
         req = logistics_pb2.Empty()
         return await self.stub.GetCatalog(req, metadata=_get_metadata(), timeout=self.DEFAULT_TIMEOUT)
 
+    async def add_item(self, item_proto):
+        """Missing bound functionality securely linked asynchronously back via Python Bot wizard bindings!"""
+        # Mapping item saving natively
+        return await self.stub.AddItem(item_proto, metadata=_get_metadata(), timeout=10.0)
+
     async def calculate_quote(self, lat: float, lon: float, cart_dict: dict):
-        # Typecasting protection safely packing dictionary payloads properly
         cart_items =[
             logistics_pb2.CartItem(item_id=str(k), quantity=int(v.get('qty', 0))) 
             for k, v in cart_dict.items()
@@ -63,9 +67,8 @@ class EngineClient:
             expected_total=float(expected_total),
             receipt_text=str(receipt_text)
         )
-        # Timeout configured generously depending on standard Engine database transactional latencies expected
         return await self.stub.PlaceOrder(req, metadata=_get_metadata(), timeout=15.0)
 
 
-# Singleton exported instance mapping properly across states
+# Initialize our safe module globally
 engine = EngineClient()
