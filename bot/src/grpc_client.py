@@ -5,33 +5,28 @@ import logging
 from api import logistics_pb2, logistics_pb2_grpc
 
 logger = logging.getLogger(__name__)
-
 SOCKET_PATH = 'unix:///app/sockets/logistics.sock'
 
-# Securing the environment mappings natively so it crashes fast instead of blindly failing connection binds later 
+# Secure environment bindings
 INTERNAL_TOKEN = os.getenv('INTERNAL_TOKEN')
 if not INTERNAL_TOKEN:
-    logger.critical("INTERNAL_TOKEN mapping missing! Setup environment .env vars for Supervisor explicitly.")
+    logger.critical("INTERNAL_TOKEN missing in environment! Cannot bind to Engine.")
     sys.exit(1)
-
 
 def _get_metadata():
     return (('x-internal-token', INTERNAL_TOKEN),)
 
-
 class EngineClient:
     def __init__(self):
-        # We enforce completely aio gRPC routing logic allowing 0 freeze issues via Async loops directly!
+        # Native async channel mapping
         self.channel = grpc.aio.insecure_channel(SOCKET_PATH)
         self.stub = logistics_pb2_grpc.LogisticsEngineStub(self.channel)
-        
         self.DEFAULT_TIMEOUT = 8.0 
 
     async def close(self):
-        """Allows Graceful shutdowns inside bot Supervisor without leaving sockets stranded forever!"""
         if self.channel:
             await self.channel.close()
-            logger.info("GRPC channel closed successfully.")
+            logger.info("GRPC channel safely closed.")
 
     async def check_health(self):
         req = logistics_pb2.Empty()
@@ -42,8 +37,6 @@ class EngineClient:
         return await self.stub.GetCatalog(req, metadata=_get_metadata(), timeout=self.DEFAULT_TIMEOUT)
 
     async def add_item(self, item_proto):
-        """Missing bound functionality securely linked asynchronously back via Python Bot wizard bindings!"""
-        # Mapping item saving natively
         return await self.stub.AddItem(item_proto, metadata=_get_metadata(), timeout=10.0)
 
     async def calculate_quote(self, lat: float, lon: float, cart_dict: dict):
@@ -69,6 +62,5 @@ class EngineClient:
         )
         return await self.stub.PlaceOrder(req, metadata=_get_metadata(), timeout=15.0)
 
-
-# Initialize our safe module globally
+# Global Singleton instance
 engine = EngineClient()
