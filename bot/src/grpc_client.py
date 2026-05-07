@@ -5,6 +5,7 @@ import logging
 from api import logistics_pb2, logistics_pb2_grpc
 
 logger = logging.getLogger(__name__)
+
 SOCKET_PATH = 'unix:///app/sockets/logistics.sock'
 
 # Secure environment bindings
@@ -13,14 +14,17 @@ if not INTERNAL_TOKEN:
     logger.critical("INTERNAL_TOKEN missing in environment! Cannot bind to Engine.")
     sys.exit(1)
 
+
 def _get_metadata():
     return (('x-internal-token', INTERNAL_TOKEN),)
+
 
 class EngineClient:
     def __init__(self):
         # Native async channel mapping
         self.channel = grpc.aio.insecure_channel(SOCKET_PATH)
         self.stub = logistics_pb2_grpc.LogisticsEngineStub(self.channel)
+        
         self.DEFAULT_TIMEOUT = 8.0 
 
     async def close(self):
@@ -52,7 +56,8 @@ class EngineClient:
         )
         return await self.stub.CalculateQuote(req, metadata=_get_metadata(), timeout=12.0)
 
-    async def place_order(self, user_id: int, username: str, quote_data, expected_total: float, receipt_text: str):
+    async def place_order(self, user_id: int, username: str, quote_data: bytes, expected_total: float, receipt_text: str):
+        # quote_data is now explicitly passed as raw bytes (from quote.SerializeToString())
         req = logistics_pb2.OrderRequest(
             user_id=int(user_id),
             username=str(username),
@@ -62,5 +67,6 @@ class EngineClient:
         )
         return await self.stub.PlaceOrder(req, metadata=_get_metadata(), timeout=15.0)
 
-# Global Singleton instance
+
+# Initialize our safe module globally
 engine = EngineClient()
