@@ -6,6 +6,7 @@ from grpc_client import engine
 
 logger = logging.getLogger(__name__)
 
+# Conversation routing states
 USER_SHOP, AWAIT_LOCATION, CONFIRM_CHECKOUT = range(50, 53)
 
 async def user_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -14,12 +15,12 @@ async def user_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['cart'] = {}
         
     try:
+        # Check if engine is online by fetching catalog
         catalog = await engine.get_catalog()
         
         text = f"🛒 *Public Logistics Hub*\nTap below to explore shipping elements."
         
-        kb = [[InlineKeyboardButton("➕ Add Sample Box", callback_data="buy_demo_item")],
-            [InlineKeyboardButton("📦 Checkout Cart", callback_data="cart_checkout")]
+        kb = [[InlineKeyboardButton("➕ Add Sample Box", callback_data="buy_demo_item")],[InlineKeyboardButton("📦 Checkout Cart", callback_data="cart_checkout")]
         ]
         
         if update.callback_query:
@@ -33,13 +34,14 @@ async def user_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Catalog Error: {e}")
         if update.effective_message:
-            await update.effective_message.reply_text("⚠️ Engine maintenance.")
+            await update.effective_message.reply_text("⚠️ Engine maintenance. Please try again later.")
         return ConversationHandler.END
 
 
 async def handle_buy_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Adds a dummy item to the user's cart."""
     query = update.callback_query
-    await query.answer("Added item!")
+    await query.answer("Added item to cart!")
     
     cart = context.user_data.get('cart', {})
     cart['DUMMY_101'] = {'qty': cart.get('DUMMY_101', {}).get('qty', 0) + 1}
@@ -56,12 +58,13 @@ async def prompt_checkout_location(update: Update, context: ContextTypes.DEFAULT
         await query.message.reply_text("⚠️ No Items to Checkout!")
         return USER_SHOP
 
+    # Uses Telegram's native GPS button instead of relying on manual text entry
     loc_btn = KeyboardButton(text="📍 Send Location", request_location=True)
     markup = ReplyKeyboardMarkup([[loc_btn]], resize_keyboard=True, one_time_keyboard=True)
     
     await context.bot.send_message(
         chat_id=update.effective_chat.id, 
-        text="📡 *Engine Routing Data* \nShare location natively below to calculate shipping:",
+        text="📡 *Engine Routing Data* \nShare your location natively below to calculate shipping:",
         reply_markup=markup,
         parse_mode="Markdown"
     )
@@ -78,13 +81,15 @@ async def calculate_live_quote(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         quote = await engine.calculate_quote(lat, lon, context.user_data['cart'])
         
+        # Cache the serialized quote (bytes) to prevent tampering before checkout
         context.user_data['cached_quote'] = quote.SerializeToString()
-        context.user_data['cached_total'] = quote.total_price
+        context.user_data['cached_total'] = quote.grand_total
         
         text = (
             f"✅ *Quote Calculated*\n\n"
-            f"Routing Cost: `${quote.routing_fee}`\n"
-            f"💎 *Final Checkout:* `${quote.total_price}`\n"
+            f"📏 *Distance:* `{quote.distance_km:.2f} km`\n"
+            f"🏢 *Nearest Branch:* `{quote.nearest_branch}`\n"
+            f"💎 *Final Checkout:* `${quote.grand_total:.2f}`\n"
         )
         
         kb = [[InlineKeyboardButton("💳 Finalize Routing", callback_data="finalize_node_purchase")],[InlineKeyboardButton("🚫 Cancel Process", callback_data="cancel_user_checkout")]
@@ -103,7 +108,7 @@ async def calculate_live_quote(update: Update, context: ContextTypes.DEFAULT_TYP
 async def submit_place_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """The final checkout node finalizing GRPC PlaceOrder pipelines."""
     query = update.callback_query
-    await query.answer()
+    await query.answer("Processing Order...")
 
     try:
         resp = await engine.place_order(
@@ -115,9 +120,13 @@ async def submit_place_order(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         
         if resp.success:
-            await query.edit_message_text(f"🚀 *DISPATCHED SUCCESSFULLY!*\nTracking ID: `{resp.tracking_number}`", parse_mode="Markdown")
+            # Matches original proto's order_id exactly
+            await query.edit_message_text(
+                f"🚀 *DISPATCHED SUCCESSFULLY!*\nOrder ID: `{resp.order_id}`", 
+                parse_mode="Markdown"
+            )
         else:
-            await query.edit_message_text("❌ Subsystem Checkout Rejected Transaction.")
+            await query.edit_message_text(f"❌ Subsystem Checkout Rejected: {resp.message}")
              
     except Exception as e:
         logger.error(f"Checkout API disconnected during dispatch request: {e}")
