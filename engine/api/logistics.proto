@@ -5,20 +5,13 @@ package logistics;
 option go_package = "engine/api;logistics_api";
 
 service LogisticsEngine {
-  // System Administration
   rpc CheckHealth (Empty) returns (HealthStatus);
   rpc ToggleMaintenance (Empty) returns (StatusResponse);
-
-  // Catalog Management
   rpc GetCatalog (Empty) returns (CatalogResponse);
   rpc AddItem (Item) returns (StatusResponse);
   rpc EditItemPrice (EditPriceRequest) returns (StatusResponse);
   rpc RemoveItem (ItemId) returns (StatusResponse);
-
-  // Quoting and Routing
   rpc CalculateQuote (QuoteRequest) returns (QuoteResponse);
-  
-  // Order Management
   rpc PlaceOrder (OrderRequest) returns (OrderResponse);
   rpc GetActiveOrders (UserId) returns (OrderListResponse);
   rpc UpdateOrderStatus (UpdateStatusRequest) returns (StatusResponse);
@@ -37,7 +30,6 @@ message StatusResponse {
   string message = 2;
 }
 
-// Catalog Structures
 message Item {
   string id = 1;
   string name = 2;
@@ -61,7 +53,6 @@ message ItemId {
   string id = 1;
 }
 
-// Quoting Structures
 message CartItem {
   string item_id = 1;
   int32 quantity = 2;
@@ -82,11 +73,10 @@ message QuoteResponse {
   string nearest_branch = 6;
 }
 
-// Order Structures
 message OrderRequest {
   int64 user_id = 1;
   string username = 2;
-  QuoteRequest quote_data = 3;
+  bytes quote_data = 3;    // FIXED: Changed to bytes to prevent serialization crashes and payload tampering
   double expected_total = 4;
   string receipt_text = 5;
 }
