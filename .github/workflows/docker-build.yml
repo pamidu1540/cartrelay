@@ -27,25 +27,36 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Create .env from example (or stub if missing)
-        working-directory: deploy
+      - name: Find compose file and set COMPOSE_DIR
+        id: composedir
         run: |
-          if [ -f .env.example ]; then
-            cp .env.example .env
-          else
-            touch .env
+          CF=$(find . -name 'docker-compose.yml' -o -name 'compose.yml' | head -1)
+          if [ -z "$CF" ]; then
+            echo "No docker-compose.yml found!" && exit 1
           fi
-          # Inject dummy values for vars that must be non-empty
-          grep -qE '^TELEGRAM_BOT_TOKEN=' .env || echo "TELEGRAM_BOT_TOKEN=stub" >> .env
-          grep -qE '^INTERNAL_TOKEN=' .env     || echo "INTERNAL_TOKEN=stub-internal-token-32chars00000" >> .env
-          grep -qE '^MAPBOX_TOKEN=' .env       || echo "MAPBOX_TOKEN=stub" >> .env
-          grep -qE '^DEV_BYPASS_SECRET=' .env  || echo "DEV_BYPASS_SECRET=stub" >> .env
-          grep -qE '^SKIP_LICENSE_CHECK=' .env || echo "SKIP_LICENSE_CHECK=stub" >> .env
+          DIR=$(dirname "$CF")
+          echo "Found compose at: $DIR"
+          echo "dir=$DIR" >> $GITHUB_OUTPUT
+
+      - name: Create .env with stub values
+        working-directory: ${{ steps.composedir.outputs.dir }}
+        run: |
+          # Start from example if it exists
+          [ -f .env.example ] && cp .env.example .env || touch .env
+          # Ensure all required vars are present (non-empty stubs)
+          set_if_missing() {
+            grep -qE "^${1}=" .env || echo "${1}=${2}" >> .env
+          }
+          set_if_missing TELEGRAM_BOT_TOKEN  "stub_token"
+          set_if_missing INTERNAL_TOKEN      "stub_internal_32charsXXXXXXXXXX"
+          set_if_missing MAPBOX_TOKEN        "stub_mapbox"
+          set_if_missing DEV_BYPASS_SECRET   "stub_bypass"
+          set_if_missing SKIP_LICENSE_CHECK  "stub_bypass"
 
       - name: Validate Compose config
-        working-directory: deploy
+        working-directory: ${{ steps.composedir.outputs.dir }}
         run: docker compose config --quiet
 
-      - name: Build Docker images via Compose
-        working-directory: deploy
+      - name: Build all services
+        working-directory: ${{ steps.composedir.outputs.dir }}
         run: docker compose build --no-cache
