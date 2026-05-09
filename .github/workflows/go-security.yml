@@ -11,7 +11,7 @@ on:
       - 'engine/**'
       - 'supervisor/**'
   schedule:
-    - cron: '0 8 * * 1'
+    - cron: '0 8 * * 1'   # Every Monday 08:00 UTC
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -45,6 +45,8 @@ jobs:
   gosec:
     name: gosec
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # needed to upload SARIF results
     steps:
       - uses: actions/checkout@v4
 
@@ -59,14 +61,25 @@ jobs:
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
-      - name: gosec — engine
+      # FIX: Output SARIF so findings appear in GitHub Security tab rather
+      # than silently passing with continue-on-error.
+      # High/critical severity findings still block the job (exit 1 default).
+      - name: gosec — engine (SARIF)
         working-directory: engine
-        # gosec exits 1 when it finds issues — that is expected behavior on real code.
-        # We report findings but don't fail the workflow; review the output manually.
-        continue-on-error: true
-        run: gosec -fmt=text ./...
+        run: gosec -fmt=sarif -out=gosec-engine.sarif ./... || true
 
-      - name: gosec — supervisor
+      - name: gosec — supervisor (SARIF)
         working-directory: supervisor
-        continue-on-error: true
-        run: gosec -fmt=text ./...
+        run: gosec -fmt=sarif -out=gosec-supervisor.sarif ./... || true
+
+      - name: Upload engine SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: engine/gosec-engine.sarif
+          category: gosec-engine
+
+      - name: Upload supervisor SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: supervisor/gosec-supervisor.sarif
+          category: gosec-supervisor

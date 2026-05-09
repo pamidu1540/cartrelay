@@ -14,36 +14,47 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python Environment
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: bot/requirements.txt
+          # FIX: cache on pyproject.toml — requirements.txt does not exist.
+          cache-dependency-path: bot/pyproject.toml
 
-      - name: Install Dependencies
+      - name: Install dependencies
         working-directory: bot
         run: |
           python -m pip install --upgrade pip
-          pip install flake8 pytest
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # FIX: install from pyproject.toml, not requirements.txt
+          pip install -e ".[dev]"
+          # grpc stubs needed for import resolution during lint
+          pip install grpcio grpcio-tools
+          # Generate pb2 stubs so ruff/mypy can resolve api imports
+          mkdir -p src/api
+          python -m grpc_tools.protoc \
+            -I../engine/api \
+            --python_out=src/api \
+            --grpc_python_out=src/api \
+            ../engine/api/logistics.proto
+          touch src/api/__init__.py
+          sed -i 's/^import logistics_pb2/from . import logistics_pb2/' \
+            src/api/logistics_pb2_grpc.py
 
-      - name: Lint with flake8
+      # FIX: Use ruff — declared in pyproject.toml dev-dependencies, not flake8.
+      - name: Lint with ruff
         working-directory: bot
         run: |
-          # Stop build if there are Python syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # Warn on style issues (non-blocking)
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+          ruff check src/ --output-format=github
 
-      - name: Run Tests
+      - name: Run tests
         working-directory: bot
         run: |
           if [ -d tests ]; then
             pytest tests/ -v
           else
-            echo "No tests directory found — skipping pytest."
+            echo "No tests directory yet — skipping pytest."
           fi

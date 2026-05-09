@@ -8,6 +8,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version is injected at build time: -ldflags="-X main.Version=4.1.0"
+// FIX: variable must exist for the -X ldflags in release.yml and go-build-test.yml
+// to take effect — a missing variable causes the flag to be silently ignored.
+var Version = "dev"
+
 func main() {
 	root := &cobra.Command{
 		Use:   "logistics",
