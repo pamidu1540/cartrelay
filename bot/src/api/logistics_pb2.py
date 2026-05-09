@@ -24,14 +24,14 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0flogistics.proto\x12\tlogistics\"\x07\n\x05\x45mpty\"M\n\x0cHealthStatus\x12\x12\n\nis_healthy\x18\x01 \x01(\x08\x12\x18\n\x10maintenance_mode\x18\x02 \x01(\x08\x12\x0f\n\x07version\x18\x03 \x01(\t\"2\n\x0eStatusResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"}\n\x04Item\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\r\n\x05price\x18\x03 \x01(\x01\x12\x14\n\x0cvolume_cubes\x18\x04 \x01(\x01\x12\x10\n\x08\x63\x61tegory\x18\x05 \x01(\t\x12\r\n\x05stock\x18\x06 \x01(\x05\x12\x15\n\rphoto_file_id\x18\x07 \x01(\t\"\x86\x01\n\x0f\x43\x61talogResponse\x12\x34\n\x05items\x18\x01 \x03(\x0b\x32%.logistics.CatalogResponse.ItemsEntry\x1a=\n\nItemsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x1e\n\x05value\x18\x02 \x01(\x0b\x32\x0f.logistics.Item:\x02\x38\x01\"6\n\x10\x45\x64itPriceRequest\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\x11\n\tnew_price\x18\x02 \x01(\x01\"\x14\n\x06ItemId\x12\n\n\x02id\x18\x01 \x01(\t\"-\n\x08\x43\x61rtItem\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\x10\n\x08quantity\x18\x02 \x01(\x05\"[\n\x0cQuoteRequest\x12\x10\n\x08user_lat\x18\x01 \x01(\x01\x12\x10\n\x08user_lon\x18\x02 \x01(\x01\x12\'\n\ncart_items\x18\x03 \x03(\x0b\x32\x13.logistics.CartItem\"\x94\x01\n\rQuoteResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x15\n\rerror_message\x18\x02 \x01(\t\x12\x13\n\x0bgrand_total\x18\x03 \x01(\x01\x12\x19\n\x11\x66ormatted_receipt\x18\x04 \x01(\t\x12\x13\n\x0b\x64istance_km\x18\x05 \x01(\x01\x12\x16\n\x0enearest_branch\x18\x06 \x01(\t\"s\n\x0cOrderRequest\x12\x0f\n\x07user_id\x18\x01 \x01(\x03\x12\x10\n\x08username\x18\x02 \x01(\t\x12\x12\n\nquote_data\x18\x03 \x01(\x0c\x12\x16\n\x0e\x65xpected_total\x18\x04 \x01(\x01\x12\x14\n\x0creceipt_text\x18\x05 \x01(\t\"C\n\rOrderResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x10\n\x08order_id\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"\\\n\x05Order\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\r\n\x05total\x18\x03 \x01(\x01\x12\x11\n\ttimestamp\x18\x04 \x01(\x03\x12\x0f\n\x07receipt\x18\x05 \x01(\t\"5\n\x11OrderListResponse\x12 \n\x06orders\x18\x01 \x03(\x0b\x32\x10.logistics.Order\"\x19\n\x06UserId\x12\x0f\n\x07user_id\x18\x01 \x01(\x03\";\n\x13UpdateStatusRequest\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x12\n\nnew_status\x18\x02 \x01(\t2\x9f\x05\n\x0fLogisticsEngine\x12\x38\n\x0b\x43heckHealth\x12\x10.logistics.Empty\x1a\x17.logistics.HealthStatus\x12@\n\x11ToggleMaintenance\x12\x10.logistics.Empty\x1a\x19.logistics.StatusResponse\x12:\n\nGetCatalog\x12\x10.logistics.Empty\x1a\x1a.logistics.CatalogResponse\x12\x35\n\x07\x41\x64\x64Item\x12\x0f.logistics.Item\x1a\x19.logistics.StatusResponse\x12G\n\rEditItemPrice\x12\x1b.logistics.EditPriceRequest\x1a\x19.logistics.StatusResponse\x12:\n\nRemoveItem\x12\x11.logistics.ItemId\x1a\x19.logistics.StatusResponse\x12\x43\n\x0e\x43\x61lculateQuote\x12\x17.logistics.QuoteRequest\x1a\x18.logistics.QuoteResponse\x12?\n\nPlaceOrder\x12\x17.logistics.OrderRequest\x1a\x18.logistics.OrderResponse\x12\x42\n\x0fGetActiveOrders\x12\x11.logistics.UserId\x1a\x1c.logistics.OrderListResponse\x12N\n\x11UpdateOrderStatus\x12\x1e.logistics.UpdateStatusRequest\x1a\x19.logistics.StatusResponseB\x1aZ\x18\x65ngine/api;logistics_apib\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0flogistics.proto\x12\tlogistics\"\x07\n\x05\x45mpty\"M\n\x0cHealthStatus\x12\x12\n\nis_healthy\x18\x01 \x01(\x08\x12\x18\n\x10maintenance_mode\x18\x02 \x01(\x08\x12\x0f\n\x07version\x18\x03 \x01(\t\"J\n\x0eStatusResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x16\n\x0enotify_user_id\x18\x03 \x01(\x03\"}\n\x04Item\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\r\n\x05price\x18\x03 \x01(\x01\x12\x14\n\x0cvolume_cubes\x18\x04 \x01(\x01\x12\x10\n\x08\x63\x61tegory\x18\x05 \x01(\t\x12\r\n\x05stock\x18\x06 \x01(\x05\x12\x15\n\rphoto_file_id\x18\x07 \x01(\t\"\x86\x01\n\x0f\x43\x61talogResponse\x12\x34\n\x05items\x18\x01 \x03(\x0b\x32%.logistics.CatalogResponse.ItemsEntry\x1a=\n\nItemsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x1e\n\x05value\x18\x02 \x01(\x0b\x32\x0f.logistics.Item:\x02\x38\x01\"6\n\x10\x45\x64itPriceRequest\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\x11\n\tnew_price\x18\x02 \x01(\x01\"2\n\x10\x45\x64itStockRequest\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\r\n\x05\x64\x65lta\x18\x02 \x01(\x05\"\x14\n\x06ItemId\x12\n\n\x02id\x18\x01 \x01(\t\"-\n\x08\x43\x61rtItem\x12\x0f\n\x07item_id\x18\x01 \x01(\t\x12\x10\n\x08quantity\x18\x02 \x01(\x05\"[\n\x0cQuoteRequest\x12\x10\n\x08user_lat\x18\x01 \x01(\x01\x12\x10\n\x08user_lon\x18\x02 \x01(\x01\x12\'\n\ncart_items\x18\x03 \x03(\x0b\x32\x13.logistics.CartItem\"\x94\x01\n\rQuoteResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x15\n\rerror_message\x18\x02 \x01(\t\x12\x13\n\x0bgrand_total\x18\x03 \x01(\x01\x12\x19\n\x11\x66ormatted_receipt\x18\x04 \x01(\t\x12\x13\n\x0b\x64istance_km\x18\x05 \x01(\x01\x12\x16\n\x0enearest_branch\x18\x06 \x01(\t\"s\n\x0cOrderRequest\x12\x0f\n\x07user_id\x18\x01 \x01(\x03\x12\x10\n\x08username\x18\x02 \x01(\t\x12\x12\n\nquote_data\x18\x03 \x01(\x0c\x12\x16\n\x0e\x65xpected_total\x18\x04 \x01(\x01\x12\x14\n\x0creceipt_text\x18\x05 \x01(\t\"C\n\rOrderResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x10\n\x08order_id\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\"m\n\x05Order\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\r\n\x05total\x18\x03 \x01(\x01\x12\x11\n\ttimestamp\x18\x04 \x01(\x03\x12\x0f\n\x07receipt\x18\x05 \x01(\t\x12\x0f\n\x07user_id\x18\x06 \x01(\x03\"J\n\x11OrderListResponse\x12 \n\x06orders\x18\x01 \x03(\x0b\x32\x10.logistics.Order\x12\x13\n\x0btotal_count\x18\x02 \x01(\x05\"\x19\n\x06UserId\x12\x0f\n\x07user_id\x18\x01 \x01(\x03\";\n\x13UpdateStatusRequest\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x12\n\nnew_status\x18\x02 \x01(\t\"M\n\x13GetAllOrdersRequest\x12\x15\n\rstatus_filter\x18\x01 \x01(\t\x12\x0c\n\x04page\x18\x02 \x01(\x05\x12\x11\n\tpage_size\x18\x03 \x01(\x05\x32\xb6\x06\n\x0fLogisticsEngine\x12\x38\n\x0b\x43heckHealth\x12\x10.logistics.Empty\x1a\x17.logistics.HealthStatus\x12@\n\x11ToggleMaintenance\x12\x10.logistics.Empty\x1a\x19.logistics.StatusResponse\x12:\n\nGetCatalog\x12\x10.logistics.Empty\x1a\x1a.logistics.CatalogResponse\x12\x35\n\x07\x41\x64\x64Item\x12\x0f.logistics.Item\x1a\x19.logistics.StatusResponse\x12G\n\rEditItemPrice\x12\x1b.logistics.EditPriceRequest\x1a\x19.logistics.StatusResponse\x12G\n\rEditItemStock\x12\x1b.logistics.EditStockRequest\x1a\x19.logistics.StatusResponse\x12:\n\nRemoveItem\x12\x11.logistics.ItemId\x1a\x19.logistics.StatusResponse\x12\x43\n\x0e\x43\x61lculateQuote\x12\x17.logistics.QuoteRequest\x1a\x18.logistics.QuoteResponse\x12?\n\nPlaceOrder\x12\x17.logistics.OrderRequest\x1a\x18.logistics.OrderResponse\x12\x42\n\x0fGetActiveOrders\x12\x11.logistics.UserId\x1a\x1c.logistics.OrderListResponse\x12L\n\x0cGetAllOrders\x12\x1e.logistics.GetAllOrdersRequest\x1a\x1c.logistics.OrderListResponse\x12N\n\x11UpdateOrderStatus\x12\x1e.logistics.UpdateStatusRequest\x1a\x19.logistics.StatusResponseB$Z\"logistics-engine/api;logistics_apib\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'logistics_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'Z\030engine/api;logistics_api'
+  _globals['DESCRIPTOR']._serialized_options = b'Z\"logistics-engine/api;logistics_api'
   _globals['_CATALOGRESPONSE_ITEMSENTRY']._loaded_options = None
   _globals['_CATALOGRESPONSE_ITEMSENTRY']._serialized_options = b'8\001'
   _globals['_EMPTY']._serialized_start=30
@@ -39,35 +39,39 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_HEALTHSTATUS']._serialized_start=39
   _globals['_HEALTHSTATUS']._serialized_end=116
   _globals['_STATUSRESPONSE']._serialized_start=118
-  _globals['_STATUSRESPONSE']._serialized_end=168
-  _globals['_ITEM']._serialized_start=170
-  _globals['_ITEM']._serialized_end=295
-  _globals['_CATALOGRESPONSE']._serialized_start=298
-  _globals['_CATALOGRESPONSE']._serialized_end=432
-  _globals['_CATALOGRESPONSE_ITEMSENTRY']._serialized_start=371
-  _globals['_CATALOGRESPONSE_ITEMSENTRY']._serialized_end=432
-  _globals['_EDITPRICEREQUEST']._serialized_start=434
-  _globals['_EDITPRICEREQUEST']._serialized_end=488
-  _globals['_ITEMID']._serialized_start=490
-  _globals['_ITEMID']._serialized_end=510
-  _globals['_CARTITEM']._serialized_start=512
-  _globals['_CARTITEM']._serialized_end=557
-  _globals['_QUOTEREQUEST']._serialized_start=559
-  _globals['_QUOTEREQUEST']._serialized_end=650
-  _globals['_QUOTERESPONSE']._serialized_start=653
-  _globals['_QUOTERESPONSE']._serialized_end=801
-  _globals['_ORDERREQUEST']._serialized_start=803
-  _globals['_ORDERREQUEST']._serialized_end=918
-  _globals['_ORDERRESPONSE']._serialized_start=920
-  _globals['_ORDERRESPONSE']._serialized_end=987
-  _globals['_ORDER']._serialized_start=989
-  _globals['_ORDER']._serialized_end=1081
-  _globals['_ORDERLISTRESPONSE']._serialized_start=1083
-  _globals['_ORDERLISTRESPONSE']._serialized_end=1136
-  _globals['_USERID']._serialized_start=1138
-  _globals['_USERID']._serialized_end=1163
-  _globals['_UPDATESTATUSREQUEST']._serialized_start=1165
-  _globals['_UPDATESTATUSREQUEST']._serialized_end=1224
-  _globals['_LOGISTICSENGINE']._serialized_start=1227
-  _globals['_LOGISTICSENGINE']._serialized_end=1898
+  _globals['_STATUSRESPONSE']._serialized_end=192
+  _globals['_ITEM']._serialized_start=194
+  _globals['_ITEM']._serialized_end=319
+  _globals['_CATALOGRESPONSE']._serialized_start=322
+  _globals['_CATALOGRESPONSE']._serialized_end=456
+  _globals['_CATALOGRESPONSE_ITEMSENTRY']._serialized_start=395
+  _globals['_CATALOGRESPONSE_ITEMSENTRY']._serialized_end=456
+  _globals['_EDITPRICEREQUEST']._serialized_start=458
+  _globals['_EDITPRICEREQUEST']._serialized_end=512
+  _globals['_EDITSTOCKREQUEST']._serialized_start=514
+  _globals['_EDITSTOCKREQUEST']._serialized_end=564
+  _globals['_ITEMID']._serialized_start=566
+  _globals['_ITEMID']._serialized_end=586
+  _globals['_CARTITEM']._serialized_start=588
+  _globals['_CARTITEM']._serialized_end=633
+  _globals['_QUOTEREQUEST']._serialized_start=635
+  _globals['_QUOTEREQUEST']._serialized_end=726
+  _globals['_QUOTERESPONSE']._serialized_start=729
+  _globals['_QUOTERESPONSE']._serialized_end=877
+  _globals['_ORDERREQUEST']._serialized_start=879
+  _globals['_ORDERREQUEST']._serialized_end=994
+  _globals['_ORDERRESPONSE']._serialized_start=996
+  _globals['_ORDERRESPONSE']._serialized_end=1063
+  _globals['_ORDER']._serialized_start=1065
+  _globals['_ORDER']._serialized_end=1174
+  _globals['_ORDERLISTRESPONSE']._serialized_start=1176
+  _globals['_ORDERLISTRESPONSE']._serialized_end=1250
+  _globals['_USERID']._serialized_start=1252
+  _globals['_USERID']._serialized_end=1277
+  _globals['_UPDATESTATUSREQUEST']._serialized_start=1279
+  _globals['_UPDATESTATUSREQUEST']._serialized_end=1338
+  _globals['_GETALLORDERSREQUEST']._serialized_start=1340
+  _globals['_GETALLORDERSREQUEST']._serialized_end=1417
+  _globals['_LOGISTICSENGINE']._serialized_start=1420
+  _globals['_LOGISTICSENGINE']._serialized_end=2242
 # @@protoc_insertion_point(module_scope)

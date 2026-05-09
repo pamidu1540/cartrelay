@@ -59,6 +59,11 @@ class LogisticsEngineStub(object):
                 request_serializer=logistics__pb2.EditPriceRequest.SerializeToString,
                 response_deserializer=logistics__pb2.StatusResponse.FromString,
                 _registered_method=True)
+        self.EditItemStock = channel.unary_unary(
+                '/logistics.LogisticsEngine/EditItemStock',
+                request_serializer=logistics__pb2.EditStockRequest.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
         self.RemoveItem = channel.unary_unary(
                 '/logistics.LogisticsEngine/RemoveItem',
                 request_serializer=logistics__pb2.ItemId.SerializeToString,
@@ -77,6 +82,11 @@ class LogisticsEngineStub(object):
         self.GetActiveOrders = channel.unary_unary(
                 '/logistics.LogisticsEngine/GetActiveOrders',
                 request_serializer=logistics__pb2.UserId.SerializeToString,
+                response_deserializer=logistics__pb2.OrderListResponse.FromString,
+                _registered_method=True)
+        self.GetAllOrders = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetAllOrders',
+                request_serializer=logistics__pb2.GetAllOrdersRequest.SerializeToString,
                 response_deserializer=logistics__pb2.OrderListResponse.FromString,
                 _registered_method=True)
         self.UpdateOrderStatus = channel.unary_unary(
@@ -119,6 +129,12 @@ class LogisticsEngineServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def EditItemStock(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def RemoveItem(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -138,6 +154,12 @@ class LogisticsEngineServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def GetActiveOrders(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetAllOrders(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -177,6 +199,11 @@ def add_LogisticsEngineServicer_to_server(servicer, server):
                     request_deserializer=logistics__pb2.EditPriceRequest.FromString,
                     response_serializer=logistics__pb2.StatusResponse.SerializeToString,
             ),
+            'EditItemStock': grpc.unary_unary_rpc_method_handler(
+                    servicer.EditItemStock,
+                    request_deserializer=logistics__pb2.EditStockRequest.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
             'RemoveItem': grpc.unary_unary_rpc_method_handler(
                     servicer.RemoveItem,
                     request_deserializer=logistics__pb2.ItemId.FromString,
@@ -195,6 +222,11 @@ def add_LogisticsEngineServicer_to_server(servicer, server):
             'GetActiveOrders': grpc.unary_unary_rpc_method_handler(
                     servicer.GetActiveOrders,
                     request_deserializer=logistics__pb2.UserId.FromString,
+                    response_serializer=logistics__pb2.OrderListResponse.SerializeToString,
+            ),
+            'GetAllOrders': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAllOrders,
+                    request_deserializer=logistics__pb2.GetAllOrdersRequest.FromString,
                     response_serializer=logistics__pb2.OrderListResponse.SerializeToString,
             ),
             'UpdateOrderStatus': grpc.unary_unary_rpc_method_handler(
@@ -349,6 +381,33 @@ class LogisticsEngine(object):
             _registered_method=True)
 
     @staticmethod
+    def EditItemStock(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/EditItemStock',
+            logistics__pb2.EditStockRequest.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def RemoveItem(request,
             target,
             options=(),
@@ -445,6 +504,33 @@ class LogisticsEngine(object):
             target,
             '/logistics.LogisticsEngine/GetActiveOrders',
             logistics__pb2.UserId.SerializeToString,
+            logistics__pb2.OrderListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAllOrders(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetAllOrders',
+            logistics__pb2.GetAllOrdersRequest.SerializeToString,
             logistics__pb2.OrderListResponse.FromString,
             options,
             channel_credentials,
