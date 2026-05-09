@@ -27,36 +27,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Find compose file and set COMPOSE_DIR
-        id: composedir
+      - name: Print repo structure (debug)
         run: |
-          CF=$(find . -name 'docker-compose.yml' -o -name 'compose.yml' | head -1)
-          if [ -z "$CF" ]; then
-            echo "No docker-compose.yml found!" && exit 1
+          find . -name 'docker-compose.yml' -o -name 'compose.yml' -o -name 'docker-compose.yaml' | sort
+          ls deploy/ || true
+
+      - name: Create .env for CI
+        # README says: cp deploy/.env.example deploy/.env
+        # We do the same but with CI-safe stub values
+        run: |
+          if [ -f deploy/.env.example ]; then
+            cp deploy/.env.example deploy/.env
+          else
+            touch deploy/.env
           fi
-          DIR=$(dirname "$CF")
-          echo "Found compose at: $DIR"
-          echo "dir=$DIR" >> $GITHUB_OUTPUT
+          # Override/add every var that compose requires to be non-empty
+          cat >> deploy/.env << 'EOF'
+          TELEGRAM_BOT_TOKEN=stub_ci_token
+          INTERNAL_TOKEN=stub_ci_internal_32charsXXXXXX00
+          MAPBOX_TOKEN=stub_ci_mapbox
+          DEV_BYPASS_SECRET=stub_ci_bypass
+          SKIP_LICENSE_CHECK=stub_ci_bypass
+          EOF
 
-      - name: Create .env with stub values
-        working-directory: ${{ steps.composedir.outputs.dir }}
-        run: |
-          # Start from example if it exists
-          [ -f .env.example ] && cp .env.example .env || touch .env
-          # Ensure all required vars are present (non-empty stubs)
-          set_if_missing() {
-            grep -qE "^${1}=" .env || echo "${1}=${2}" >> .env
-          }
-          set_if_missing TELEGRAM_BOT_TOKEN  "stub_token"
-          set_if_missing INTERNAL_TOKEN      "stub_internal_32charsXXXXXXXXXX"
-          set_if_missing MAPBOX_TOKEN        "stub_mapbox"
-          set_if_missing DEV_BYPASS_SECRET   "stub_bypass"
-          set_if_missing SKIP_LICENSE_CHECK  "stub_bypass"
-
-      - name: Validate Compose config
-        working-directory: ${{ steps.composedir.outputs.dir }}
-        run: docker compose config --quiet
-
-      - name: Build all services
-        working-directory: ${{ steps.composedir.outputs.dir }}
+      - name: Build Docker images via Compose
+        # README says: cd deploy && docker compose up -d --build
+        working-directory: deploy
         run: docker compose build --no-cache

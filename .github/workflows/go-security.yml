@@ -4,10 +4,14 @@ on:
   push:
     paths:
       - 'engine/**'
+      - 'supervisor/**'
+      - 'go.mod'
+      - 'go.sum'
       - '.github/workflows/go-security.yml'
   pull_request:
     paths:
       - 'engine/**'
+      - 'supervisor/**'
   schedule:
     - cron: '0 8 * * 1'
 
@@ -29,31 +33,25 @@ jobs:
           go-version: '1.22'
           cache: false
 
-      - name: Find go.mod root
-        id: modroot
-        run: |
-          MOD=$(find . -name 'go.mod' | head -1)
-          ROOT=$(dirname "$MOD")
-          echo "root=$ROOT" >> $GITHUB_OUTPUT
-
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-sec-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          key: go-sec-${{ runner.os }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
           restore-keys: go-sec-${{ runner.os }}-
 
-      - name: Tidy dependencies
-        working-directory: ${{ steps.modroot.outputs.root }}
-        run: go mod tidy
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
-      - name: Install & run govulncheck
-        working-directory: ${{ steps.modroot.outputs.root }}
+      - name: Run govulncheck on all modules
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          find . -name 'go.mod' -not -path '*/.git/*' | while read modfile; do
+            dir=$(dirname "$modfile")
+            echo "=== govulncheck in $dir ==="
+            (cd "$dir" && go mod tidy && govulncheck ./...)
+          done
 
   gosec:
     name: gosec
@@ -69,19 +67,13 @@ jobs:
           go-version: '1.22'
           cache: false
 
-      - name: Find go.mod root
-        id: modroot
-        run: |
-          MOD=$(find . -name 'go.mod' | head -1)
-          ROOT=$(dirname "$MOD")
-          echo "root=$ROOT" >> $GITHUB_OUTPUT
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
-      - name: Tidy dependencies
-        working-directory: ${{ steps.modroot.outputs.root }}
-        run: go mod tidy
-
-      - name: Install & run gosec
-        working-directory: ${{ steps.modroot.outputs.root }}
+      - name: Run gosec on all modules
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec ./...
+          find . -name 'go.mod' -not -path '*/.git/*' | while read modfile; do
+            dir=$(dirname "$modfile")
+            echo "=== gosec in $dir ==="
+            (cd "$dir" && go mod tidy && gosec ./...)
+          done

@@ -4,10 +4,14 @@ on:
   push:
     paths:
       - 'engine/**'
+      - 'supervisor/**'
+      - 'go.mod'
+      - 'go.sum'
       - '.github/workflows/go-build-test.yml'
   pull_request:
     paths:
       - 'engine/**'
+      - 'supervisor/**'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -26,50 +30,43 @@ jobs:
           go-version: '1.22'
           cache: false
 
-      - name: Find go.mod and set MODULE_ROOT
-        id: modroot
-        run: |
-          MOD=$(find . -name 'go.mod' | head -1)
-          if [ -z "$MOD" ]; then
-            echo "No go.mod found!" && exit 1
-          fi
-          ROOT=$(dirname "$MOD")
-          echo "Found go.mod at: $ROOT"
-          echo "root=$ROOT" >> $GITHUB_OUTPUT
-
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          key: go-${{ runner.os }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
           restore-keys: go-${{ runner.os }}-
 
-      - name: Tidy & Download Dependencies
-        working-directory: ${{ steps.modroot.outputs.root }}
-        run: |
-          go mod tidy
-          go mod download
-          go mod verify
+      - name: Print repo structure (debug)
+        run: find . -name 'go.mod' | sort
 
-      - name: Build
-        working-directory: ${{ steps.modroot.outputs.root }}
-        run: go build ./...
+      - name: Tidy & Download Dependencies
+        run: |
+          # Run go mod tidy in every directory that has a go.mod
+          find . -name 'go.mod' -not -path '*/.git/*' | while read modfile; do
+            dir=$(dirname "$modfile")
+            echo "=== Running go mod tidy in $dir ==="
+            (cd "$dir" && go mod tidy && go mod download && go mod verify)
+          done
+
+      - name: Build all Go modules
+        run: |
+          find . -name 'go.mod' -not -path '*/.git/*' | while read modfile; do
+            dir=$(dirname "$modfile")
+            echo "=== Building in $dir ==="
+            (cd "$dir" && go build ./...)
+          done
 
       - name: Run Tests
-        working-directory: ${{ steps.modroot.outputs.root }}
         run: |
-          if find . -name '*_test.go' | grep -q .; then
-            go test -v -race -coverprofile=coverage.out ./...
-          else
-            echo "No test files found — skipping."
-          fi
-
-      - name: Upload Coverage Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: go-coverage
-          path: "**/coverage.out"
-          if-no-files-found: ignore
+          find . -name 'go.mod' -not -path '*/.git/*' | while read modfile; do
+            dir=$(dirname "$modfile")
+            echo "=== Testing in $dir ==="
+            if find "$dir" -name '*_test.go' | grep -q .; then
+              (cd "$dir" && go test -v -race ./...)
+            else
+              echo "No test files in $dir — skipping."
+            fi
+          done
