@@ -24,9 +24,18 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          # Disable built-in cache — we manage it manually below to avoid
-          # failing when go.sum does not yet exist in engine/
           cache: false
+
+      - name: Find go.mod and set MODULE_ROOT
+        id: modroot
+        run: |
+          MOD=$(find . -name 'go.mod' | head -1)
+          if [ -z "$MOD" ]; then
+            echo "No go.mod found!" && exit 1
+          fi
+          ROOT=$(dirname "$MOD")
+          echo "Found go.mod at: $ROOT"
+          echo "root=$ROOT" >> $GITHUB_OUTPUT
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -34,22 +43,22 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('engine/go.sum', 'engine/go.mod') }}
+          key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
           restore-keys: go-${{ runner.os }}-
 
       - name: Tidy & Download Dependencies
-        working-directory: engine
+        working-directory: ${{ steps.modroot.outputs.root }}
         run: |
           go mod tidy
           go mod download
           go mod verify
 
       - name: Build
-        working-directory: engine
+        working-directory: ${{ steps.modroot.outputs.root }}
         run: go build ./...
 
       - name: Run Tests
-        working-directory: engine
+        working-directory: ${{ steps.modroot.outputs.root }}
         run: |
           if find . -name '*_test.go' | grep -q .; then
             go test -v -race -coverprofile=coverage.out ./...
@@ -62,5 +71,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: go-coverage
-          path: engine/coverage.out
+          path: "**/coverage.out"
           if-no-files-found: ignore
