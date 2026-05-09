@@ -1,0 +1,66 @@
+name: Release & Tag
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'   # Triggers on tags like v4.1.1, v4.2.0, etc.
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Needed to get full commit history for changelog
+
+      - name: Setup Go Environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: engine/go.sum
+
+      - name: Build Go Binary (Linux amd64)
+        working-directory: engine
+        run: |
+          GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-X main.Version=${{ github.ref_name }}" \
+            -o ../dist/logistics-engine-linux-amd64 \
+            ./...
+
+      - name: Build Supervisor CLI (Linux amd64)
+        working-directory: supervisor
+        run: |
+          GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-X main.Version=${{ github.ref_name }}" \
+            -o ../dist/logistics-supervisor-linux-amd64 \
+            ./...
+
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --oneline --no-merges)
+          else
+            CHANGELOG=$(git log --oneline --no-merges ${PREV_TAG}..HEAD)
+          fi
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          body: |
+            ## What's Changed
+            ${{ steps.changelog.outputs.CHANGELOG }}
+          files: |
+            dist/logistics-engine-linux-amd64
+            dist/logistics-supervisor-linux-amd64
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}

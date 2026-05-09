@@ -5,7 +5,10 @@ on:
   push:
     paths:
       - 'engine/api/logistics.proto'
-  workflow_dispatch: # Allows you to run it manually from the GitHub UI
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-grpc:
@@ -21,6 +24,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+          cache-dependency-path: engine/go.sum   # FIX: point to correct go.sum path
 
       - name: Setup Python Environment
         uses: actions/setup-python@v5
@@ -36,7 +40,6 @@ jobs:
         run: |
           go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-          # Add the Go bin directory to the system path
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Install Python gRPC Plugins
@@ -46,13 +49,11 @@ jobs:
 
       - name: Compile Go & Python Protobufs
         run: |
-          # 1. Compile for Go (Outputs to engine/api)
           protoc --proto_path=engine/api \
             --go_out=engine/api --go_opt=paths=source_relative \
             --go-grpc_out=engine/api --go-grpc_opt=paths=source_relative \
             engine/api/logistics.proto
 
-          # 2. Compile for Python (Outputs to bot/src/api)
           python -m grpc_tools.protoc \
             -Iengine/api \
             --python_out=bot/src/api \
@@ -61,21 +62,19 @@ jobs:
 
       - name: Fix Python imports (grpcio-tools bug workaround)
         run: |
-          # The Python generator has a known bug with relative imports in Python 3.
-          # This step automatically fixes the import inside logistics_pb2_grpc.py
           sed -i 's/import logistics_pb2 as logistics__pb2/from . import logistics_pb2 as logistics__pb2/g' bot/src/api/logistics_pb2_grpc.py
 
       - name: Commit and Push Generated Files
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Check if there are actually any changes to commit
-          if git diff --exit-code; then
+
+          # FIX: use --quiet so the check doesn't kill the job on exit code 1
+          if git diff --quiet; then
             echo "No changes in generated files. Skipping commit."
             exit 0
           fi
-          
+
           git add engine/api/*.go bot/src/api/*.py
           git commit -m "chore: auto-generate gRPC proto files"
           git push
