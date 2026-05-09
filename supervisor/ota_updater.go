@@ -2,58 +2,227 @@ package main
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"os"
-	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
 )
 
-// In production, this MUST be your hardcoded Ed25519 Public Key.
-// Never share the corresponding Private Key.
-const publicSignKeyHex = "YOUR_ED25519_PUBLIC_KEY_HEX_HERE"
+// publicKeyHex is the hex-encoded Ed25519 public key for update verification.
+// FIX: Startup validates this is not still the placeholder.
+// Generate:
+//
+//	openssl genpkey -algorithm ed25519 -out update_priv.pem
+//	openssl pkey -in update_priv.pem -pubout -outform DER | xxd -p -c 256
+const publicKeyHex = "REPLACE_WITH_YOUR_ED25519_PUBLIC_KEY_HEX"
 
-// CheckAndApplyUpdate downloads the latest release, verifies its signature, and applies it.
+var otaHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+type updateManifest struct {
+	Version   string `json:"version"`
+	URL       string `json:"url"`
+	Signature string `json:"signature"` // hex-encoded Ed25519 sig over SHA-256 of tarball
+}
+
+const (
+	deployDir  = "/opt/logistics-system/deploy"
+	backupDir  = "/opt/logistics-system/backups"
+	maxBackups = 3
+)
+
+// CheckAndApplyUpdate downloads the latest release, verifies the signature,
+// backs up the current tarball, and restarts the stack.
 func CheckAndApplyUpdate() error {
-	fmt.Println("Fetching latest update manifest...")
-	
-	// Simulated fetching of the binary and its detached signature
-	binaryPath := "/tmp/logistics_update.tar.gz"
-	signatureHex := "MOCKED_SIGNATURE_HEX_FROM_SERVER"
-
-	// 2. Cryptographic Verification
-	pubKey, err := hex.DecodeString(publicSignKeyHex)
-	if err != nil {
-		return fmt.Errorf("invalid embedded public key: %v", err)
+	manifestURL := os.Getenv("UPDATE_MANIFEST_URL")
+	if manifestURL == "" {
+		slog.Info("UPDATE_MANIFEST_URL not set — skipping OTA check")
+		return nil
 	}
 
-	sig, err := hex.DecodeString(signatureHex)
-	if err != nil {
-		return fmt.Errorf("invalid update signature format: %v", err)
+	// FIX: Detect the placeholder at runtime so operators get a clear error.
+	if strings.Contains(publicKeyHex, "REPLACE_WITH") {
+		return fmt.Errorf("publicKeyHex is still the placeholder in ota_updater.go — " +
+			"replace it with your Ed25519 public key before enabling OTA updates")
 	}
 
-	updateData, err := os.ReadFile(binaryPath)
-	if err == nil { // Simulated check
-		if !ed25519.Verify(pubKey, updateData, sig) {
-			return fmt.Errorf("SECURITY ALERT: Update signature mismatch. Payload rejected")
-		}
+	manifest, err := fetchManifest(manifestURL)
+	if err != nil {
+		return fmt.Errorf("fetch manifest: %w", err)
+	}
+	slog.Info("OTA manifest", "version", manifest.Version, "url", manifest.URL)
+
+	// Download to a temp file first; never write to the deploy dir until verified.
+	tmpFile, err := os.CreateTemp("", "logistics-ota-*.tar.gz")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if err := downloadFile(manifest.URL, tmpFile); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("download: %w", err)
+	}
+	tmpFile.Close()
+
+	// FIX: Stream-hash the tarball instead of loading it all into RAM.
+	if err := verifySignatureStreaming(tmpFile.Name(), manifest.Signature); err != nil {
+		return fmt.Errorf("signature FAILED — update rejected: %w", err)
+	}
+	slog.Info("OTA signature verified", "version", manifest.Version)
+
+	// Backup the current deployment before replacing it.
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		slog.Warn("cannot create backup dir", "err", err)
 	} else {
-		// Bypassing for this architectural draft
-		fmt.Println("Verification check passed (Simulated).")
+		if err := rotatingBackup(manifest.Version); err != nil {
+			slog.Warn("backup failed (non-fatal)", "err", err)
+		}
 	}
 
-	// 3. Apply the Update
-	fmt.Println("Signature verified. Applying update...")
-	
-	// Pull the latest docker containers and restart
-	cmd := exec.Command("docker", "compose", "-f", "/opt/logistics-system/deploy/docker-compose.yml", "pull")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to pull updated containers: %v", err)
+	// Apply: copy verified tarball into deploy dir and restart.
+	dest := filepath.Join(deployDir, "update.tar.gz")
+	if err := copyFile(tmpFile.Name(), dest); err != nil {
+		return fmt.Errorf("copy to deploy dir: %w", err)
 	}
 
-	fmt.Println("Restarting services to apply patches...")
-	executeDockerCompose("up", "-d", "--force-recreate")
+	if err := executeDockerCompose("pull"); err != nil {
+		return fmt.Errorf("compose pull: %w", err)
+	}
+	if err := executeDockerCompose("up", "-d", "--build"); err != nil {
+		return fmt.Errorf("compose up: %w", err)
+	}
 
+	slog.Info("OTA update applied", "version", manifest.Version)
 	return nil
+}
+
+// RollbackUpdate re-applies the most recent backup tarball.
+func RollbackUpdate() error {
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		return fmt.Errorf("no backups found in %s: %w", backupDir, err)
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf("no backups available to roll back to")
+	}
+
+	// Backups are named <version>-<timestamp>.tar.gz; sort gives newest last.
+	latest := entries[len(entries)-1]
+	src := filepath.Join(backupDir, latest.Name())
+	slog.Info("rolling back to", "backup", src)
+
+	if err := copyFile(src, filepath.Join(deployDir, "update.tar.gz")); err != nil {
+		return fmt.Errorf("copy backup: %w", err)
+	}
+	if err := executeDockerCompose("up", "-d", "--build"); err != nil {
+		return fmt.Errorf("compose up after rollback: %w", err)
+	}
+	slog.Info("rollback applied", "backup", latest.Name())
+	return nil
+}
+
+// ── Internals ─────────────────────────────────────────────────────────────────
+
+func fetchManifest(url string) (*updateManifest, error) {
+	resp, err := otaHTTPClient.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("manifest server HTTP %d", resp.StatusCode)
+	}
+	var m updateManifest
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+		return nil, err
+	}
+	if m.URL == "" || m.Signature == "" {
+		return nil, fmt.Errorf("manifest missing url or signature")
+	}
+	return &m, nil
+}
+
+func downloadFile(url string, dst *os.File) error {
+	resp, err := otaHTTPClient.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download server HTTP %d", resp.StatusCode)
+	}
+	_, err = io.Copy(dst, resp.Body)
+	return err
+}
+
+// verifySignatureStreaming computes SHA-256 by streaming — no full file load.
+// FIX: Replaces os.ReadFile(filePath) which spikes RAM on large tarballs.
+func verifySignatureStreaming(filePath, sigHex string) error {
+	pubKeyBytes, err := hex.DecodeString(publicKeyHex)
+	if err != nil || len(pubKeyBytes) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid public key constant")
+	}
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil {
+		return fmt.Errorf("invalid signature hex: %w", err)
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("open for verification: %w", err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("hash computation: %w", err)
+	}
+	digest := h.Sum(nil)
+
+	if !ed25519.Verify(ed25519.PublicKey(pubKeyBytes), digest, sig) {
+		return fmt.Errorf("signature mismatch — possible tampering")
+	}
+	return nil
+}
+
+func rotatingBackup(version string) error {
+	ts := time.Now().Format("20060102T150405")
+	dst := filepath.Join(backupDir, fmt.Sprintf("%s-%s.tar.gz", version, ts))
+	src := filepath.Join(deployDir, "update.tar.gz")
+	if err := copyFile(src, dst); err != nil {
+		return err // source may not exist on first run
+	}
+
+	// Keep only the last maxBackups files.
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		return nil
+	}
+	for len(entries) > maxBackups {
+		_ = os.Remove(filepath.Join(backupDir, entries[0].Name()))
+		entries = entries[1:]
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
 }

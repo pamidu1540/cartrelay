@@ -1,31 +1,82 @@
 services:
+
   engine:
     build:
       context: ../engine
       dockerfile: Dockerfile
+      args:
+        BUILD_VERSION: "${BUILD_VERSION:-dev}"
     container_name: logistics_engine
-    restart: always
+    restart: unless-stopped
+    env_file: .env
     environment:
-      - MAPBOX_TOKEN=${MAPBOX_TOKEN}
       - INTERNAL_TOKEN=${INTERNAL_TOKEN}
+      - MAPBOX_TOKEN=${MAPBOX_TOKEN}
+      - DEV_BYPASS_SECRET=${DEV_BYPASS_SECRET:-}
+      - SKIP_LICENSE_CHECK=${SKIP_LICENSE_CHECK:-}
     volumes:
-      - shared_sockets:/app/sockets
-      - engine_data:/app/data
+      - engine_data:/app/data        # SQLite DB + license.key
+      - sockets:/app/sockets         # FIX: Named volume — host-path independent
+    healthcheck:
+      test: ["CMD", "test", "-S", "/app/sockets/logistics.sock"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    # FIX: Resource limits prevent a runaway engine from starving the bot.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   bot:
     build:
       context: ../bot
       dockerfile: Dockerfile
     container_name: logistics_bot
-    restart: always
+    restart: unless-stopped
+    env_file: .env
     environment:
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - INTERNAL_TOKEN=${INTERNAL_TOKEN}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS:-}
     volumes:
-      - shared_sockets:/app/sockets
+      - sockets:/app/sockets         # Shared with engine
     depends_on:
-      - engine
+      engine:
+        condition: service_healthy   # Wait for the engine socket to exist
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import grpc; ch=grpc.insecure_channel('unix:///app/sockets/logistics.sock'); ch.close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
 
 volumes:
-  shared_sockets:
   engine_data:
+    driver: local
+  sockets:
+    driver: local    # tmpfs-style volume — socket only lives while stack is up

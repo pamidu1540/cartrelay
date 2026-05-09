@@ -1,15 +1,36 @@
-version: v1
-plugins:
-  # Go generation
-  - plugin: buf.build/protocolbuffers/go
-    out: .
-    opt: paths=source_relative
-  - plugin: buf.build/grpc/go
-    out: .
-    opt: paths=source_relative
+version: v2
 
-  # Python generation
-  - plugin: buf.build/protocolbuffers/python
+# buf generate is run from engine/api/.
+# A single invocation regenerates both the Go engine bindings and the Python
+# bot bindings so they are always in sync with the proto source.
+#
+# Usage:
+#   cd engine/api && buf generate
+#
+# Or from repo root:
+#   buf generate engine/api
+
+inputs:
+  - directory: .
+
+plugins:
+  # ── Go (engine) ─────────────────────────────────────────────────────────────
+  - remote: buf.build/protocolbuffers/go
+    out: .
+    opt:
+      - paths=source_relative
+
+  - remote: buf.build/grpc/go
+    out: .
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=false   # avoids forward-compat compile errors
+
+  # ── Python (bot) ─────────────────────────────────────────────────────────────
+  # Output lands in bot/src/api/ so it is importable as `from api import ...`
+  # without any symlink or PYTHONPATH tricks.
+  - remote: buf.build/protocolbuffers/python
     out: ../../bot/src/api
-  - plugin: buf.build/grpc/python
+
+  - remote: buf.build/grpc/python
     out: ../../bot/src/api

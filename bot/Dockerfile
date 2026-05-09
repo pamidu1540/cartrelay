@@ -1,21 +1,30 @@
 FROM python:3.12-slim
 
-# Copy the ultra-fast 'uv' package manager from the official Astral image
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
 WORKDIR /app
 
-# Copy the modern Python configuration file
+# Install protoc for proto generation at build time.
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml .
+RUN pip install --no-cache-dir -e .
 
-# Use uv to install dependencies directly into the system Python.
-# This replaces `pip install -r requirements.txt` and is up to 100x faster.
-RUN uv pip install --system grpcio grpcio-tools python-telegram-bot[job-queue]
+# Copy proto source and generate Python bindings so they're always in sync.
+COPY ../engine/api/logistics.proto ./api/logistics.proto
+RUN python -m grpc_tools.protoc \
+    -I./api \
+    --python_out=./api \
+    --grpc_python_out=./api \
+    ./api/logistics.proto \
+ && touch ./api/__init__.py
 
-# Copy the source code directory
 COPY src/ ./src/
+# Make the generated proto package importable from src/.
+RUN ln -s /app/api /app/src/api
 
 WORKDIR /app/src
 
-# Execute the Telegram interface
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
+    CMD python -c "import grpc; ch=grpc.insecure_channel('unix:///app/sockets/logistics.sock'); ch.close()" || exit 1
+
 CMD ["python", "main.py"]

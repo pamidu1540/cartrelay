@@ -1,42 +1,45 @@
 syntax = "proto3";
-
 package logistics;
-
-option go_package = "engine/api;logistics_api";
+option go_package = "logistics-engine/api;logistics_api";
 
 service LogisticsEngine {
-  rpc CheckHealth (Empty) returns (HealthStatus);
-  rpc ToggleMaintenance (Empty) returns (StatusResponse);
-  rpc GetCatalog (Empty) returns (CatalogResponse);
-  rpc AddItem (Item) returns (StatusResponse);
-  rpc EditItemPrice (EditPriceRequest) returns (StatusResponse);
-  rpc RemoveItem (ItemId) returns (StatusResponse);
-  rpc CalculateQuote (QuoteRequest) returns (QuoteResponse);
-  rpc PlaceOrder (OrderRequest) returns (OrderResponse);
-  rpc GetActiveOrders (UserId) returns (OrderListResponse);
+  rpc CheckHealth       (Empty)               returns (HealthStatus);
+  rpc ToggleMaintenance (Empty)               returns (StatusResponse);
+  rpc GetCatalog        (Empty)               returns (CatalogResponse);
+  rpc AddItem           (Item)                returns (StatusResponse);
+  rpc EditItemPrice     (EditPriceRequest)    returns (StatusResponse);
+  rpc EditItemStock     (EditStockRequest)    returns (StatusResponse);
+  rpc RemoveItem        (ItemId)              returns (StatusResponse);
+  rpc CalculateQuote    (QuoteRequest)        returns (QuoteResponse);
+  rpc PlaceOrder        (OrderRequest)        returns (OrderResponse);
+  rpc GetActiveOrders   (UserId)              returns (OrderListResponse);
+  rpc GetAllOrders      (GetAllOrdersRequest) returns (OrderListResponse);
   rpc UpdateOrderStatus (UpdateStatusRequest) returns (StatusResponse);
 }
 
 message Empty {}
 
 message HealthStatus {
-  bool is_healthy = 1;
-  bool maintenance_mode = 2;
-  string version = 3;
+  bool   is_healthy       = 1;
+  bool   maintenance_mode = 2;
+  string version          = 3;
 }
 
+// notify_user_id is populated on UpdateOrderStatus so the bot can push
+// a Telegram notification without fragile string parsing.
 message StatusResponse {
-  bool success = 1;
-  string message = 2;
+  bool   success        = 1;
+  string message        = 2;
+  int64  notify_user_id = 3;
 }
 
 message Item {
-  string id = 1;
-  string name = 2;
-  double price = 3;
-  double volume_cubes = 4;
-  string category = 5;
-  int32 stock = 6;
+  string id            = 1;
+  string name          = 2;
+  double price         = 3;
+  double volume_cubes  = 4;
+  string category      = 5;
+  int32  stock         = 6;
   string photo_file_id = 7;
 }
 
@@ -45,65 +48,76 @@ message CatalogResponse {
 }
 
 message EditPriceRequest {
-  string item_id = 1;
+  string item_id   = 1;
   double new_price = 2;
 }
 
-message ItemId {
-  string id = 1;
+// delta > 0 = restock, delta < 0 = manual deduction
+message EditStockRequest {
+  string item_id = 1;
+  int32  delta   = 2;
 }
 
+message ItemId { string id = 1; }
+
 message CartItem {
-  string item_id = 1;
-  int32 quantity = 2;
+  string item_id  = 1;
+  int32  quantity = 2;
 }
 
 message QuoteRequest {
-  double user_lat = 1;
-  double user_lon = 2;
+  double            user_lat   = 1;
+  double            user_lon   = 2;
   repeated CartItem cart_items = 3;
 }
 
 message QuoteResponse {
-  bool success = 1;
-  string error_message = 2;
-  double grand_total = 3;
+  bool   success           = 1;
+  string error_message     = 2;
+  double grand_total       = 3;
   string formatted_receipt = 4;
-  double distance_km = 5;
-  string nearest_branch = 6;
+  double distance_km       = 5;
+  string nearest_branch    = 6;
 }
 
 message OrderRequest {
-  int64 user_id = 1;
-  string username = 2;
-  bytes quote_data = 3;    // FIXED: Changed to bytes to prevent serialization crashes and payload tampering
+  int64  user_id        = 1;
+  string username       = 2;
+  bytes  quote_data     = 3;
   double expected_total = 4;
-  string receipt_text = 5;
+  string receipt_text   = 5;
 }
 
 message OrderResponse {
-  bool success = 1;
+  bool   success  = 1;
   string order_id = 2;
-  string message = 3;
+  string message  = 3;
 }
 
+// user_id added so admin views can send targeted notifications.
 message Order {
-  string order_id = 1;
-  string status = 2;
-  double total = 3;
-  int64 timestamp = 4;
-  string receipt = 5;
+  string order_id  = 1;
+  string status    = 2;
+  double total     = 3;
+  int64  timestamp = 4;
+  string receipt   = 5;
+  int64  user_id   = 6;
 }
 
 message OrderListResponse {
-  repeated Order orders = 1;
+  repeated Order orders      = 1;
+  int32          total_count = 2;
 }
 
-message UserId {
-  int64 user_id = 1;
-}
+message UserId { int64 user_id = 1; }
 
 message UpdateStatusRequest {
-  string order_id = 1;
+  string order_id   = 1;
   string new_status = 2;
+}
+
+message GetAllOrdersRequest {
+  string status_filter = 1;   // "" = all statuses
+  int32  page          = 2;   // 0-indexed
+  int32  page_size     = 3;   // default 20
 }
