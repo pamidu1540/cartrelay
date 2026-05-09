@@ -3,87 +3,160 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 func main() {
-	var rootCmd = &cobra.Command{
+	root := &cobra.Command{
 		Use:   "logistics",
-		Short: "Logistics System Supervisor CLI",
+		Short: "Logistics System Supervisor CLI v4",
 	}
 
-	var startCmd = &cobra.Command{
+	// ── start ─────────────────────────────────────────────────────────────────
+	root.AddCommand(&cobra.Command{
 		Use:   "start",
 		Short: "Start all services",
-		Run: func(cmd *cobra.Command, args []string) {
-			executeDockerCompose("up", "-d", "--build")
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return executeDockerCompose("up", "-d", "--build")
 		},
-	}
+	})
 
-	var stopCmd = &cobra.Command{
+	// ── stop ──────────────────────────────────────────────────────────────────
+	root.AddCommand(&cobra.Command{
 		Use:   "stop",
 		Short: "Stop all services",
-		Run: func(cmd *cobra.Command, args []string) {
-			executeDockerCompose("down")
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return executeDockerCompose("down")
 		},
-	}
+	})
 
-	var logsCmd = &cobra.Command{
+	// ── restart ───────────────────────────────────────────────────────────────
+	root.AddCommand(&cobra.Command{
+		Use:   "restart",
+		Short: "Restart all service containers",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := RestartContainers(); err != nil {
+				return err
+			}
+			fmt.Println("Containers restarted.")
+			return nil
+		},
+	})
+
+	// ── status ────────────────────────────────────────────────────────────────
+	// FIX: New one-shot status command; doesn't require opening the full TUI.
+	root.AddCommand(&cobra.Command{
+		Use:   "status",
+		Short: "Print a quick container health snapshot",
+		Run: func(cmd *cobra.Command, _ []string) {
+			s := fetchLiveStats()
+			fmt.Printf("Engine : %s\n", s.EngineStatus)
+			fmt.Printf("Bot    : %s\n", s.BotStatus)
+			fmt.Printf("CPU    : %s\n", s.CPUUsage)
+			fmt.Printf("RAM    : %s\n", s.RAMUsage)
+			fmt.Printf("At     : %s\n", s.CollectedAt.Format(time.RFC3339))
+		},
+	})
+
+	// ── logs ──────────────────────────────────────────────────────────────────
+	// FIX: --service flag tails only one container (engine or bot).
+	logsCmd := &cobra.Command{
 		Use:   "logs",
-		Short: "Follow service logs",
-		Run: func(cmd *cobra.Command, args []string) {
-			executeDockerCompose("logs", "-f")
+		Short: "Follow service logs (use --service engine|bot to filter)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			svc, _ := cmd.Flags().GetString("service")
+			args := []string{"logs", "-f"}
+			switch svc {
+			case "engine":
+				args = append(args, "engine")
+			case "bot":
+				args = append(args, "bot")
+			case "":
+				// Follow all services.
+			default:
+				return fmt.Errorf("unknown service %q — use 'engine' or 'bot'", svc)
+			}
+			return executeDockerCompose(args...)
 		},
 	}
+	logsCmd.Flags().StringP("service", "s", "", "Filter logs to a specific service (engine|bot)")
+	root.AddCommand(logsCmd)
 
-	var dashCmd = &cobra.Command{
+	// ── dashboard ─────────────────────────────────────────────────────────────
+	root.AddCommand(&cobra.Command{
 		Use:     "dashboard",
 		Aliases: []string{"dash"},
-		Short:   "Open the logistics dashboard",
-		Run: func(cmd *cobra.Command, args []string) {
+		Short:   "Open the interactive TUI dashboard",
+		Run: func(cmd *cobra.Command, _ []string) {
 			StartDashboard()
 		},
-	}
+	})
 
-	var updateCmd = &cobra.Command{
+	// ── update ────────────────────────────────────────────────────────────────
+	updateCmd := &cobra.Command{
 		Use:   "update",
-		Short: "Check and apply system updates",
-		Run: func(cmd *cobra.Command, args []string) {
-			if err := CheckAndApplyUpdate(); err != nil {
-				fmt.Printf("Update failed: %v\n", err)
-				os.Exit(1)
-			} else {
-				fmt.Println("Update completed successfully.")
+		Short: "Check and apply OTA system updates",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			if dryRun {
+				manifestURL := os.Getenv("UPDATE_MANIFEST_URL")
+				if manifestURL == "" {
+					return fmt.Errorf("UPDATE_MANIFEST_URL not set")
+				}
+				m, err := fetchManifest(manifestURL)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("[dry-run] available version: %s\n", m.Version)
+				fmt.Printf("[dry-run] tarball URL: %s\n", m.URL)
+				fmt.Println("[dry-run] no changes applied.")
+				return nil
 			}
+			if err := CheckAndApplyUpdate(); err != nil {
+				return err
+			}
+			fmt.Println("Update completed successfully.")
+			return nil
 		},
 	}
+	updateCmd.Flags().Bool("dry-run", false, "Fetch and verify manifest without applying")
+	root.AddCommand(updateCmd)
 
-	rootCmd.AddCommand(startCmd, stopCmd, logsCmd, dashCmd, updateCmd)
+	// ── rollback ──────────────────────────────────────────────────────────────
+	root.AddCommand(&cobra.Command{
+		Use:   "rollback",
+		Short: "Re-apply the most recent backup tarball",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := RollbackUpdate(); err != nil {
+				return err
+			}
+			fmt.Println("Rollback completed.")
+			return nil
+		},
+	})
 
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-}
+	// ── maintenance ───────────────────────────────────────────────────────────
+	root.AddCommand(&cobra.Command{
+		Use:   "maintenance",
+		Short: "Toggle engine maintenance mode via gRPC",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			enabled, err := GRPCToggleMaintenance()
+			if err != nil {
+				return err
+			}
+			if enabled {
+				fmt.Println("🔴 Maintenance mode ENABLED.")
+			} else {
+				fmt.Println("🟢 Maintenance mode DISABLED.")
+			}
+			return nil
+		},
+	})
 
-func executeDockerCompose(args ...string) {
-	composeFile := "/opt/logistics-system/deploy/docker-compose.yml"
-	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
-		composeFile = "../deploy/docker-compose.yml"
-	}
-
-	// Docker Compose V2: "docker compose" instead of "docker-compose"
-	baseArgs := append([]string{"compose", "-f", composeFile}, args...)
-
-	cmd := exec.Command("docker", baseArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("docker compose error: %v\n", err)
+	if err := root.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }

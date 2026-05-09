@@ -1,37 +1,43 @@
-# ==========================================
-# Stage 1: Build the Go Binary
-# ==========================================
+# ── Stage 1: Generate proto + build binary ────────────────────────────────────
 FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
-# Copy dependency manifests first to leverage Docker caching
+# Install protoc and Go plugins so proto generation is reproducible in CI.
+RUN apk add --no-cache protobuf protobuf-dev curl
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest \
+ && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the remaining source code
 COPY . .
 
-# Compile the binary
-# CGO_ENABLED=0 ensures a standalone static binary without C dependencies
-# -ldflags="-w -s" strips debugging symbols, heavily obfuscating your IP
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o engine_bin .
+# Regenerate the proto bindings from source so the build always matches the .proto.
+RUN protoc \
+    --go_out=. --go_opt=paths=source_relative \
+    --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+    api/logistics.proto
 
-# ==========================================
-# Stage 2: Minimal Production Container
-# ==========================================
-FROM alpine:latest
+# BUILD_VERSION is injected by docker buildx / the CI pipeline.
+# Fallback to "unknown" so the binary still compiles in local builds.
+ARG BUILD_VERSION=unknown
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-w -s -X main.Version=${BUILD_VERSION}" \
+    -o engine_bin .
+
+# ── Stage 2: Minimal runtime image ───────────────────────────────────────────
+FROM alpine:3.20
+
+# ca-certificates is needed for HTTPS calls to Mapbox.
+RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 
-# Copy ONLY the compiled binary from the builder stage
 COPY --from=builder /app/engine_bin .
+RUN mkdir -p /app/sockets /app/data && chmod +x ./engine_bin
 
-# Create the isolated directories for the SQLite DB and Unix Socket
-RUN mkdir -p /app/sockets /app/data
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
+    CMD test -S /app/sockets/logistics.sock || exit 1
 
-# Ensure the binary is executable
-RUN chmod +x ./engine_bin
-
-# Execute the binary
 CMD ["./engine_bin"]

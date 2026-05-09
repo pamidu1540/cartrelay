@@ -1,20 +1,30 @@
 [Unit]
-Description=Logistics Engine Supervisor Service
+Description=Logistics System (Docker Compose stack)
 Requires=docker.service
-After=docker.service network.target
+After=docker.service network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/logistics-system/deploy
+EnvironmentFile=/opt/logistics-system/deploy/.env
 
-# Use the native CLI we compiled to boot the system
-ExecStart=/usr/local/bin/logistics start
-ExecStop=/usr/local/bin/logistics stop
+# Start
+ExecStart=/usr/bin/docker compose up -d --build
 
-# Automatically restart if the system encounters an unexpected failure
-Restart=on-failure
-RestartSec=10
+# Graceful stop — allow 30 s for in-flight orders to complete.
+ExecStop=/usr/bin/docker compose stop --timeout 30
+
+# Reload = rolling restart without downtime
+ExecReload=/usr/bin/docker compose up -d --build --no-deps
+
+TimeoutStartSec=120
+TimeoutStopSec=45
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=logistics
 
 [Install]
 WantedBy=multi-user.target
