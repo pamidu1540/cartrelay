@@ -9,6 +9,9 @@ on:
     paths:
       - 'engine/**'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -21,15 +24,25 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache-dependency-path: engine/go.sum
+          # Disable built-in cache — we manage it manually below to avoid
+          # failing when go.sum does not yet exist in engine/
+          cache: false
 
-      - name: Download Dependencies
-        working-directory: engine
-        run: go mod download
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('engine/go.sum', 'engine/go.mod') }}
+          restore-keys: go-${{ runner.os }}-
 
-      - name: Verify Dependencies
+      - name: Tidy & Download Dependencies
         working-directory: engine
-        run: go mod verify
+        run: |
+          go mod tidy
+          go mod download
+          go mod verify
 
       - name: Build
         working-directory: engine
@@ -37,10 +50,17 @@ jobs:
 
       - name: Run Tests
         working-directory: engine
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: |
+          if find . -name '*_test.go' | grep -q .; then
+            go test -v -race -coverprofile=coverage.out ./...
+          else
+            echo "No test files found — skipping."
+          fi
 
       - name: Upload Coverage Report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: go-coverage
           path: engine/coverage.out
+          if-no-files-found: ignore
