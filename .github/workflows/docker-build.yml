@@ -1,4 +1,4 @@
-name: Docker Build
+name: Docker Build & Push
 
 on:
   push:
@@ -15,36 +15,85 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  IMAGE_ENGINE: ghcr.io/${{ github.repository }}/engine
+  IMAGE_BOT:    ghcr.io/${{ github.repository }}/bot
 
 jobs:
   docker-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # needed to push to GHCR
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Prepare .env for CI
+      # Log in to GHCR on pushes to main or version tags; skip on PRs.
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare CI .env
         working-directory: deploy
         run: |
           cp .env.example .env
-          # Use sed to replace placeholder values — exact var names from .env.example
           sed -i 's|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=stub_ci_token|' .env
           sed -i 's|^INTERNAL_TOKEN=.*|INTERNAL_TOKEN=stub_ci_internal_00000000000000000000000000000000|' .env
           sed -i 's|^MAPBOX_TOKEN=.*|MAPBOX_TOKEN=stub_ci_mapbox|' .env
           sed -i 's|^ADMIN_USER_IDS=.*|ADMIN_USER_IDS=123456789|' .env
-          sed -i 's|^BUILD_VERSION=.*|BUILD_VERSION=ci-test|' .env
-          # Uncomment and set the license bypass vars (they are commented out by default)
+          sed -i 's|^BUILD_VERSION=.*|BUILD_VERSION=${{ github.ref_name }}|' .env
           sed -i 's|^# DEV_BYPASS_SECRET=.*|DEV_BYPASS_SECRET=stub_ci_bypass_secret_32chars000|' .env
           sed -i 's|^# SKIP_LICENSE_CHECK=.*|SKIP_LICENSE_CHECK=stub_ci_bypass_secret_32chars000|' .env
 
-      - name: Build engine image
-        working-directory: deploy
-        run: docker compose build engine --no-cache
+      - name: Derive image tags
+        id: meta-engine
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_ENGINE }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
 
-      - name: Build bot image
-        working-directory: deploy
-        run: docker compose build bot --no-cache
+      - name: Derive bot image tags
+        id: meta-bot
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_BOT }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
+
+      # Build engine — push only on non-PR events.
+      - name: Build & push engine image
+        uses: docker/build-push-action@v6
+        with:
+          context: engine
+          file: engine/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-engine.outputs.tags }}
+          labels: ${{ steps.meta-engine.outputs.labels }}
+          build-args: BUILD_VERSION=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push bot image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: bot/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-bot.outputs.tags }}
+          labels: ${{ steps.meta-bot.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

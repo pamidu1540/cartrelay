@@ -31,13 +31,28 @@ jobs:
         working-directory: engine
         run: go mod download
 
-      - name: Verify dependencies unchanged
+      - name: Verify go.sum is tidy
+        working-directory: engine
+        run: |
+          go mod tidy
+          if ! git diff --quiet go.mod go.sum; then
+            echo "go.mod or go.sum is out of date — run 'go mod tidy' and commit."
+            git diff go.mod go.sum
+            exit 1
+          fi
+
+      - name: Verify module graph
         working-directory: engine
         run: go mod verify
 
+      # FIX: go vet catches format-string bugs, unreachable code, etc.
+      - name: go vet
+        working-directory: engine
+        run: go vet ./...
+
       - name: Build
         working-directory: engine
-        run: go build ./...
+        run: go build -ldflags="-X main.Version=ci-test" ./...
 
       - name: Test
         working-directory: engine
@@ -45,7 +60,7 @@ jobs:
           if find . -name '*_test.go' | grep -q .; then
             go test -v -race ./...
           else
-            echo "No tests found — skipping."
+            echo "No tests yet — skipping."
           fi
 
   build-supervisor:
@@ -64,13 +79,25 @@ jobs:
         working-directory: supervisor
         run: go mod download
 
-      - name: Verify dependencies unchanged
+      - name: Verify go.sum is tidy
         working-directory: supervisor
-        run: go mod verify
+        run: |
+          go mod tidy
+          if ! git diff --quiet go.mod go.sum; then
+            echo "go.mod or go.sum is out of date."
+            git diff go.mod go.sum
+            exit 1
+          fi
 
+      - name: go vet
+        working-directory: supervisor
+        run: go vet ./...
+
+      # FIX: Pass -X main.Version so the supervisor build matches the engine.
+      # supervisor/main.go must declare: var Version = "dev"
       - name: Build
         working-directory: supervisor
-        run: go build ./...
+        run: go build -ldflags="-X main.Version=ci-test" ./...
 
       - name: Test
         working-directory: supervisor
@@ -78,5 +105,5 @@ jobs:
           if find . -name '*_test.go' | grep -q .; then
             go test -v -race ./...
           else
-            echo "No tests found — skipping."
+            echo "No tests yet — skipping."
           fi
