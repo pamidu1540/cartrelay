@@ -5,8 +5,6 @@ on:
     paths:
       - 'engine/**'
       - 'supervisor/**'
-      - 'go.mod'
-      - 'go.sum'
       - '.github/workflows/go-build-test.yml'
   pull_request:
     paths:
@@ -17,56 +15,68 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build-test:
+  build-engine:
+    name: Build engine (Go)
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Go Environment
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache: false
+          cache: true
+          cache-dependency-path: engine/go.sum
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
+      - name: Download dependencies
+        working-directory: engine
+        run: go mod download
+
+      - name: Verify dependencies unchanged
+        working-directory: engine
+        run: go mod verify
+
+      - name: Build
+        working-directory: engine
+        run: go build ./...
+
+      - name: Test
+        working-directory: engine
+        run: |
+          if find . -name '*_test.go' | grep -q .; then
+            go test -v -race ./...
+          else
+            echo "No tests found — skipping."
+          fi
+
+  build-supervisor:
+    name: Build supervisor (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
-          restore-keys: go-${{ runner.os }}-
+          go-version: '1.22'
+          cache: true
+          cache-dependency-path: supervisor/go.sum
 
-      - name: Print repo structure (debug)
-        run: find . -name 'go.mod' | sort
+      - name: Download dependencies
+        working-directory: supervisor
+        run: go mod download
 
-      - name: Tidy & Download Dependencies
+      - name: Verify dependencies unchanged
+        working-directory: supervisor
+        run: go mod verify
+
+      - name: Build
+        working-directory: supervisor
+        run: go build ./...
+
+      - name: Test
+        working-directory: supervisor
         run: |
-          # Run go mod tidy in every directory that has a go.mod
-          find . -name 'go.mod' -not -path '*/.git/*' | while read modfile; do
-            dir=$(dirname "$modfile")
-            echo "=== Running go mod tidy in $dir ==="
-            (cd "$dir" && go mod tidy && go mod download && go mod verify)
-          done
-
-      - name: Build all Go modules
-        run: |
-          find . -name 'go.mod' -not -path '*/.git/*' | while read modfile; do
-            dir=$(dirname "$modfile")
-            echo "=== Building in $dir ==="
-            (cd "$dir" && go build ./...)
-          done
-
-      - name: Run Tests
-        run: |
-          find . -name 'go.mod' -not -path '*/.git/*' | while read modfile; do
-            dir=$(dirname "$modfile")
-            echo "=== Testing in $dir ==="
-            if find "$dir" -name '*_test.go' | grep -q .; then
-              (cd "$dir" && go test -v -race ./...)
-            else
-              echo "No test files in $dir — skipping."
-            fi
-          done
+          if find . -name '*_test.go' | grep -q .; then
+            go test -v -race ./...
+          else
+            echo "No tests found — skipping."
+          fi

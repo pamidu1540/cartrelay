@@ -27,30 +27,24 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Print repo structure (debug)
-        run: |
-          find . -name 'docker-compose.yml' -o -name 'compose.yml' -o -name 'docker-compose.yaml' | sort
-          ls deploy/ || true
-
-      - name: Create .env for CI
-        # README says: cp deploy/.env.example deploy/.env
-        # We do the same but with CI-safe stub values
-        run: |
-          if [ -f deploy/.env.example ]; then
-            cp deploy/.env.example deploy/.env
-          else
-            touch deploy/.env
-          fi
-          # Override/add every var that compose requires to be non-empty
-          cat >> deploy/.env << 'EOF'
-          TELEGRAM_BOT_TOKEN=stub_ci_token
-          INTERNAL_TOKEN=stub_ci_internal_32charsXXXXXX00
-          MAPBOX_TOKEN=stub_ci_mapbox
-          DEV_BYPASS_SECRET=stub_ci_bypass
-          SKIP_LICENSE_CHECK=stub_ci_bypass
-          EOF
-
-      - name: Build Docker images via Compose
-        # README says: cd deploy && docker compose up -d --build
+      - name: Prepare .env for CI
         working-directory: deploy
-        run: docker compose build --no-cache
+        run: |
+          cp .env.example .env
+          # Use sed to replace placeholder values — exact var names from .env.example
+          sed -i 's|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=stub_ci_token|' .env
+          sed -i 's|^INTERNAL_TOKEN=.*|INTERNAL_TOKEN=stub_ci_internal_00000000000000000000000000000000|' .env
+          sed -i 's|^MAPBOX_TOKEN=.*|MAPBOX_TOKEN=stub_ci_mapbox|' .env
+          sed -i 's|^ADMIN_USER_IDS=.*|ADMIN_USER_IDS=123456789|' .env
+          sed -i 's|^BUILD_VERSION=.*|BUILD_VERSION=ci-test|' .env
+          # Uncomment and set the license bypass vars (they are commented out by default)
+          sed -i 's|^# DEV_BYPASS_SECRET=.*|DEV_BYPASS_SECRET=stub_ci_bypass_secret_32chars000|' .env
+          sed -i 's|^# SKIP_LICENSE_CHECK=.*|SKIP_LICENSE_CHECK=stub_ci_bypass_secret_32chars000|' .env
+
+      - name: Build engine image
+        working-directory: deploy
+        run: docker compose build engine --no-cache
+
+      - name: Build bot image
+        working-directory: deploy
+        run: docker compose build bot --no-cache
