@@ -9,9 +9,6 @@ dependencies = [
     "protobuf>=5.27.0",
 ]
 
-# Exposed as [dev] extras so CI can install with:
-#   pip install -e ".[dev]"
-# The old [tool.uv] table was uv-specific and invisible to standard pip.
 [project.optional-dependencies]
 dev = [
     "pytest>=8.2",
@@ -22,6 +19,12 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+# Never lint generated proto files
+exclude = [
+    "src/api/logistics_pb2.py",
+    "src/api/logistics_pb2_grpc.py",
+    "src/api/__init__.py",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]

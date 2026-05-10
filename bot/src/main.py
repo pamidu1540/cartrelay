@@ -14,7 +14,6 @@ from telegram.ext import (
     filters,
 )
 
-from grpc_client import engine
 from admin_handlers import (
     ADMIN_ADD_CAT,
     ADMIN_ADD_NAME,
@@ -42,6 +41,7 @@ from admin_handlers import (
     wizard_start_add_item,
     wizard_start_edit_stock,
 )
+from grpc_client import engine
 from user_handlers import (
     AWAIT_LOCATION,
     CONFIRM_CHECKOUT,
