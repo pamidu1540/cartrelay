@@ -59,7 +59,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.25'
           # Cache against go.mod files — go.sum may not yet be correct
           cache-dependency-path: |
             engine/go.mod
@@ -161,7 +161,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.25'
           cache-dependency-path: |
             engine/go.sum
             supervisor/go.sum
