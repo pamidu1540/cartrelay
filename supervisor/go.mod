@@ -7,7 +7,7 @@ toolchain go1.25.10
 require (
 	github.com/charmbracelet/bubbletea v0.26.4
 	github.com/charmbracelet/lipgloss v0.11.0
-	github.com/docker/docker v28.0.4+incompatible
+	github.com/docker/docker v29.3.1+incompatible
 	github.com/spf13/cobra v1.8.1
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
