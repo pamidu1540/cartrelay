@@ -1,19 +1,31 @@
 name: CodeQL Analysis
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Kept as a separate workflow because:
+#   - It runs on a weekly schedule regardless of pushes
+#   - It analyses PRs independently
+#   - Results go to the GitHub Security tab (separate from CI green/red)
+#   - GitHub's GHAS billing is per-language per-commit, not per-workflow
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - 'engine/**'
+      - 'supervisor/**'
+      - 'bot/**'
   pull_request:
-    branches:
-      - main
+    branches: [main]
   schedule:
-    # Run every Wednesday at 08:00 UTC
-    - cron: '0 8 * * 3'
+    - cron: '0 6 * * 1'   # Every Monday 06:00 UTC
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   analyze:
-    name: Analyze (${{ matrix.language }})
+    name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -23,30 +35,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language:
-          - go
-          - python
+        include:
+          - language: go
+            build-mode: autobuild
+          - language: python
+            build-mode: none
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Always analyse the latest committed code including prep's output
+          ref: main
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-
-      - name: Setup Go (for Go analysis)
-        if: matrix.language == 'go'
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-          cache-dependency-path: engine/go.sum
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-and-quality
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: '/language:${{ matrix.language }}'
+          category: /language:${{ matrix.language }}

@@ -160,6 +160,16 @@ func main() {
 		},
 	})
 
+
+	// ── version ───────────────────────────────────────────────────────────────
+	root.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print supervisor version",
+		Run: func(cmd *cobra.Command, _ []string) {
+			fmt.Printf("logistics-supervisor %s\n", Version)
+		},
+	})
+
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

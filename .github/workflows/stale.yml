@@ -1,44 +1,43 @@
-name: Stale Issues & PRs
+name: Mark Stale Issues and PRs
 
 on:
   schedule:
-    # Runs every day at 00:00 UTC
-    - cron: '0 0 * * *'
+    - cron: '0 8 * * 1'   # Every Monday 08:00 UTC
   workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
 
 jobs:
   stale:
+    name: Stale issues and PRs
     runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
 
     steps:
-      - name: Mark and close stale issues and PRs
+      - name: Mark stale issues and pull requests
         uses: actions/stale@v9
         with:
-          # Issues
-          days-before-issue-stale: 30
-          days-before-issue-close: 7
-          stale-issue-label: 'stale'
           stale-issue-message: >
-            This issue has had no activity for 30 days and has been marked as stale.
-            It will be closed in 7 days unless there is further activity.
+            This issue has been automatically marked as stale because it has
+            not had any activity in 30 days. It will be closed in 7 days unless
+            it is updated. Thank you for your contributions!
+          stale-pr-message: >
+            This pull request has been automatically marked as stale because it
+            has not had any activity in 14 days. It will be closed in 7 days
+            unless it is updated or someone requests a review. Thank you!
           close-issue-message: >
             This issue has been automatically closed due to inactivity.
-            Feel free to reopen it if it is still relevant.
-
-          # Pull Requests
-          days-before-pr-stale: 14
-          days-before-pr-close: 7
-          stale-pr-label: 'stale'
-          stale-pr-message: >
-            This pull request has had no activity for 14 days and has been marked as stale.
-            It will be closed in 7 days unless there is further activity.
+            Please reopen it if it is still relevant.
           close-pr-message: >
             This pull request has been automatically closed due to inactivity.
-            Feel free to reopen it if you'd like to continue the work.
-
-          # Never mark issues/PRs with these labels as stale
-          exempt-issue-labels: 'pinned,security,bug'
-          exempt-pr-labels: 'pinned,security,work-in-progress'
+            Please reopen it if you would like to continue working on it.
+          days-before-issue-stale: 30
+          days-before-pr-stale: 14
+          days-before-issue-close: 7
+          days-before-pr-close: 7
+          # Never mark these labels as stale
+          exempt-issue-labels: 'pinned,security,bug,in-progress'
+          exempt-pr-labels: 'pinned,security,in-progress'
+          # Only process issues/PRs that match
+          operations-per-run: 100

@@ -9,9 +9,9 @@ dependencies = [
     "protobuf>=5.27.0",
 ]
 
-# FIX: Expose dev extras so CI can install with: pip install -e ".[dev]"
-# Previously there was no [project.optional-dependencies] table, so
-# pip install -e ".[dev]" would fail and ruff/pytest would never be installed.
+# Exposed as [dev] extras so CI can install with:
+#   pip install -e ".[dev]"
+# The old [tool.uv] table was uv-specific and invisible to standard pip.
 [project.optional-dependencies]
 dev = [
     "pytest>=8.2",
@@ -26,3 +26,6 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
