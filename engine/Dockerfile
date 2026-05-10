@@ -1,5 +1,5 @@
 # ── Stage 1: Generate proto + build binary ────────────────────────────────────
-FROM golang:1.25-alpine AS builder
+FROM golang:1.25.10-alpine AS builder
 
 WORKDIR /app
 
