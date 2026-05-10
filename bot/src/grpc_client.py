@@ -5,13 +5,14 @@ FIX: Channel pool (8 channels, round-robin) replaces a single channel so
 concurrent Telegram update handlers don't queue on one connection.
 """
 
-from itertools import cycle
 import logging
 import os
 import sys
 import uuid
+from itertools import cycle
 
 import grpc
+
 from api import logistics_pb2, logistics_pb2_grpc
 
 logger = logging.getLogger(__name__)
