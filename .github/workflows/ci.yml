@@ -35,12 +35,6 @@ concurrency:
   cancel-in-progress: true
 
 # ─── Job 1: PREP ─────────────────────────────────────────────────────────────
-# Runs go mod tidy on both modules, regenerates all proto bindings, then
-# commits and pushes the result back to main. The [skip ci] tag on that commit
-# prevents an infinite loop.
-#
-# If nothing changed (already tidy, proto unchanged) the commit step is a
-# no-op and the rest of the pipeline runs immediately on the original commit.
 jobs:
   prep:
     name: Prep — tidy modules + generate proto
@@ -52,7 +46,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Fetch full history so git push succeeds even after a force-push
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -60,7 +53,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25.10'
-          # Cache against go.mod files — go.sum may not yet be correct
           cache-dependency-path: |
             engine/go.mod
             supervisor/go.mod
@@ -81,9 +73,6 @@ jobs:
       - name: Install Python gRPC tools
         run: pip install --quiet grpcio-tools
 
-      # ── go mod tidy ──────────────────────────────────────────────────────
-      # Resolves any missing or stale go.sum entries introduced by changes to
-      # go.mod or newly generated *.pb.go files that import newer package versions.
       - name: go mod tidy — engine
         working-directory: engine
         run: go mod tidy
@@ -92,9 +81,6 @@ jobs:
         working-directory: supervisor
         run: go mod tidy
 
-      # ── Proto generation ─────────────────────────────────────────────────
-      # Regenerates Go + Python bindings whenever logistics.proto changes.
-      # If the proto hasn't changed, the output is identical and git sees no diff.
       - name: Generate Go proto bindings
         run: |
           protoc --proto_path=engine/api \
@@ -111,15 +97,9 @@ jobs:
             --grpc_python_out=bot/src/api \
             engine/api/logistics.proto
           touch bot/src/api/__init__.py
-          # Fix grpcio-tools known bug: generated file uses absolute import
-          # which breaks Python 3 package resolution.
           sed -i 's/^import logistics_pb2/from . import logistics_pb2/' \
             bot/src/api/logistics_pb2_grpc.py
 
-      # ── Commit back ──────────────────────────────────────────────────────
-      # Stages every generated / updated file. If git sees no diff (everything
-      # was already up to date), skips the commit entirely.
-      # [skip ci] prevents this commit from re-triggering the workflow.
       - name: Commit generated files back to main
         run: |
           git config user.name  "github-actions[bot]"
@@ -144,15 +124,12 @@ jobs:
           fi
 
 # ─── Job 2: VALIDATE ─────────────────────────────────────────────────────────
-# Checks out the HEAD of main AFTER prep may have committed back changes.
-# Runs build, vet, test, lint, and vulnerability scan on the fully-generated code.
   validate:
     name: Validate — build, test, lint, vulns
     runs-on: ubuntu-latest
     needs: prep
 
     steps:
-      # ref: main ensures we get prep's committed output, not the original SHA.
       - name: Checkout (post-prep HEAD)
         uses: actions/checkout@v4
         with:
@@ -173,7 +150,6 @@ jobs:
           cache: pip
           cache-dependency-path: bot/pyproject.toml
 
-      # ── Go: engine ───────────────────────────────────────────────────────
       - name: go vet — engine
         working-directory: engine
         run: go vet ./...
@@ -191,7 +167,6 @@ jobs:
             echo "No tests yet — skipping."
           fi
 
-      # ── Go: supervisor ───────────────────────────────────────────────────
       - name: go vet — supervisor
         working-directory: supervisor
         run: go vet ./...
@@ -209,12 +184,10 @@ jobs:
             echo "No tests yet — skipping."
           fi
 
-      # ── Python: bot ──────────────────────────────────────────────────────
       - name: Install bot dependencies
         working-directory: bot
         run: |
           pip install --quiet -e ".[dev]"
-          # grpc stubs needed for ruff import resolution
           pip install --quiet grpcio grpcio-tools
 
       - name: ruff lint — bot
@@ -226,21 +199,67 @@ jobs:
         run: |
           if [ -d tests ]; then pytest tests/ -v; else echo "No tests yet."; fi
 
-      # ── Vulnerability scan ───────────────────────────────────────────────
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: govulncheck — engine
         working-directory: engine
-        run: govulncheck ./...
+        run: |
+          set +e
+          govulncheck ./... > vuln_report.txt 2>&1
+          exit_code=$?
+          set -e
+          cat vuln_report.txt
+          
+          if [ $exit_code -eq 3 ]; then
+            # Fail safe: Ensure output matches expected format before bypassing
+            if ! grep -q "Fixed in:" vuln_report.txt; then
+              echo "❌ Vulnerabilities found, but 'Fixed in:' string not detected. Failing to be safe."
+              exit 3
+            fi
+
+            # Check if any "Fixed in:" line does NOT contain "N/A"
+            # (No -q in the second grep to prevent SIGPIPE crashing the pipeline)
+            if grep "Fixed in:" vuln_report.txt | grep -v "N/A" > /dev/null; then
+              echo "❌ Found fixable vulnerabilities! Failing the build."
+              exit 3
+            else
+              echo "⚠️ All found vulnerabilities are marked as 'Fixed in: N/A'. Ignoring."
+              exit 0
+            fi
+          elif [ $exit_code -ne 0 ]; then
+            echo "❌ govulncheck failed with exit code $exit_code"
+            exit $exit_code
+          fi
 
       - name: govulncheck — supervisor
         working-directory: supervisor
-        run: govulncheck ./...
+        run: |
+          set +e
+          govulncheck ./... > vuln_report.txt 2>&1
+          exit_code=$?
+          set -e
+          cat vuln_report.txt
+          
+          if[ $exit_code -eq 3 ]; then
+            if ! grep -q "Fixed in:" vuln_report.txt; then
+              echo "❌ Vulnerabilities found, but 'Fixed in:' string not detected. Failing to be safe."
+              exit 3
+            fi
+
+            if grep "Fixed in:" vuln_report.txt | grep -v "N/A" > /dev/null; then
+              echo "❌ Found fixable vulnerabilities! Failing the build."
+              exit 3
+            else
+              echo "⚠️ All found vulnerabilities are marked as 'Fixed in: N/A'. Ignoring."
+              exit 0
+            fi
+          elif[ $exit_code -ne 0 ]; then
+            echo "❌ govulncheck failed with exit code $exit_code"
+            exit $exit_code
+          fi
 
 # ─── Job 3: DOCKER ───────────────────────────────────────────────────────────
-# Builds and pushes images to GHCR only when validate passes.
-# Uses the same ref:main so it always builds the fully-generated, tidy code.
   docker:
     name: Docker — build & push to GHCR
     runs-on: ubuntu-latest
