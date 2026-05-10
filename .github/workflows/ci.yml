@@ -119,7 +119,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "Nothing to commit — all generated files are already up to date."
           else
-            git commit -m "chore: auto-update generated files [skip ci]"
+            git commit -m "chore: auto-update generated files[skip ci]"
             git push origin main
           fi
 
@@ -226,7 +226,7 @@ jobs:
               echo "⚠️ All found vulnerabilities are marked as 'Fixed in: N/A'. Ignoring."
               exit 0
             fi
-          elif[ $exit_code -ne 0 ]; then
+          elif [ $exit_code -ne 0 ]; then
             echo "❌ govulncheck failed with exit code $exit_code"
             exit $exit_code
           fi
@@ -240,7 +240,7 @@ jobs:
           set -e
           cat vuln_report.txt
           
-          if [ $exit_code -eq 3 ]; then
+          if[ $exit_code -eq 3 ]; then
             if ! grep -q "Fixed in:" vuln_report.txt; then
               echo "❌ Vulnerabilities found, but 'Fixed in:' string not detected. Failing to be safe."
               exit 3
@@ -253,7 +253,7 @@ jobs:
               echo "⚠️ All found vulnerabilities are marked as 'Fixed in: N/A'. Ignoring."
               exit 0
             fi
-          elif [ $exit_code -ne 0 ]; then
+          elif[ $exit_code -ne 0 ]; then
             echo "❌ govulncheck failed with exit code $exit_code"
             exit $exit_code
           fi
