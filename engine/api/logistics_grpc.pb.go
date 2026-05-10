@@ -24,10 +24,12 @@ const (
 	LogisticsEngine_GetCatalog_FullMethodName        = "/logistics.LogisticsEngine/GetCatalog"
 	LogisticsEngine_AddItem_FullMethodName           = "/logistics.LogisticsEngine/AddItem"
 	LogisticsEngine_EditItemPrice_FullMethodName     = "/logistics.LogisticsEngine/EditItemPrice"
+	LogisticsEngine_EditItemStock_FullMethodName     = "/logistics.LogisticsEngine/EditItemStock"
 	LogisticsEngine_RemoveItem_FullMethodName        = "/logistics.LogisticsEngine/RemoveItem"
 	LogisticsEngine_CalculateQuote_FullMethodName    = "/logistics.LogisticsEngine/CalculateQuote"
 	LogisticsEngine_PlaceOrder_FullMethodName        = "/logistics.LogisticsEngine/PlaceOrder"
 	LogisticsEngine_GetActiveOrders_FullMethodName   = "/logistics.LogisticsEngine/GetActiveOrders"
+	LogisticsEngine_GetAllOrders_FullMethodName      = "/logistics.LogisticsEngine/GetAllOrders"
 	LogisticsEngine_UpdateOrderStatus_FullMethodName = "/logistics.LogisticsEngine/UpdateOrderStatus"
 )
 
@@ -40,10 +42,12 @@ type LogisticsEngineClient interface {
 	GetCatalog(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*CatalogResponse, error)
 	AddItem(ctx context.Context, in *Item, opts ...grpc.CallOption) (*StatusResponse, error)
 	EditItemPrice(ctx context.Context, in *EditPriceRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	EditItemStock(ctx context.Context, in *EditStockRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	RemoveItem(ctx context.Context, in *ItemId, opts ...grpc.CallOption) (*StatusResponse, error)
 	CalculateQuote(ctx context.Context, in *QuoteRequest, opts ...grpc.CallOption) (*QuoteResponse, error)
 	PlaceOrder(ctx context.Context, in *OrderRequest, opts ...grpc.CallOption) (*OrderResponse, error)
 	GetActiveOrders(ctx context.Context, in *UserId, opts ...grpc.CallOption) (*OrderListResponse, error)
+	GetAllOrders(ctx context.Context, in *GetAllOrdersRequest, opts ...grpc.CallOption) (*OrderListResponse, error)
 	UpdateOrderStatus(ctx context.Context, in *UpdateStatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 }
 
@@ -105,6 +109,16 @@ func (c *logisticsEngineClient) EditItemPrice(ctx context.Context, in *EditPrice
 	return out, nil
 }
 
+func (c *logisticsEngineClient) EditItemStock(ctx context.Context, in *EditStockRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatusResponse)
+	err := c.cc.Invoke(ctx, LogisticsEngine_EditItemStock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *logisticsEngineClient) RemoveItem(ctx context.Context, in *ItemId, opts ...grpc.CallOption) (*StatusResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StatusResponse)
@@ -145,6 +159,16 @@ func (c *logisticsEngineClient) GetActiveOrders(ctx context.Context, in *UserId,
 	return out, nil
 }
 
+func (c *logisticsEngineClient) GetAllOrders(ctx context.Context, in *GetAllOrdersRequest, opts ...grpc.CallOption) (*OrderListResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OrderListResponse)
+	err := c.cc.Invoke(ctx, LogisticsEngine_GetAllOrders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *logisticsEngineClient) UpdateOrderStatus(ctx context.Context, in *UpdateStatusRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StatusResponse)
@@ -164,10 +188,12 @@ type LogisticsEngineServer interface {
 	GetCatalog(context.Context, *Empty) (*CatalogResponse, error)
 	AddItem(context.Context, *Item) (*StatusResponse, error)
 	EditItemPrice(context.Context, *EditPriceRequest) (*StatusResponse, error)
+	EditItemStock(context.Context, *EditStockRequest) (*StatusResponse, error)
 	RemoveItem(context.Context, *ItemId) (*StatusResponse, error)
 	CalculateQuote(context.Context, *QuoteRequest) (*QuoteResponse, error)
 	PlaceOrder(context.Context, *OrderRequest) (*OrderResponse, error)
 	GetActiveOrders(context.Context, *UserId) (*OrderListResponse, error)
+	GetAllOrders(context.Context, *GetAllOrdersRequest) (*OrderListResponse, error)
 	UpdateOrderStatus(context.Context, *UpdateStatusRequest) (*StatusResponse, error)
 	mustEmbedUnimplementedLogisticsEngineServer()
 }
@@ -194,6 +220,9 @@ func (UnimplementedLogisticsEngineServer) AddItem(context.Context, *Item) (*Stat
 func (UnimplementedLogisticsEngineServer) EditItemPrice(context.Context, *EditPriceRequest) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EditItemPrice not implemented")
 }
+func (UnimplementedLogisticsEngineServer) EditItemStock(context.Context, *EditStockRequest) (*StatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method EditItemStock not implemented")
+}
 func (UnimplementedLogisticsEngineServer) RemoveItem(context.Context, *ItemId) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveItem not implemented")
 }
@@ -205,6 +234,9 @@ func (UnimplementedLogisticsEngineServer) PlaceOrder(context.Context, *OrderRequ
 }
 func (UnimplementedLogisticsEngineServer) GetActiveOrders(context.Context, *UserId) (*OrderListResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetActiveOrders not implemented")
+}
+func (UnimplementedLogisticsEngineServer) GetAllOrders(context.Context, *GetAllOrdersRequest) (*OrderListResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAllOrders not implemented")
 }
 func (UnimplementedLogisticsEngineServer) UpdateOrderStatus(context.Context, *UpdateStatusRequest) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateOrderStatus not implemented")
@@ -320,6 +352,24 @@ func _LogisticsEngine_EditItemPrice_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LogisticsEngine_EditItemStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EditStockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogisticsEngineServer).EditItemStock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LogisticsEngine_EditItemStock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogisticsEngineServer).EditItemStock(ctx, req.(*EditStockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _LogisticsEngine_RemoveItem_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ItemId)
 	if err := dec(in); err != nil {
@@ -392,6 +442,24 @@ func _LogisticsEngine_GetActiveOrders_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LogisticsEngine_GetAllOrders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAllOrdersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogisticsEngineServer).GetAllOrders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LogisticsEngine_GetAllOrders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogisticsEngineServer).GetAllOrders(ctx, req.(*GetAllOrdersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _LogisticsEngine_UpdateOrderStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UpdateStatusRequest)
 	if err := dec(in); err != nil {
@@ -438,6 +506,10 @@ var LogisticsEngine_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _LogisticsEngine_EditItemPrice_Handler,
 		},
 		{
+			MethodName: "EditItemStock",
+			Handler:    _LogisticsEngine_EditItemStock_Handler,
+		},
+		{
 			MethodName: "RemoveItem",
 			Handler:    _LogisticsEngine_RemoveItem_Handler,
 		},
@@ -452,6 +524,10 @@ var LogisticsEngine_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetActiveOrders",
 			Handler:    _LogisticsEngine_GetActiveOrders_Handler,
+		},
+		{
+			MethodName: "GetAllOrders",
+			Handler:    _LogisticsEngine_GetAllOrders_Handler,
 		},
 		{
 			MethodName: "UpdateOrderStatus",
