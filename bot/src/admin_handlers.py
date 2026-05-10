@@ -13,14 +13,13 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
-
+from datetime import datetime, timezone
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, ConversationHandler
 
-from grpc_client import engine
 from api import logistics_pb2
+from grpc_client import engine
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +168,6 @@ async def _show_orders(
     lines = []
     action_rows = []
     for o in orders:
-        from datetime import datetime, timezone
         dt = datetime.fromtimestamp(o.timestamp, tz=timezone.utc).strftime("%d %b %H:%M")
         lines.append(
             f"`{o.order_id[:12]}…`  {o.status.upper()}\n"
@@ -178,7 +176,7 @@ async def _show_orders(
         if o.status == "pending":
             action_rows.append([
                 InlineKeyboardButton(f"✅ Dispatch {o.order_id[:8]}", callback_data=f"dispatch_{o.order_id}"),
-                InlineKeyboardButton(f"❌ Cancel",                    callback_data=f"cancelord_{o.order_id}"),
+                InlineKeyboardButton("❌ Cancel",                    callback_data=f"cancelord_{o.order_id}"),
             ])
 
     # Pagination controls

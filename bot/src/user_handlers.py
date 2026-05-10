@@ -10,11 +10,8 @@ Optimizations applied:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
-from typing import Any
-
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -50,14 +47,8 @@ async def _flush_loop() -> None:
         now = time.monotonic()
         for uid, ts in list(_cart_dirty.items()):
             if now - ts >= 5.0:
-                cart = _cart_mem.get(uid, {})
-                try:
-                    await engine.add_item(  # re-use save path via engine helper
-                        None  # placeholder — engine.save_cart below
-                    )
-                except Exception:
-                    pass  # will retry next cycle
-                # Use the grpc client's save_cart if available, otherwise skip
+                # Cart flush is a no-op until engine.save_cart RPC is wired up.
+                # The in-memory cart (_cart_mem) remains valid for the session.
                 del _cart_dirty[uid]
 
 
