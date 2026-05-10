@@ -19,7 +19,7 @@ name: CI
 on:
   push:
     branches: [main]
-    #[skip ci] commits from the prep job never re-trigger this workflow.
+    # [skip ci] commits from the prep job never re-trigger this workflow.
   workflow_dispatch:
 
 env:
@@ -197,7 +197,7 @@ jobs:
       - name: pytest — bot
         working-directory: bot
         run: |
-          if[ -d tests ]; then pytest tests/ -v; else echo "No tests yet."; fi
+          if [ -d tests ]; then pytest tests/ -v; else echo "No tests yet."; fi
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -211,7 +211,7 @@ jobs:
           set -e
           cat vuln_report.txt
           
-          if [ $exit_code -eq 3 ]; then
+          if[ $exit_code -eq 3 ]; then
             # Fail safe: Ensure output matches expected format before bypassing
             if ! grep -q "Fixed in:" vuln_report.txt; then
               echo "❌ Vulnerabilities found, but 'Fixed in:' string not detected. Failing to be safe."
@@ -226,7 +226,7 @@ jobs:
               echo "⚠️ All found vulnerabilities are marked as 'Fixed in: N/A'. Ignoring."
               exit 0
             fi
-          elif [ $exit_code -ne 0 ]; then
+          elif[ $exit_code -ne 0 ]; then
             echo "❌ govulncheck failed with exit code $exit_code"
             exit $exit_code
           fi
@@ -235,4 +235,87 @@ jobs:
         working-directory: supervisor
         run: |
           set +e
-          govulncheck ./... > vuln_report.tx
+          govulncheck ./... > vuln_report.txt 2>&1
+          exit_code=$?
+          set -e
+          cat vuln_report.txt
+          
+          if [ $exit_code -eq 3 ]; then
+            if ! grep -q "Fixed in:" vuln_report.txt; then
+              echo "❌ Vulnerabilities found, but 'Fixed in:' string not detected. Failing to be safe."
+              exit 3
+            fi
+
+            if grep "Fixed in:" vuln_report.txt | grep -v "N/A" > /dev/null; then
+              echo "❌ Found fixable vulnerabilities! Failing the build."
+              exit 3
+            else
+              echo "⚠️ All found vulnerabilities are marked as 'Fixed in: N/A'. Ignoring."
+              exit 0
+            fi
+          elif [ $exit_code -ne 0 ]; then
+            echo "❌ govulncheck failed with exit code $exit_code"
+            exit $exit_code
+          fi
+
+# ─── Job 3: DOCKER ───────────────────────────────────────────────────────────
+  docker:
+    name: Docker — build & push to GHCR
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout (post-prep HEAD)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare CI .env
+        working-directory: deploy
+        run: |
+          cp .env.example .env
+          sed -i 's|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=stub_ci_token|'                      .env
+          sed -i 's|^INTERNAL_TOKEN=.*|INTERNAL_TOKEN=stub_ci_internal_00000000000000000000|'       .env
+          sed -i 's|^MAPBOX_TOKEN=.*|MAPBOX_TOKEN=stub_ci_mapbox|'                                 .env
+          sed -i 's|^ADMIN_USER_IDS=.*|ADMIN_USER_IDS=123456789|'                                  .env
+          sed -i 's|^BUILD_VERSION=.*|BUILD_VERSION=${{ github.sha }}|'                            .env
+          sed -i 's|^# DEV_BYPASS_SECRET=.*|DEV_BYPASS_SECRET=stub_ci_bypass_secret_32chars000|'   .env
+          sed -i 's|^# SKIP_LICENSE_CHECK=.*|SKIP_LICENSE_CHECK=stub_ci_bypass_secret_32chars000|' .env
+
+      - name: Build & push engine image
+        uses: docker/build-push-action@v6
+        with:
+          context: engine
+          file: engine/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_ENGINE }}:main
+            ${{ env.IMAGE_ENGINE }}:${{ github.sha }}
+          build-args: BUILD_VERSION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push bot image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: bot/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_BOT }}:main
+            ${{ env.IMAGE_BOT }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
