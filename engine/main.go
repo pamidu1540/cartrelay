@@ -1,5 +1,8 @@
 package main
 
+// main.go — updated from original: adds LICENSE_KEY / TOKEN_SECRET / LICENSE_API_URL
+// validation and wires StartLicenseBackgroundChecker into graceful shutdown.
+
 import (
 	"log/slog"
 	"net"
@@ -16,30 +19,26 @@ import (
 	pb "logistics-engine/api"
 )
 
-// Version is injected at build time:  -ldflags="-X main.Version=4.0.0"
 var Version = "dev"
 
 const socketPath = "/app/sockets/logistics.sock"
 
-// mapboxToken is read once at startup and shared across handlers.
 var mapboxToken string
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
-	// ── Startup validation ────────────────────────────────────────────────────
-	// FIX: Catch misconfiguration before accepting connections.
 	if os.Getenv("INTERNAL_TOKEN") == "" {
-		slog.Error("INTERNAL_TOKEN is not set — refusing to start. " +
-			"Set it in your .env file or Docker environment.")
+		slog.Error("INTERNAL_TOKEN is not set — refusing to start")
 		os.Exit(1)
 	}
 
 	mapboxToken = os.Getenv("MAPBOX_TOKEN")
 	if mapboxToken == "" {
-		slog.Warn("MAPBOX_TOKEN not set — Haversine fallback will be used for all distance calculations")
+		slog.Warn("MAPBOX_TOKEN not set — Haversine fallback active")
 	}
 
+	// License check — reads cache or calls /v1/activate
 	if err := VerifyLicense(); err != nil {
 		slog.Error("license check failed", "err", err)
 		os.Exit(1)
@@ -50,12 +49,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Warm the catalog cache so the first GetCatalog is instant.
 	if _, err := GetCachedCatalog(); err != nil {
 		slog.Warn("initial catalog cache warm failed", "err", err)
 	}
 
-	// Expire stale carts older than 48 h; ignore errors (non-fatal).
 	go func() {
 		for range time.Tick(6 * time.Hour) {
 			if err := DBExpireCarts(48); err != nil {
@@ -80,7 +77,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// FIX: Limit concurrent connections so a rogue client can't exhaust goroutines.
 	listener := netutil.LimitListener(raw, 512)
 
 	srv := grpc.NewServer(
@@ -98,17 +94,28 @@ func main() {
 	)
 	pb.RegisterLogisticsEngineServer(srv, &Server{})
 
-	// Graceful shutdown on SIGTERM / SIGINT.
+	// shutdown is shared between signal handler and license background checker
+	shutdown := func() {
+		slog.Info("graceful shutdown initiated")
+		srv.GracefulStop()
+	}
+
+	// Background checker: re-validates every 12 h, shuts down on 403/402
+	StartLicenseBackgroundChecker(shutdown)
+
 	go func() {
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 		sig := <-quit
-		slog.Info("signal received — graceful shutdown", "signal", sig)
-		srv.GracefulStop()
+		slog.Info("signal received", "signal", sig)
+		shutdown()
 	}()
 
-	slog.Info("engine ready", "socket", socketPath, "version", Version,
-		"token_prefix", tokenPrefix(os.Getenv("INTERNAL_TOKEN")))
+	slog.Info("engine ready",
+		"socket", socketPath,
+		"version", Version,
+		"token_prefix", tokenPrefix(os.Getenv("INTERNAL_TOKEN")),
+	)
 
 	if err := srv.Serve(listener); err != nil {
 		if !strings.Contains(err.Error(), "use of closed network connection") {
@@ -118,8 +125,6 @@ func main() {
 	}
 }
 
-// tokenPrefix returns the first 8 chars of the token for log confirmation
-// that the correct token is loaded, without leaking the full secret.
 func tokenPrefix(t string) string {
 	if len(t) <= 8 {
 		return strings.Repeat("*", len(t))
