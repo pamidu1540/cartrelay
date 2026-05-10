@@ -1,16 +1,32 @@
-name: Release & Tag
+name: Release
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Triggered when you push a version tag: git tag v4.1.0 && git push --tags
+#
+# What it does (all automatically, no local work needed):
+#   1. Builds Linux amd64 binaries for engine and supervisor
+#   2. Pushes versioned Docker images to GHCR  (:v4.1.0 and :latest)
+#   3. Creates a GitHub Release with the binaries attached and docker pull cmds
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
   push:
     tags:
       - 'v*.*.*'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  IMAGE_ENGINE: ghcr.io/${{ github.repository }}/engine
+  IMAGE_BOT:    ghcr.io/${{ github.repository }}/bot
+
 jobs:
   release:
+    name: Build binaries, push images, create release
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      packages: write
+      contents: write    # create GitHub Release + upload assets
+      packages: write    # push to GHCR
 
     steps:
       - name: Checkout
@@ -22,9 +38,12 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache-dependency-path: engine/go.sum
+          cache-dependency-path: |
+            engine/go.sum
+            supervisor/go.sum
 
-      - name: Build engine binary (Linux amd64)
+      # ── Binaries ────────────────────────────────────────────────────────
+      - name: Build engine binary (linux/amd64)
         working-directory: engine
         run: |
           mkdir -p ../dist
@@ -33,66 +52,78 @@ jobs:
             -o ../dist/logistics-engine-linux-amd64 \
             ./...
 
-      # FIX: supervisor/main.go must declare var Version = "dev" for this to work.
-      # The -X flag is silently ignored if the variable doesn't exist.
-      - name: Build supervisor binary (Linux amd64)
+      - name: Build supervisor binary (linux/amd64)
         working-directory: supervisor
         run: |
-          mkdir -p ../dist
           GOOS=linux GOARCH=amd64 go build \
             -ldflags="-w -s -X main.Version=${{ github.ref_name }}" \
             -o ../dist/logistics-supervisor-linux-amd64 \
             ./...
 
-      - name: Generate changelog
-        id: changelog
-        run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -z "$PREV_TAG" ]; then
-            CHANGELOG=$(git log --oneline --no-merges)
-          else
-            CHANGELOG=$(git log --oneline --no-merges "${PREV_TAG}..HEAD")
-          fi
-          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      # Also tag and push Docker images to GHCR on release.
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
+      # ── Docker images ────────────────────────────────────────────────────
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build & push engine image (release tag)
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare release .env
+        working-directory: deploy
+        run: |
+          cp .env.example .env
+          sed -i 's|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=stub_release_token|'                  .env
+          sed -i 's|^INTERNAL_TOKEN=.*|INTERNAL_TOKEN=stub_release_internal_000000000000000000000|' .env
+          sed -i 's|^MAPBOX_TOKEN=.*|MAPBOX_TOKEN=stub_release_mapbox|'                             .env
+          sed -i 's|^BUILD_VERSION=.*|BUILD_VERSION=${{ github.ref_name }}|'                        .env
+          sed -i 's|^# DEV_BYPASS_SECRET=.*|DEV_BYPASS_SECRET=stub_release_bypass_secret_0000000|'  .env
+          sed -i 's|^# SKIP_LICENSE_CHECK=.*|SKIP_LICENSE_CHECK=stub_release_bypass_secret_0000000|' .env
+
+      - name: Build & push engine image
         uses: docker/build-push-action@v6
         with:
           context: engine
           file: engine/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/engine:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}/engine:latest
+            ${{ env.IMAGE_ENGINE }}:${{ github.ref_name }}
+            ${{ env.IMAGE_ENGINE }}:latest
           build-args: BUILD_VERSION=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build & push bot image (release tag)
+      - name: Build & push bot image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: bot/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/bot:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}/bot:latest
+            ${{ env.IMAGE_BOT }}:${{ github.ref_name }}
+            ${{ env.IMAGE_BOT }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ── Changelog ────────────────────────────────────────────────────────
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV" ]; then
+            LOG=$(git log --oneline --no-merges | head -30)
+          else
+            LOG=$(git log --oneline --no-merges "${PREV}..HEAD")
+          fi
+          {
+            echo "CHANGELOG<<EOF"
+            echo "$LOG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      # ── GitHub Release ────────────────────────────────────────────────────
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -102,12 +133,18 @@ jobs:
             ${{ steps.changelog.outputs.CHANGELOG }}
 
             ## Docker images
-            ```
+            ```bash
             docker pull ghcr.io/${{ github.repository }}/engine:${{ github.ref_name }}
             docker pull ghcr.io/${{ github.repository }}/bot:${{ github.ref_name }}
+            ```
+
+            ## Deploy
+            ```bash
+            # On your server — just update the image tags in docker-compose.yml and:
+            docker compose pull && docker compose up -d
             ```
           files: |
             dist/logistics-engine-linux-amd64
             dist/logistics-supervisor-linux-amd64
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
