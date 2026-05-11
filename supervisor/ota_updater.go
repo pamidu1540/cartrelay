@@ -21,7 +21,7 @@ import (
 //
 //	openssl genpkey -algorithm ed25519 -out update_priv.pem
 //	openssl pkey -in update_priv.pem -pubout -outform DER | xxd -p -c 256
-const publicKeyHex = "REPLACE_WITH_YOUR_ED25519_PUBLIC_KEY_HEX"
+const publicKeyHex = "2aedb7bd6d094c3e73280d404c064c4f71241059e3189a68528e973bef49b0f4"
 
 var otaHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
