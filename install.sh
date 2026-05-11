@@ -73,10 +73,12 @@ prompt() {
   while [[ -z "$__val" ]]; do
     if [[ -n "$__secret" ]]; then
       printf "   %b%s%b%b%s%b: " "${BOLD}" "$__label" "${RST}" "${DIM}" "${__default:+ [hidden]}" "${RST}"
-      read -rs __val; echo
+      # Redirect read to the controlling terminal (/dev/tty)
+      read -rs __val < /dev/tty; echo
     else
       printf "   %b%s%b%b%s%b: " "${BOLD}" "$__label" "${RST}" "${DIM}" "${__default:+ [$__default]}" "${RST}"
-      read -r __val
+      # Redirect read to the controlling terminal (/dev/tty)
+      read -r __val < /dev/tty
     fi
     [[ -z "$__val" && -n "$__default" ]] && __val="$__default"
     [[ -z "$__val" ]] && echo -e "   ${RED}Required — please enter a value.${RST}"
@@ -87,7 +89,8 @@ prompt() {
 prompt_optional() {
   local __var="$1" __label="$2" __val=""
   printf "   %b%s%b %b(optional — Enter to skip)%b: " "${BOLD}" "$__label" "${RST}" "${DIM}" "${RST}"
-  read -r __val
+  # Redirect read to the controlling terminal (/dev/tty)
+  read -r __val < /dev/tty
   printf -v "$__var" '%s' "$__val"
 }
 
