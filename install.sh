@@ -1,29 +1,7 @@
 #!/usr/bin/env bash
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Logistics Engine — Customer Installer
-#
-#  curl -fsSL https://raw.githubusercontent.com/pamidu1540/logistics-engine-core/main/install.sh | sudo bash
-#
-#  What this script does (infrastructure only):
-#    1. Verify OS + system requirements
-#    2. Install Docker if missing
-#    3. Verify your license key offline (Ed25519 JWT — no server required)
-#    4. Collect three values: Telegram token, admin IDs, Mapbox token
-#    5. Download the logistics supervisor binary from GitHub Releases
-#    6. Pull engine + bot Docker images from GHCR
-#    7. Write .env + production docker-compose.yml
-#    8. Install + start the logistics systemd service
-#
-#  What this script does NOT do:
-#    - Depot / warehouse configuration  →  /admin in Telegram after install
-#    - Pricing configuration            →  /admin in Telegram after install
-#    - Catalog management               →  /admin in Telegram after install
-#    - Any database operations          →  handled by the engine on first boot
-# ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 IFS=$'\n\t'
 
-# ── Installer constants ───────────────────────────────────────────────────────
 readonly INSTALLER_VERSION="4.0.0"
 readonly GHCR_OWNER="pamidu1540"
 readonly GHCR_REPO="logistics-engine-core"
@@ -35,15 +13,8 @@ readonly BIN_PATH="/usr/local/bin/logistics"
 readonly MIN_RAM_MB=512
 readonly MIN_DISK_GB=5
 readonly LICENSE_API="https://logistics-license.paminduvidusaka.workers.dev/v1/activate"
-
-# ── License public key (Ed25519) ──────────────────────────────────────────────
-# This is the PUBLIC key only. The matching private key never leaves your laptop.
-# Generated with: openssl genpkey -algorithm ed25519 -out license_priv.pem
-# Exported with:  openssl pkey -in license_priv.pem -pubout | openssl pkey -pubin -outform DER | xxd -p -c 256
-# Replace with your actual public key before shipping:
 readonly LICENSE_PUBKEY_HEX="2aedb7bd6d094c3e73280d404c064c4f71241059e3189a68528e973bef49b0f4"
 
-# ── Colours ───────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
   RED='\033[0;31m' YEL='\033[0;33m' GRN='\033[0;32m'
   BLU='\033[0;34m' CYN='\033[0;36m' MAG='\033[0;35m'
@@ -52,7 +23,6 @@ else
   RED='' YEL='' GRN='' BLU='' CYN='' MAG='' BOLD='' DIM='' RST=''
 fi
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 banner() {
   echo
   echo -e "${BOLD}${CYN}╔══════════════════════════════════════════════════════╗${RST}"
@@ -68,7 +38,6 @@ hr()   { echo -e "${DIM}──────────────────�
 die()  { echo -e "\n${RED}${BOLD}✘  ERROR: $*${RST}\n" >&2; exit 1; }
 
 prompt() {
-  # prompt <var> <label> [default] [secret]
   local __var="$1" __label="$2" __default="${3:-}" __secret="${4:-}" __val=""
   while [[ -z "$__val" ]]; do
     if [[ -n "$__secret" ]]; then
@@ -107,7 +76,6 @@ spinner() {
   fi
 }
 
-# ── Step 1: Root + OS ─────────────────────────────────────────────────────────
 check_root() {
   [[ "$EUID" -eq 0 ]] || die "Run as root:  sudo bash install.sh"
 }
@@ -115,7 +83,6 @@ check_root() {
 detect_os() {
   step "Detecting operating system"
   [[ -f /etc/os-release ]] || die "Cannot detect OS. Supported: Ubuntu 20.04+, Debian 11+."
-  # shellcheck source=/dev/null
   source /etc/os-release
   case "${ID:-}" in
     ubuntu|debian) ok "OS: ${ID^} ${VERSION_ID:-}" ;;
@@ -123,27 +90,22 @@ detect_os() {
   esac
 }
 
-# ── Step 2: System requirements ───────────────────────────────────────────────
 check_requirements() {
   step "Checking system requirements"
-
   local ram_mb
   ram_mb=$(awk '/MemTotal/{printf "%d",$2/1024}' /proc/meminfo)
   (( ram_mb >= MIN_RAM_MB )) || die "Only ${ram_mb} MB RAM. Minimum: ${MIN_RAM_MB} MB."
   ok "RAM: ${ram_mb} MB"
-
   local disk_gb
   disk_gb=$(df -BG / | awk 'NR==2{gsub("G","");print $4}')
   (( disk_gb >= MIN_DISK_GB )) || die "Only ${disk_gb} GB free. Minimum: ${MIN_DISK_GB} GB."
   ok "Disk: ${disk_gb} GB free"
-
   for cmd in curl openssl python3 systemctl; do
     command -v "$cmd" &>/dev/null || die "${cmd} is required. Run: apt-get install -y ${cmd}"
   done
   ok "Required tools present (curl, openssl, python3, systemctl)"
 }
 
-# ── Step 3: Docker ────────────────────────────────────────────────────────────
 install_docker() {
   step "Checking Docker"
   if command -v docker &>/dev/null; then
@@ -163,47 +125,26 @@ install_docker() {
   ok "Docker installed and started"
 }
 
-# ── Step 4: License verification (offline — no server, no cost) ───────────────
-#
-# How it works:
-#   Your license key is a base64url-encoded Ed25519 JWT you sign locally with
-#   the private key on your laptop using keygen.sh (provided separately).
-#   The installer verifies the signature using only the baked-in public key above.
-#   Zero network calls, zero infrastructure, cryptographically unforgeable.
-#
-# JWT claims used:
-#   sub  — customer name
-#   plan — license tier (e.g. "standard")
-#   exp  — Unix expiry timestamp
-#   iat  — issued-at timestamp
-#
 verify_license() {
   step "License verification"
   hr
   echo
   echo -e "   ${DIM}Your license key was included in your purchase email.${RST}"
-  echo -e "   ${DIM}It is a long string starting with 'eyJ…'${RST}"
+  echo -e "   ${DIM}It is a key begin with ENG-XXXX-XXXX-XXXX-XXXX${RST}"
   echo
-
   local key="" attempts=0
   while true; do
     (( ++attempts > 3 )) && die "Too many failed attempts. Contact support."
     prompt key "License Key" "" secret
-
-    # Decode and verify the JWT using python3 (built into every Ubuntu/Debian).
-    # We use python3 + cryptography lib if available, otherwise openssl CLI fallback.
     local response http_code body
     response=$(curl -fsSL -w "\n%{http_code}" \
       -H "Content-Type: application/json" \
       -d "{\"license_key\":\"${key}\",\"hostname\":\"$(hostname -f 2>/dev/null || hostname)\",\"installer_version\":\"${INSTALLER_VERSION}\"}" \
       "${LICENSE_API}" 2>/dev/null) || response=$'\n000'
-
     http_code=$(echo "$response" | tail -1)
     body=$(echo "$response" | head -n -1)
-
     case "$http_code" in
       200)
-        # These lines extract the data from Cloudflare to build the .env file automatically
         LICENSE_CUSTOMER=$(echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('customer','Customer'))" 2>/dev/null || echo "Customer")
         LICENSE_PLAN=$(echo     "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('plan','standard'))"     2>/dev/null || echo "standard")
         LICENSE_EXPIRES=$(echo  "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('expires','N/A'))"       2>/dev/null || echo "N/A")
@@ -238,7 +179,6 @@ verify_license() {
   done
 }
 
-# ── Step 5: Collect configuration ─────────────────────────────────────────────
 collect_config() {
   step "Configuration"
   hr
@@ -247,7 +187,6 @@ collect_config() {
   echo -e "   ${DIM}(depot, pricing, catalog) is configured after install${RST}"
   echo -e "   ${DIM}through the /admin panel in your Telegram bot.${RST}"
   echo
-
   echo -e "   ${BOLD}${MAG}── Telegram ──────────────────────────────────────────${RST}"
   echo -e "   ${DIM}Create a bot at t.me/BotFather → /newbot${RST}"
   prompt TELEGRAM_BOT_TOKEN "Bot Token" "" secret
@@ -255,20 +194,15 @@ collect_config() {
   echo -e "   ${DIM}Your Telegram user ID (get it from t.me/userinfobot).${RST}"
   echo -e "   ${DIM}Multiple admins: 123456789,987654321${RST}"
   prompt ADMIN_USER_IDS "Admin Telegram User ID(s)"
-
   echo
   echo -e "   ${BOLD}${MAG}── Routing (optional) ───────────────────────────────${RST}"
   echo -e "   ${DIM}Mapbox token for road-distance delivery quotes.${RST}"
   echo -e "   ${DIM}Skip to use straight-line distance × 1.3 fallback.${RST}"
   prompt_optional MAPBOX_TOKEN "Mapbox Public Token"
-
-  # Auto-generate a cryptographically secure internal token.
-  # Customer never needs to know or enter this.
   INTERNAL_TOKEN=$(openssl rand -hex 32)
   ok "Internal service token auto-generated"
 }
 
-# ── Step 6: Select image version ──────────────────────────────────────────────
 select_version() {
   step "Fetching latest release"
   SELECTED_VERSION=$(curl -fsSL \
@@ -279,7 +213,6 @@ select_version() {
   ok "Version: ${SELECTED_VERSION}"
 }
 
-# ── Step 7: Directory structure ───────────────────────────────────────────────
 create_directories() {
   step "Creating installation directory"
   mkdir -p "${INSTALL_DIR}"/{deploy,data,backups,logs}
@@ -288,27 +221,16 @@ create_directories() {
   ok "Created ${INSTALL_DIR}/"
 }
 
-# ── Step 8: Write .env ────────────────────────────────────────────────────────
 write_env() {
   step "Writing environment configuration"
   local f="${INSTALL_DIR}/deploy/.env"
   cat > "$f" << ENV
-# Logistics Engine ${INSTALLER_VERSION}
-# Generated: $(date -u '+%Y-%m-%d %H:%M UTC')
-# Customer : ${LICENSE_CUSTOMER}
-# Plan     : ${LICENSE_PLAN}
-# Expires  : ${LICENSE_EXPIRES}
-#
-# To change any value: nano ${f}
-# Then restart:        systemctl restart ${SERVICE_NAME}
-
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 INTERNAL_TOKEN=${INTERNAL_TOKEN}
 MAPBOX_TOKEN=${MAPBOX_TOKEN:-}
 ADMIN_USER_IDS=${ADMIN_USER_IDS}
 LICENSE_KEY=${LICENSE_KEY}
 BUILD_VERSION=${SELECTED_VERSION}
-
 ENGINE_IMAGE=${IMAGE_ENGINE}:${SELECTED_VERSION}
 BOT_IMAGE=${IMAGE_BOT}:${SELECTED_VERSION}
 ENV
@@ -316,16 +238,10 @@ ENV
   ok "Wrote ${f}  (mode 600 — root-readable only)"
 }
 
-# ── Step 9: Write production docker-compose.yml ───────────────────────────────
 write_compose() {
   step "Writing docker-compose.yml"
-  # Use a temp file to avoid heredoc variable expansion issues
   cat > "${INSTALL_DIR}/deploy/docker-compose.yml" << 'COMPOSE'
-# Production — pulls pre-built images from GHCR.
-# Image tags are controlled by ENGINE_IMAGE and BOT_IMAGE in .env.
-# Run  'logistics update'  to pull a newer release.
 services:
-
   engine:
     image: ${ENGINE_IMAGE}
     container_name: logistics_engine
@@ -337,8 +253,8 @@ services:
       - LICENSE_KEY=${LICENSE_KEY}
       - BUILD_VERSION=${BUILD_VERSION}
     volumes:
-      - engine_data:/app/data     # SQLite DB persists across container restarts
-      - sockets:/app/sockets      # Unix socket shared with bot
+      - engine_data:/app/data
+      - sockets:/app/sockets
     healthcheck:
       test: ["CMD", "test", "-S", "/app/sockets/logistics.sock"]
       interval: 10s
@@ -352,7 +268,6 @@ services:
     logging:
       driver: json-file
       options: {max-size: 20m, max-file: "5"}
-
   bot:
     image: ${BOT_IMAGE}
     container_name: logistics_bot
@@ -366,7 +281,7 @@ services:
       - sockets:/app/sockets
     depends_on:
       engine:
-        condition: service_healthy   # Bot waits for engine socket to exist
+        condition: service_healthy
     deploy:
       resources:
         limits:   {cpus: "0.75", memory: 256M}
@@ -374,44 +289,34 @@ services:
     logging:
       driver: json-file
       options: {max-size: 20m, max-file: "5"}
-
 volumes:
   engine_data: {driver: local}
   sockets:     {driver: local}
 COMPOSE
-  ok "Wrote docker-compose.yml (image-based, no build)"
+  ok "Wrote docker-compose.yml"
 }
 
-# ── Step 10: Install systemd service ──────────────────────────────────────────
 write_service() {
   step "Installing systemd service"
   cat > "/etc/systemd/system/${SERVICE_NAME}.service" << SERVICE
 [Unit]
 Description=Logistics Engine (Docker Compose)
-Documentation=https://github.com/${GHCR_OWNER}/${GHCR_REPO}
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
-
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${INSTALL_DIR}/deploy
 EnvironmentFile=${INSTALL_DIR}/deploy/.env
-
-# --pull always ensures the pinned image tag is always up to date on restarts
 ExecStart=/usr/bin/docker compose up -d --pull always
 ExecStop=/usr/bin/docker compose stop --timeout 30
-
-# 'logistics update' updates .env image tags then calls this reload
 ExecReload=/bin/bash -c '/usr/bin/docker compose pull && /usr/bin/docker compose up -d --no-recreate'
-
 TimeoutStartSec=180
 TimeoutStopSec=45
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=${SERVICE_NAME}
-
 [Install]
 WantedBy=multi-user.target
 SERVICE
@@ -420,42 +325,31 @@ SERVICE
   ok "systemd service installed and enabled on boot"
 }
 
-# ── Step 11: Download supervisor binary ───────────────────────────────────────
-# The 'logistics' binary (supervisor) is the CLI the customer uses to manage
-# the running system: status, logs, update, rollback, maintenance, dashboard.
-# It is built by release.yml and attached to every GitHub Release.
 install_supervisor_binary() {
   step "Installing logistics CLI (supervisor binary)"
-
-  local bin_url="https://github.com/${GHCR_OWNER}/${GHCR_REPO}/releases/download/${SELECTED_VERSION}/logistics-supervisor-linux-amd64"
-
+  
+  # Default to the specific version folder uploaded by GitHub Actions
+  local bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/${SELECTED_VERSION}/logistics-supervisor-linux-amd64"
+  
+  # Override to the 'latest' folder if no specific version tag was found
   if [[ "$SELECTED_VERSION" == "latest" ]]; then
-    # Resolve 'latest' to the actual tag so the download URL works
-    SELECTED_VERSION=$(curl -fsSL \
-      "https://api.github.com/repos/${GHCR_OWNER}/${GHCR_REPO}/releases/latest" \
-      2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])" \
-      2>/dev/null || echo "latest")
-    bin_url="https://github.com/${GHCR_OWNER}/${GHCR_REPO}/releases/download/${SELECTED_VERSION}/logistics-supervisor-linux-amd64"
+    bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/supervisor"
   fi
-
-  info "Downloading from GitHub Releases: ${SELECTED_VERSION}"
-
+  
+  info "Downloading from Cloudflare R2 CDN: ${SELECTED_VERSION}"
   if curl -fsSL "$bin_url" -o "${BIN_PATH}" 2>/tmp/bin-download.log; then
     chmod +x "${BIN_PATH}"
-    ok "Installed: ${BIN_PATH}  ($(logistics version 2>/dev/null || echo "${SELECTED_VERSION}"))"
+    ok "Installed: ${BIN_PATH}"
   else
-    warn "Could not download supervisor binary (HTTP error or release not yet published)."
-    warn "You can install it later: logistics-install-supervisor"
-    # Write a stub so the command exists and gives a helpful message
+    warn "Could not download supervisor binary."
     cat > "${BIN_PATH}" << 'STUB'
 #!/usr/bin/env bash
-echo "logistics CLI not yet installed. Run: logistics-install-supervisor"
+echo "logistics CLI not yet installed."
 STUB
     chmod +x "${BIN_PATH}"
   fi
 }
 
-# ── Step 12: Pull Docker images ───────────────────────────────────────────────
 pull_images() {
   step "Pulling Docker images"
   info "Engine: ${IMAGE_ENGINE}:${SELECTED_VERSION}"
@@ -465,12 +359,9 @@ pull_images() {
   spinner $! "Downloading images from GHCR"
 }
 
-# ── Step 13: Start services ───────────────────────────────────────────────────
 start_services() {
   step "Starting services"
   systemctl start "${SERVICE_NAME}"
-
-  # Wait up to 90 s for the engine socket to appear
   info "Waiting for engine to become healthy (up to 90 s)…"
   local deadline=$(( $(date +%s) + 90 )) healthy=false
   while (( $(date +%s) < deadline )); do
@@ -482,13 +373,11 @@ start_services() {
     sleep 3; printf '.'
   done
   echo
-
   if $healthy; then
     ok "Engine: healthy"
   else
     warn "Engine health check timed out — check: docker logs logistics_engine"
   fi
-
   local bot_status
   bot_status=$(docker inspect logistics_bot --format '{{.State.Status}}' 2>/dev/null || echo "missing")
   if [[ "$bot_status" == "running" ]]; then
@@ -498,7 +387,6 @@ start_services() {
   fi
 }
 
-# ── Step 14: Summary ──────────────────────────────────────────────────────────
 print_summary() {
   echo
   hr
@@ -542,7 +430,6 @@ print_summary() {
   echo
 }
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 main() {
   banner
   check_root
