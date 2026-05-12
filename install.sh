@@ -67,7 +67,7 @@ spinner() {
   local __pid=$1 __msg="$2" __sp='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' __i=0
   while kill -0 "$__pid" 2>/dev/null; do
     printf "\r   ${CYN}${__sp:$((__i % ${#__sp})):1}${RST}  %s…" "$__msg"
-    ((__i++)); sleep 0.1
+    __i=$((__i + 1)); sleep 0.1
   done
   wait "$__pid"
   local __rc=$?
