@@ -42,7 +42,7 @@ jobs:
             engine/go.sum
             supervisor/go.sum
 
-      # ── Binaries ────────────────────────────────────────────────────────
+# ── Binaries ────────────────────────────────────────────────────────
       - name: Build engine binary (linux/amd64)
         working-directory: engine
         run: |
@@ -50,7 +50,7 @@ jobs:
           GOOS=linux GOARCH=amd64 go build \
             -ldflags="-w -s -X main.Version=${{ github.ref_name }}" \
             -o ../dist/logistics-engine-linux-amd64 \
-            ./...
+            .
 
       - name: Build supervisor binary (linux/amd64)
         working-directory: supervisor
@@ -58,7 +58,7 @@ jobs:
           GOOS=linux GOARCH=amd64 go build \
             -ldflags="-w -s -X main.Version=${{ github.ref_name }}" \
             -o ../dist/logistics-supervisor-linux-amd64 \
-            ./...
+            .
 
       # ── Docker images ────────────────────────────────────────────────────
       - name: Set up Docker Buildx
