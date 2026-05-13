@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -241,7 +240,7 @@ func (s *Server) PlaceOrder(ctx context.Context, req *pb.OrderRequest) (*pb.Orde
 	// Extract the request ID for idempotency tracking.
 	idempotencyKey, _ := ctx.Value(reqIDKey).(string)
 
-	// insertOrder now handles stock decrement and idempotency atomically.
+	// InsertOrder now handles stock decrement and idempotency atomically.
 	orderID, err := InsertOrder(req, nil, idempotencyKey)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateOrder) {
