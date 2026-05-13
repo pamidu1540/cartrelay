@@ -1,11 +1,12 @@
 """
 Admin panel Telegram handlers.
 
-Key Features & Fixes:
-  - Phase 0: UpdateOrderStatus response carries notify_user_id as a proto field.
-  - Phase 0: Order list is paginated via the new GetAllOrders RPC.
-  - Phase 1: Warehouse Management (Add/List) via native Telegram location pins.
-  - Security: Admin ID check extracted to a single helper used everywhere.
+Key Features:
+  - Catalog Management (View/Add/Remove)
+  - Order Processing (Pending/All/Dispatch/Cancel)
+  - Stock Adjustments
+  - Warehouse Management (Add/List)
+  - Maintenance Mode Toggles
 """
 
 from __future__ import annotations

@@ -77,7 +77,6 @@ if not BOT_TOKEN:
 
 async def post_init(application) -> None:
     """Initializes async resources after the PTB event loop starts."""
-    # [FIX BUG-001]: Initialize gRPC pool inside the active event loop
     await engine.init_pool()
 
     # Start the background task for lazy cart flushing
@@ -151,8 +150,8 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(admin_toggle_maintenance, pattern="^admin_toggle_maint$"))
     app.add_handler(CallbackQueryHandler(admin_list_warehouses,    pattern="^admin_list_wh$"))
 
-    # Add Warehouse wizard (Phase 1)
-    add_wh_wizard = ConversationHandler(
+    # [FIX]: Consistent naming wh_wizard for the warehouse wizard
+    wh_wizard = ConversationHandler(
         entry_points=[CallbackQueryHandler(wizard_start_add_warehouse, pattern="^admin_add_wh$")],
         states={
             ADMIN_WH_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_receive_wh_name)],
