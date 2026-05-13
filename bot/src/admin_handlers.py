@@ -1,12 +1,11 @@
 """
 Admin panel Telegram handlers.
 
-Key fixes vs v3:
-  - UpdateOrderStatus response carries notify_user_id as a proto field —
-    no more fragile "status=X notify_user_id=Y" string parsing.
-  - EditItemStock exposed via admin wizard.
-  - Order list is paginated via the new GetAllOrders RPC.
-  - Admin ID check extracted to a single helper used everywhere.
+Key Features & Fixes:
+  - Phase 0: UpdateOrderStatus response carries notify_user_id as a proto field.
+  - Phase 0: Order list is paginated via the new GetAllOrders RPC.
+  - Phase 1: Warehouse Management (Add/List) via native Telegram location pins.
+  - Security: Admin ID check extracted to a single helper used everywhere.
 """
 
 from __future__ import annotations
@@ -59,7 +58,9 @@ async def _require_admin(update: Update) -> bool:
     ADMIN_ADD_STOCK,
     ADMIN_EDIT_STOCK_ITEM,
     ADMIN_EDIT_STOCK_DELTA,
-) = range(7)
+    ADMIN_WH_NAME,
+    ADMIN_WH_LOC,
+) = range(9)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -82,6 +83,10 @@ async def admin_dashboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         [InlineKeyboardButton("📋 All Orders",           callback_data="admin_view_orders_all")],
         [InlineKeyboardButton("➕ Add Item",             callback_data="admin_add_item")],
         [InlineKeyboardButton("📈 Adjust Stock",         callback_data="admin_edit_stock")],
+        [
+            InlineKeyboardButton("➕ Add Warehouse", callback_data="admin_add_wh"),
+            InlineKeyboardButton("🏢 View Warehouses", callback_data="admin_list_wh")
+        ],
         [InlineKeyboardButton(f"🔧 Maintenance: {maint}", callback_data="admin_toggle_maint")],
     ])
 
@@ -146,7 +151,6 @@ async def _show_orders(
         return
 
     try:
-        # FIX: Uses new GetAllOrders RPC instead of the sentinel user_id=0 hack.
         resp = await engine.get_all_orders(
             status_filter=status_filter, page=page, page_size=10
         )
@@ -180,7 +184,6 @@ async def _show_orders(
                 InlineKeyboardButton("❌ Cancel",                    callback_data=f"cancelord_{o.order_id}"),
             ])
 
-    # Pagination controls
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀ Prev", callback_data=f"orders_page_{status_filter}_{page-1}"))
@@ -208,11 +211,8 @@ async def admin_view_orders_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE) 
 
 
 async def admin_orders_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle pagination callback: orders_page_{status}_{page}"""
     query = update.callback_query
     parts = query.data.split("_")
-    # callback_data format: orders_page_{status}_{page}
-    # status can be "" (empty) which becomes the empty string between delimiters
     page   = int(parts[-1])
     status = parts[-2] if parts[-2] != "orders" else ""
     await _show_orders(update, status_filter=status, page=page)
@@ -232,7 +232,6 @@ async def admin_dispatch_order(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
         await query.edit_message_text(f"⚠️ Dispatch failed: {exc}")
         return
 
-    # FIX: notify_user_id is now a proper int64 proto field, not parsed from a string.
     if resp.notify_user_id:
         try:
             await ctx.bot.send_message(
@@ -308,6 +307,103 @@ async def admin_toggle_maintenance(update: Update, ctx: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("⬅️ Dashboard", callback_data="admin_dash")]
         ]),
     )
+
+
+# ── Warehouses ────────────────────────────────────────────────────────────────
+
+async def admin_list_warehouses(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fetches all warehouses and sends them to the admin as Telegram location pins."""
+    query = update.callback_query
+    await query.answer()
+    if not await _require_admin(update):
+        return
+
+    try:
+        resp = await engine.list_warehouses()
+    except Exception as exc:
+        await query.edit_message_text(f"⚠️ Failed to list warehouses: {exc}")
+        return
+
+    if not resp.warehouses:
+        await query.edit_message_text(
+            "No warehouses configured yet.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Dashboard", callback_data="admin_dash")]
+            ])
+        )
+        return
+
+    await query.edit_message_text("📍 Here are the active warehouses:")
+    for wh in resp.warehouses:
+        await ctx.bot.send_location(
+            chat_id=update.effective_chat.id,
+            latitude=wh.lat,
+            longitude=wh.lon,
+        )
+        await ctx.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"🏢 *{wh.name}*\nID: `{wh.id}`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+    await ctx.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Warehouse listing complete.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Dashboard", callback_data="admin_dash")]
+        ])
+    )
+
+
+async def wizard_start_add_warehouse(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(query.from_user.id):
+        await query.answer("⛔ Not authorised.", show_alert=True)
+        return ConversationHandler.END
+
+    ctx.user_data.clear()
+    await query.edit_message_text(
+        "🏢 *New Warehouse*\n\nEnter a name for the new warehouse (e.g., 'South Depot'):",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    return ADMIN_WH_NAME
+
+
+async def wizard_receive_wh_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    ctx.user_data["wh_name"] = update.message.text.strip()
+    await update.message.reply_text(
+        f"Great. Now use Telegram's attachment menu (📎) to send the exact Location of '{ctx.user_data['wh_name']}'.\n"
+        "(Or type /cancel to abort)"
+    )
+    return ADMIN_WH_LOC
+
+
+async def wizard_receive_wh_loc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    loc = update.message.location
+    if not loc:
+        await update.message.reply_text("❌ Please send a valid Telegram Location attachment (📎).")
+        return ADMIN_WH_LOC
+        
+    name = ctx.user_data.get("wh_name", "Unknown Warehouse")
+
+    try:
+        resp = await engine.add_warehouse(name, loc.latitude, loc.longitude)
+        if resp.success:
+            text = f"✅ {resp.message}"
+        else:
+            text = f"❌ Failed: {resp.message}"
+    except Exception as exc:
+        text = f"⚠️ Error: {exc}"
+
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Dashboard", callback_data="admin_dash")]
+        ])
+    )
+    ctx.user_data.clear()
+    return ConversationHandler.END
 
 
 # ── Add item wizard ───────────────────────────────────────────────────────────

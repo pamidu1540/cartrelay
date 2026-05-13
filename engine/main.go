@@ -1,8 +1,5 @@
 package main
 
-// main.go — updated from original: adds LICENSE_KEY / TOKEN_SECRET / LICENSE_API_URL
-// validation and wires StartLicenseBackgroundChecker into graceful shutdown.
-
 import (
 	"log/slog"
 	"net"
@@ -38,7 +35,6 @@ func main() {
 		slog.Warn("MAPBOX_TOKEN not set — Haversine fallback active")
 	}
 
-	// License check — reads cache or calls /v1/activate
 	if err := VerifyLicense(); err != nil {
 		slog.Error("license check failed", "err", err)
 		os.Exit(1)
@@ -48,6 +44,8 @@ func main() {
 		slog.Error("database init failed", "err", err)
 		os.Exit(1)
 	}
+
+	StartWALCheckpointTimer()
 
 	if _, err := GetCachedCatalog(); err != nil {
 		slog.Warn("initial catalog cache warm failed", "err", err)
@@ -94,13 +92,11 @@ func main() {
 	)
 	pb.RegisterLogisticsEngineServer(srv, &Server{})
 
-	// shutdown is shared between signal handler and license background checker
 	shutdown := func() {
 		slog.Info("graceful shutdown initiated")
 		srv.GracefulStop()
 	}
 
-	// Background checker: re-validates every 12 h, shuts down on 403/402
 	StartLicenseBackgroundChecker(shutdown)
 
 	go func() {
