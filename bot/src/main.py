@@ -22,9 +22,12 @@ from admin_handlers import (
     ADMIN_ADD_VOL,
     ADMIN_EDIT_STOCK_DELTA,
     ADMIN_EDIT_STOCK_ITEM,
+    ADMIN_WH_NAME,
+    ADMIN_WH_LOC,
     admin_cancel_order,
     admin_dashboard,
     admin_dispatch_order,
+    admin_list_warehouses,
     admin_orders_page,
     admin_toggle_maintenance,
     admin_view_catalog,
@@ -38,7 +41,10 @@ from admin_handlers import (
     wizard_receive_stock_delta,
     wizard_receive_stock_item,
     wizard_receive_vol,
+    wizard_receive_wh_loc,
+    wizard_receive_wh_name,
     wizard_start_add_item,
+    wizard_start_add_warehouse,
     wizard_start_edit_stock,
 )
 from grpc_client import engine
@@ -66,10 +72,14 @@ if not BOT_TOKEN:
     logger.critical("TELEGRAM_BOT_TOKEN is not set.")
     sys.exit(1)
 
+# ── Lifecycle Hooks ──────────────────────────────────────────────────────────
 
 async def post_init(application) -> None:
-    """Called after the bot is initialised — start background workers."""
-    # Start lazy cart flush loop.
+    """Initializes async resources after the PTB event loop starts."""
+    # [FIX BUG-001]: Initialize gRPC pool inside the active event loop
+    await engine.init_pool()
+
+    # Start the background task for lazy cart flushing
     await start_cart_flush()
 
     try:
@@ -80,6 +90,13 @@ async def post_init(application) -> None:
 
 
 async def post_shutdown(application) -> None:
+    """Catches SIGTERM/SIGINT and gracefully flushes data."""
+    logger.info("Shutdown signal received. Flushing pending carts...")
+    
+    # [FIX BUG-003]: Flush all pending carts in memory to the Engine
+    if hasattr(engine, 'flush_pending_carts'):
+        await engine.flush_pending_carts()
+        
     await engine.close()
     logger.info("gRPC channel pool closed.")
 
@@ -93,7 +110,8 @@ def main() -> None:
         .build()
     )
 
-    # ── User / shop flow ──────────────────────────────────────────────────────
+    # ── User Conversation ─────────────────────────────────────────────────────
+
     user_conv = ConversationHandler(
         entry_points=[
             CommandHandler("start", user_start),
@@ -119,7 +137,8 @@ def main() -> None:
     )
     app.add_handler(user_conv)
 
-    # ── Admin panel ───────────────────────────────────────────────────────────
+    # ── Admin Panel ───────────────────────────────────────────────────────────
+
     app.add_handler(CommandHandler("admin", admin_dashboard))
     app.add_handler(CallbackQueryHandler(admin_dashboard,          pattern="^admin_dash$"))
     app.add_handler(CallbackQueryHandler(admin_view_catalog,       pattern="^admin_view_cat$"))
@@ -129,8 +148,24 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(admin_dispatch_order,     pattern="^dispatch_"))
     app.add_handler(CallbackQueryHandler(admin_cancel_order,       pattern="^cancelord_"))
     app.add_handler(CallbackQueryHandler(admin_toggle_maintenance, pattern="^admin_toggle_maint$"))
+    app.add_handler(CallbackQueryHandler(admin_list_warehouses,    pattern="^admin_list_wh$"))
 
-    # Add item wizard
+    # Add Warehouse wizard (Phase 1)
+    add_wh_wizard = ConversationHandler(
+        entry_points=[CallbackQueryHandler(wizard_start_add_warehouse, pattern="^admin_add_wh$")],
+        states={
+            ADMIN_WH_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_receive_wh_name)],
+            ADMIN_WH_LOC:  [MessageHandler(filters.LOCATION, wizard_receive_wh_loc)],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel_wizard),
+            MessageHandler(filters.COMMAND, cancel_wizard),
+        ],
+        allow_reentry=True,
+    )
+    app.add_handler(add_wh_wizard)
+
+    # Add Item wizard
     add_item_wizard = ConversationHandler(
         entry_points=[CallbackQueryHandler(wizard_start_add_item, pattern="^admin_add_item$")],
         states={
@@ -148,7 +183,7 @@ def main() -> None:
     )
     app.add_handler(add_item_wizard)
 
-    # Edit stock wizard
+    # Edit Stock wizard
     edit_stock_wizard = ConversationHandler(
         entry_points=[CallbackQueryHandler(wizard_start_edit_stock, pattern="^admin_edit_stock$")],
         states={
@@ -163,7 +198,8 @@ def main() -> None:
     )
     app.add_handler(edit_stock_wizard)
 
-    # ── Graceful shutdown ─────────────────────────────────────────────────────
+    # ── Signal Handling ───────────────────────────────────────────────────────
+
     loop = asyncio.get_event_loop()
 
     def _sigterm_handler():

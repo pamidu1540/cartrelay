@@ -1,13 +1,20 @@
 """
-gRPC client for the logistics engine.
+gRPC client for the Logistics Engine.
 
-FIX: Channel pool (8 channels, round-robin) replaces a single channel so
-concurrent Telegram update handlers don't queue on one connection.
+Key Fixes:
+- Async Loop Bug: Channels are now initialized inside the active event loop
+  via the init_pool() method called during bot startup.
+- HMAC Security: Every request is signed with a SHA256 HMAC and timestamp
+  to prevent replay attacks and forgery.
+- Multi-Depot Support: Added AddWarehouse and ListWarehouses methods.
 """
 
+import hashlib
+import hmac
 import logging
 import os
 import sys
+import time
 import uuid
 from itertools import cycle
 
@@ -17,41 +24,47 @@ from api import logistics_pb2, logistics_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
+# Constants and Configuration
 SOCKET_PATH = "unix:///app/sockets/logistics.sock"
-
 INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN")
 if not INTERNAL_TOKEN:
     logger.critical("INTERNAL_TOKEN not set — engine auth will fail on every call.")
     sys.exit(1)
 
-# FIX: Pool of 8 channels so concurrent handlers don't queue behind each other.
 _POOL_SIZE = 8
 
-# Channel options for all connections in the pool.
 _CHANNEL_OPTIONS = [
-    ("grpc.keepalive_time_ms",              10_000),   # ping every 10 s
-    ("grpc.keepalive_timeout_ms",            3_000),   # 3 s to acknowledge
-    ("grpc.keepalive_permit_without_calls",      1),   # ping even when idle
-    ("grpc.http2.max_pings_without_data",        0),   # no limit
+    ("grpc.keepalive_time_ms",              10_000),
+    ("grpc.keepalive_timeout_ms",            3_000),
+    ("grpc.keepalive_permit_without_calls",      1),
+    ("grpc.http2.max_pings_without_data",        0),
     ("grpc.http2.min_time_between_pings_ms",  5_000),
 ]
 
-_channels = [
-    grpc.aio.insecure_channel(SOCKET_PATH, options=_CHANNEL_OPTIONS)
-    for _ in range(_POOL_SIZE)
-]
-_pool = cycle(_channels)
+# Global pool variables - populated during init_pool()
+_channels = []
+_pool = None
 
 
 def _get_channel() -> grpc.aio.Channel:
+    if not _pool:
+        raise RuntimeError("gRPC pool not initialized. Call init_pool() first.")
     return next(_pool)
 
 
 def _meta(request_id: str | None = None) -> tuple:
-    """Return gRPC call metadata with auth token and correlation id."""
+    """Return gRPC call metadata with HMAC auth and correlation id."""
+    ts = str(int(time.time()))
+    req_id = request_id or str(uuid.uuid4())
+    
+    # [FIX SEC-002]: HMAC-SHA256 signature to prevent replay and forgery
+    payload = f"{ts}:{req_id}".encode("utf-8")
+    signature = hmac.new(INTERNAL_TOKEN.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+    
     return (
-        ("x-internal-token", INTERNAL_TOKEN),
-        ("x-request-id", request_id or str(uuid.uuid4())),
+        ("x-timestamp", ts),
+        ("x-request-id", req_id),
+        ("x-hmac-signature", signature),
     )
 
 
@@ -60,10 +73,26 @@ class EngineClient:
 
     DEFAULT_TIMEOUT = 8.0
 
+    async def init_pool(self) -> None:
+        """
+        [FIX]: Initializes the gRPC channel pool inside the correct active 
+        event loop to prevent the 'Future attached to different loop' error.
+        """
+        global _channels, _pool
+        if _channels:
+            return  # Prevent double initialization
+
+        _channels = [
+            grpc.aio.insecure_channel(SOCKET_PATH, options=_CHANNEL_OPTIONS)
+            for _ in range(_POOL_SIZE)
+        ]
+        _pool = cycle(_channels)
+        logger.info("gRPC channel pool initialized successfully with %d channels.", _POOL_SIZE)
+
     def _stub(self) -> logistics_pb2_grpc.LogisticsEngineStub:
         return logistics_pb2_grpc.LogisticsEngineStub(_get_channel())
 
-    # ── Health ────────────────────────────────────────────────────────────────
+    # ── Health & Maintenance ──────────────────────────────────────────────────
 
     async def check_health(self, request_id: str | None = None):
         return await self._stub().CheckHealth(
@@ -79,7 +108,7 @@ class EngineClient:
             timeout=5.0,
         )
 
-    # ── Catalog ───────────────────────────────────────────────────────────────
+    # ── Catalog Management ────────────────────────────────────────────────────
 
     async def get_catalog(self, request_id: str | None = None):
         return await self._stub().GetCatalog(
@@ -107,7 +136,6 @@ class EngineClient:
     async def edit_item_stock(
         self, item_id: str, delta: int, request_id: str | None = None
     ):
-        """Adjust stock by delta (positive = restock, negative = deduction)."""
         return await self._stub().EditItemStock(
             logistics_pb2.EditStockRequest(item_id=item_id, delta=delta),
             metadata=_meta(request_id),
@@ -117,6 +145,22 @@ class EngineClient:
     async def remove_item(self, item_id: str, request_id: str | None = None):
         return await self._stub().RemoveItem(
             logistics_pb2.ItemId(id=item_id),
+            metadata=_meta(request_id),
+            timeout=self.DEFAULT_TIMEOUT,
+        )
+
+    # ── Warehouse Management (Phase 1) ────────────────────────────────────────
+
+    async def add_warehouse(self, name: str, lat: float, lon: float, request_id: str | None = None):
+        return await self._stub().AddWarehouse(
+            logistics_pb2.AddWarehouseRequest(name=name, lat=lat, lon=lon),
+            metadata=_meta(request_id),
+            timeout=self.DEFAULT_TIMEOUT,
+        )
+
+    async def list_warehouses(self, request_id: str | None = None):
+        return await self._stub().ListWarehouses(
+            logistics_pb2.Empty(),
             metadata=_meta(request_id),
             timeout=self.DEFAULT_TIMEOUT,
         )
@@ -178,7 +222,6 @@ class EngineClient:
         page_size: int = 20,
         request_id: str | None = None,
     ):
-        """Admin: paginated order list filtered by status."""
         return await self._stub().GetAllOrders(
             logistics_pb2.GetAllOrdersRequest(
                 status_filter=status_filter,
@@ -201,9 +244,11 @@ class EngineClient:
         )
 
     async def close(self) -> None:
+        """Gracefully close all channels in the pool."""
         for ch in _channels:
             await ch.close()
-        logger.info("gRPC channel pool closed")
+        _channels.clear()
+        logger.info("gRPC channel pool closed.")
 
 
 engine = EngineClient()

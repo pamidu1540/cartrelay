@@ -22,11 +22,12 @@ var (
 	ErrOutOfStock     = errors.New("out of stock")
 	ErrQuoteMissing   = errors.New("quote_data is required")
 	ErrPriceMismatch  = errors.New("price mismatch: possible tampering")
+	// [FIX BUG-012]: Added specific error for duplicate requests
+	ErrDuplicateOrder = errors.New("duplicate order request")
 )
 
 // InitDatabase opens the SQLite file, applies performance pragmas,
-// enforces a single-writer connection pool (SQLite constraint),
-// and creates the schema.
+// enforces a single-writer connection pool, and creates the schema.
 func InitDatabase(path string) error {
 	var err error
 	db, err = sql.Open("sqlite", path)
@@ -34,8 +35,7 @@ func InitDatabase(path string) error {
 		return fmt.Errorf("open db: %w", err)
 	}
 
-	// FIX: SQLite serialises all writes behind one connection.
-	// Making this explicit avoids "database is locked" under concurrent gRPC calls.
+	// SQLite serialises all writes behind one connection.
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
@@ -67,9 +67,11 @@ func InitDatabase(path string) error {
 }
 
 func createSchema() error {
+	// [FIX BUG-012]: Seamless schema migration to add idempotency tracking.
+	// Exec will ignore errors if the column already exists.
+	_, _ = db.Exec("ALTER TABLE orders ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT '';")
+
 	stmts := []string{
-		// FIX: deleted_at enables soft deletes so removed items still appear on
-		// historical receipts instead of silently dropping from old orders.
 		`CREATE TABLE IF NOT EXISTS items (
 			id            TEXT    PRIMARY KEY,
 			name          TEXT    NOT NULL,
@@ -78,27 +80,37 @@ func createSchema() error {
 			category      TEXT    NOT NULL DEFAULT 'Uncategorized',
 			stock         INTEGER NOT NULL DEFAULT 0 CHECK(stock >= 0),
 			photo_file_id TEXT    NOT NULL DEFAULT '',
-			deleted_at    INTEGER             -- NULL = active
+			deleted_at    INTEGER
 		)`,
 
 		`CREATE TABLE IF NOT EXISTS orders (
-			order_id  TEXT    PRIMARY KEY,
-			user_id   INTEGER NOT NULL,
-			username  TEXT    NOT NULL,
-			status    TEXT    NOT NULL DEFAULT 'pending',
-			total     REAL    NOT NULL,
-			receipt   TEXT    NOT NULL DEFAULT '',
-			timestamp INTEGER NOT NULL
+			order_id         TEXT    PRIMARY KEY,
+			user_id          INTEGER NOT NULL,
+			username         TEXT    NOT NULL,
+			status           TEXT    NOT NULL DEFAULT 'pending',
+			total            REAL    NOT NULL,
+			receipt          TEXT    NOT NULL DEFAULT '',
+			timestamp        INTEGER NOT NULL,
+			idempotency_key  TEXT    NOT NULL DEFAULT ''
 		)`,
 
-		// FIX: Index on status makes GetAllOrders O(log n) instead of a full scan.
 		`CREATE INDEX IF NOT EXISTS idx_orders_status_ts
 			ON orders(status, timestamp ASC)`,
 		`CREATE INDEX IF NOT EXISTS idx_orders_user_ts
 			ON orders(user_id, timestamp DESC)`,
+		
+		// [FIX BUG-012]: Ensure only valid requests trigger the constraint
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_idempotency 
+			ON orders(idempotency_key) WHERE idempotency_key != ''`,
 
-		// FIX: Carts moved out of the config table into their own table with
-		// TTL support (last_updated) so stale carts can be expired.
+		// [Phase 1: Cluster A] Warehouse storage
+		`CREATE TABLE IF NOT EXISTS warehouses (
+			id   TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			lat  REAL NOT NULL,
+			lon  REAL NOT NULL
+		)`,
+
 		`CREATE TABLE IF NOT EXISTS carts (
 			user_id      INTEGER PRIMARY KEY,
 			cart_json    TEXT    NOT NULL DEFAULT '{}',
@@ -110,7 +122,6 @@ func createSchema() error {
 			value TEXT NOT NULL DEFAULT ''
 		)`,
 
-		// Append-only audit trail for all admin mutations.
 		`CREATE TABLE IF NOT EXISTS audit_log (
 			id        INTEGER PRIMARY KEY AUTOINCREMENT,
 			ts        INTEGER NOT NULL,
@@ -130,8 +141,6 @@ func createSchema() error {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-// FIX: Returns (value, error) so callers can detect DB failures rather than
-// silently treating them as empty strings (which, e.g., masks maintenance_mode).
 func GetConfigValue(key string) (string, error) {
 	var val string
 	err := db.QueryRow("SELECT value FROM config WHERE key=?", key).Scan(&val)
@@ -156,7 +165,6 @@ func SetConfigValue(key, value string) error {
 
 // ── Items ─────────────────────────────────────────────────────────────────────
 
-// FIX: UUID-based IDs instead of time.UnixNano() — no collisions under concurrent load.
 func DBAddItem(item *pb.Item) (string, error) {
 	id := "ITEM-" + uuid.NewString()
 	_, err := db.Exec(
@@ -182,7 +190,6 @@ func DBEditItemPrice(itemID string, newPrice float64) error {
 	return nil
 }
 
-// DBEditItemStock adjusts stock by delta; rejects changes that would go negative.
 func DBEditItemStock(itemID string, delta int32) error {
 	res, err := db.Exec(
 		`UPDATE items SET stock = stock + ?
@@ -198,7 +205,6 @@ func DBEditItemStock(itemID string, delta int32) error {
 	return nil
 }
 
-// FIX: Soft delete — keeps the row for historical receipt lookups.
 func DBRemoveItem(itemID string) error {
 	res, err := db.Exec(
 		"UPDATE items SET deleted_at=? WHERE id=? AND deleted_at IS NULL",
@@ -235,7 +241,6 @@ func FetchCatalogItems() (map[string]*pb.Item, error) {
 	return m, rows.Err()
 }
 
-// FIX: Single IN(?) batch query instead of one SELECT per cart item (N+1 fix).
 func DBGetItemsByIDs(ids []string) (map[string]*pb.Item, error) {
 	if len(ids) == 0 {
 		return map[string]*pb.Item{}, nil
@@ -271,20 +276,12 @@ func DBGetItemsByIDs(ids []string) (map[string]*pb.Item, error) {
 
 // ── Orders ────────────────────────────────────────────────────────────────────
 
-// InsertOrder atomically:
-//  1. Validates that quote_data is present (FIX: mandatory, not optional).
-//  2. Unmarshals QuoteResponse and verifies grand_total matches expected_total.
-//  3. Decrements stock for every cart item in a single transaction.
-//  4. Inserts the order row.
-//
-// Returns ErrOutOfStock if any item has insufficient stock.
-func InsertOrder(req *pb.OrderRequest, cart []*pb.CartItem) (string, error) {
-	// FIX: quote_data is now mandatory — callers cannot skip the price check.
+// [FIX BUG-012]: Updated signature to require idempotencyKey
+func InsertOrder(req *pb.OrderRequest, cart []*pb.CartItem, idempotencyKey string) (string, error) {
 	if len(req.QuoteData) == 0 {
 		return "", ErrQuoteMissing
 	}
 
-	// Verify price integrity.
 	var quote pb.QuoteResponse
 	if err := unmarshalProto(req.QuoteData, &quote); err == nil {
 		const tolerance = 0.01
@@ -304,10 +301,8 @@ func InsertOrder(req *pb.OrderRequest, cart []*pb.CartItem) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback()
 
-	// FIX: Stock decremented in the same transaction that inserts the order.
-	// The WHERE stock >= qty guard makes the decrement atomic and prevents oversell.
 	for _, ci := range cart {
 		if ci.Quantity <= 0 {
 			continue
@@ -326,12 +321,16 @@ func InsertOrder(req *pb.OrderRequest, cart []*pb.CartItem) (string, error) {
 	}
 
 	_, err = tx.Exec(
-		`INSERT INTO orders(order_id,user_id,username,status,total,receipt,timestamp)
-		 VALUES(?,?,?,?,?,?,?)`,
+		`INSERT INTO orders(order_id,user_id,username,status,total,receipt,timestamp,idempotency_key)
+		 VALUES(?,?,?,?,?,?,?,?)`,
 		orderID, req.UserId, req.Username, "pending",
-		req.ExpectedTotal, req.ReceiptText, time.Now().Unix(),
+		req.ExpectedTotal, req.ReceiptText, time.Now().Unix(), idempotencyKey,
 	)
 	if err != nil {
+		// Detect SQLite Unique Constraint failure for idempotency check
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: orders.idempotency_key") {
+			return "", ErrDuplicateOrder
+		}
 		return "", fmt.Errorf("insert order: %w", err)
 	}
 
@@ -351,8 +350,6 @@ func DBGetActiveOrders(userID int64) ([]*pb.Order, error) {
 	return scanOrders(rows)
 }
 
-// DBGetAllOrders returns paginated, optionally status-filtered orders.
-// FIX: Replaces the sentinel user_id=0 hack with a proper admin RPC.
 func DBGetAllOrders(statusFilter string, page, pageSize int32) ([]*pb.Order, int32, error) {
 	if pageSize <= 0 {
 		pageSize = 20
@@ -388,8 +385,6 @@ func DBGetAllOrders(statusFilter string, page, pageSize int32) ([]*pb.Order, int
 	return orders, total, err
 }
 
-// DBUpdateOrderStatus returns the user_id so the caller can push a notification.
-// FIX: user_id now returned as a typed int64, not embedded in a message string.
 func DBUpdateOrderStatus(orderID, newStatus string) (int64, error) {
 	var userID int64
 	err := db.QueryRow("SELECT user_id FROM orders WHERE order_id=?", orderID).Scan(&userID)
@@ -419,7 +414,6 @@ func scanOrders(rows *sql.Rows) ([]*pb.Order, error) {
 
 // ── Carts ─────────────────────────────────────────────────────────────────────
 
-// FIX: Carts stored in their own table with a last_updated TTL, not in config.
 func DBSaveCart(userID int64, cartJSON string) error {
 	_, err := db.Exec(
 		`INSERT INTO carts(user_id,cart_json,last_updated) VALUES(?,?,?)
@@ -439,14 +433,42 @@ func DBGetCart(userID int64) (string, error) {
 	return j, err
 }
 
-// DBExpireCarts deletes cart rows not updated within olderThanHours.
 func DBExpireCarts(olderThanHours int) error {
 	cutoff := time.Now().Add(-time.Duration(olderThanHours) * time.Hour).Unix()
 	_, err := db.Exec("DELETE FROM carts WHERE last_updated<?", cutoff)
 	return err
 }
 
-// ── Audit ─────────────────────────────────────────────────────────────────────
+// ── Warehouses (Phase 1: Cluster A) ───────────────────────────────────────────
+
+func DBAddWarehouse(name string, lat, lon float64) (string, error) {
+	id := "WH-" + uuid.NewString()
+	_, err := db.Exec(
+		`INSERT INTO warehouses(id, name, lat, lon) VALUES(?,?,?,?)`,
+		id, name, lat, lon,
+	)
+	return id, err
+}
+
+func DBGetWarehouses() ([]*pb.Warehouse, error) {
+	rows, err := db.Query(`SELECT id, name, lat, lon FROM warehouses`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var whs []*pb.Warehouse
+	for rows.Next() {
+		var w pb.Warehouse
+		if err := rows.Scan(&w.Id, &w.Name, &w.Lat, &w.Lon); err != nil {
+			return nil, err
+		}
+		whs = append(whs, &w)
+	}
+	return whs, rows.Err()
+}
+
+// ── Audit & Performance ───────────────────────────────────────────────────────
 
 func DBAuditLog(actorID int64, action, targetID, detail string) {
 	_, err := db.Exec(
@@ -456,4 +478,23 @@ func DBAuditLog(actorID int64, action, targetID, detail string) {
 	if err != nil {
 		slog.Warn("audit log write failed", "err", err)
 	}
+}
+
+// StartWALCheckpointTimer prevents unbounded WAL growth (PERF-001)
+func StartWALCheckpointTimer() {
+	ticker := time.NewTicker(5 * time.Minute)
+	go func() {
+		for range ticker.C {
+			if db == nil {
+				continue
+			}
+			// TRUNCATE resets the WAL file to 0 bytes safely
+			_, err := db.Exec("PRAGMA wal_checkpoint(TRUNCATE);")
+			if err != nil {
+				slog.Warn("WAL checkpoint failed", "err", err)
+			} else {
+				slog.Debug("WAL checkpoint completed successfully")
+			}
+		}
+	}()
 }

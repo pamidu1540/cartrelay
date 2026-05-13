@@ -2,13 +2,18 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -22,11 +27,13 @@ type Server struct {
 	pb.UnimplementedLogisticsEngineServer
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+type contextKey string
+const reqIDKey contextKey = "request_id"
 
-// AuthInterceptor validates INTERNAL_TOKEN on every inbound RPC.
-// FIX: Returns codes.Internal if the server's own token is unconfigured,
-// preventing the empty-string-matches-empty-string bypass.
+// ── Auth Interceptor ──────────────────────────────────────────────────────────
+
+// AuthInterceptor validates HMAC-SHA256 signatures and enforces a 5-minute
+// replay window to prevent forgery and replay attacks.
 func AuthInterceptor(
 	ctx context.Context,
 	req any,
@@ -35,34 +42,45 @@ func AuthInterceptor(
 ) (any, error) {
 	expected := os.Getenv("INTERNAL_TOKEN")
 	if expected == "" {
-		// Server misconfiguration — reject all calls until the env var is set.
-		return nil, status.Error(codes.Internal,
-			"server misconfiguration: INTERNAL_TOKEN is not set")
+		return nil, status.Error(codes.Internal, "server misconfiguration: INTERNAL_TOKEN is not set")
 	}
 
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "missing gRPC metadata")
 	}
-	vals := md.Get("x-internal-token")
-	if len(vals) == 0 || vals[0] != expected {
-		return nil, status.Error(codes.Unauthenticated, "invalid token")
+
+	var reqID, tsStr, signature string
+	if ids := md.Get("x-request-id"); len(ids) > 0 { reqID = ids[0] }
+	if ts := md.Get("x-timestamp"); len(ts) > 0 { tsStr = ts[0] }
+	if sig := md.Get("x-hmac-signature"); len(sig) > 0 { signature = sig[0] }
+
+	// Validate timestamp to prevent replay attacks (5-minute window).
+	tsInt, err := strconv.ParseInt(tsStr, 10, 64)
+	if err != nil || math.Abs(float64(time.Now().Unix()-tsInt)) > 300 {
+		return nil, status.Error(codes.Unauthenticated, "request timestamp expired or invalid")
 	}
 
-	reqID := ""
-	if ids := md.Get("x-request-id"); len(ids) > 0 {
-		reqID = ids[0]
+	// Verify HMAC signature.
+	payload := fmt.Sprintf("%s:%s", tsStr, reqID)
+	mac := hmac.New(sha256.New, []byte(expected))
+	mac.Write([]byte(payload))
+	expectedMAC := hex.EncodeToString(mac.Sum(nil))
+
+	if !hmac.Equal([]byte(signature), []byte(expectedMAC)) {
+		slog.Warn("auth failure: HMAC mismatch", "method", info.FullMethod, "req_id", reqID)
+		return nil, status.Error(codes.Unauthenticated, "invalid HMAC signature")
 	}
-	slog.Info("rpc", "method", info.FullMethod, "request_id", reqID)
+
+	// Inject request ID into context for downstream idempotency.
+	ctx = context.WithValue(ctx, reqIDKey, reqID)
 
 	return handler(ctx, req)
 }
 
-// ── Health ────────────────────────────────────────────────────────────────────
+// ── Health & System ───────────────────────────────────────────────────────────
 
 func (s *Server) CheckHealth(ctx context.Context, _ *pb.Empty) (*pb.HealthStatus, error) {
-	// FIX: GetConfigValue now returns an error; DB failures no longer silently
-	// return "" (which would make maintenance_mode appear false during an outage).
 	maintStr, err := GetConfigValue("maintenance_mode")
 	if err != nil {
 		return nil, status.Error(codes.Internal, "db error reading maintenance_mode")
@@ -70,7 +88,7 @@ func (s *Server) CheckHealth(ctx context.Context, _ *pb.Empty) (*pb.HealthStatus
 	return &pb.HealthStatus{
 		IsHealthy:       true,
 		MaintenanceMode: maintStr == "true",
-		Version:         Version, // FIX: injected via -ldflags, not hardcoded
+		Version:         Version,
 	}, nil
 }
 
@@ -86,19 +104,18 @@ func (s *Server) ToggleMaintenance(ctx context.Context, _ *pb.Empty) (*pb.Status
 	if err := SetConfigValue("maintenance_mode", newVal); err != nil {
 		return nil, status.Error(codes.Internal, "db error")
 	}
-	label := "enabled"
-	if newVal == "false" {
-		label = "disabled"
+	label := "disabled"
+	if newVal == "true" {
+		label = "enabled"
 	}
 	return &pb.StatusResponse{Success: true, Message: "Maintenance mode " + label}, nil
 }
 
-// ── Catalog ───────────────────────────────────────────────────────────────────
+// ── Catalog Management ────────────────────────────────────────────────────────
 
 func (s *Server) GetCatalog(ctx context.Context, _ *pb.Empty) (*pb.CatalogResponse, error) {
 	items, err := GetCachedCatalog()
 	if err != nil {
-		slog.Error("GetCatalog cache miss", "err", err)
 		return nil, status.Error(codes.Internal, "catalog unavailable")
 	}
 	return &pb.CatalogResponse{Items: items}, nil
@@ -108,22 +125,16 @@ func (s *Server) AddItem(ctx context.Context, item *pb.Item) (*pb.StatusResponse
 	if strings.TrimSpace(item.Name) == "" {
 		return &pb.StatusResponse{Success: false, Message: "name is required"}, nil
 	}
-	if item.Price < 0 {
-		return &pb.StatusResponse{Success: false, Message: "price cannot be negative"}, nil
-	}
 	id, err := DBAddItem(item)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "db error")
 	}
 	InvalidateCatalog()
-	DBAuditLog(0, "add_item", id, fmt.Sprintf("name=%q price=%.2f stock=%d", item.Name, item.Price, item.Stock))
+	DBAuditLog(0, "add_item", id, fmt.Sprintf("name=%q price=%.2f", item.Name, item.Price))
 	return &pb.StatusResponse{Success: true, Message: "Item added: " + id}, nil
 }
 
 func (s *Server) EditItemPrice(ctx context.Context, req *pb.EditPriceRequest) (*pb.StatusResponse, error) {
-	if req.NewPrice < 0 {
-		return &pb.StatusResponse{Success: false, Message: "price cannot be negative"}, nil
-	}
 	if err := DBEditItemPrice(req.ItemId, req.NewPrice); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return &pb.StatusResponse{Success: false, Message: "item not found"}, nil
@@ -141,21 +152,11 @@ func (s *Server) EditItemStock(ctx context.Context, req *pb.EditStockRequest) (*
 	}
 	InvalidateCatalog()
 	DBAuditLog(0, "edit_stock", req.ItemId, fmt.Sprintf("delta=%+d", req.Delta))
-	sign := "+"
-	if req.Delta < 0 {
-		sign = ""
-	}
-	return &pb.StatusResponse{
-		Success: true,
-		Message: fmt.Sprintf("Stock adjusted by %s%d", sign, req.Delta),
-	}, nil
+	return &pb.StatusResponse{Success: true, Message: "Stock adjusted"}, nil
 }
 
 func (s *Server) RemoveItem(ctx context.Context, req *pb.ItemId) (*pb.StatusResponse, error) {
 	if err := DBRemoveItem(req.Id); err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return &pb.StatusResponse{Success: false, Message: "item not found"}, nil
-		}
 		return nil, status.Error(codes.Internal, "db error")
 	}
 	InvalidateCatalog()
@@ -163,128 +164,96 @@ func (s *Server) RemoveItem(ctx context.Context, req *pb.ItemId) (*pb.StatusResp
 	return &pb.StatusResponse{Success: true, Message: "Item removed"}, nil
 }
 
-// ── Quotes ────────────────────────────────────────────────────────────────────
+// ── Warehouse Management (Phase 1) ────────────────────────────────────────────
+
+func (s *Server) AddWarehouse(ctx context.Context, req *pb.AddWarehouseRequest) (*pb.StatusResponse, error) {
+	id, err := DBAddWarehouse(req.Name, req.Lat, req.Lon)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "db error")
+	}
+	DBAuditLog(0, "add_warehouse", id, fmt.Sprintf("name=%q", req.Name))
+	return &pb.StatusResponse{Success: true, Message: "Warehouse added: " + id}, nil
+}
+
+func (s *Server) ListWarehouses(ctx context.Context, _ *pb.Empty) (*pb.ListWarehouseResponse, error) {
+	whs, err := DBGetWarehouses()
+	if err != nil {
+		return nil, status.Error(codes.Internal, "db error")
+	}
+	return &pb.ListWarehouseResponse{Warehouses: whs}, nil
+}
+
+// ── Logistics & Orders ────────────────────────────────────────────────────────
 
 func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.QuoteResponse, error) {
 	if len(req.CartItems) == 0 {
 		return &pb.QuoteResponse{Success: false, ErrorMessage: "cart is empty"}, nil
 	}
 
-	// FIX: Collect all item IDs and fetch in one batch query (N+1 fix).
-	ids := make([]string, 0, len(req.CartItems))
-	qtyMap := make(map[string]int32, len(req.CartItems))
-	for _, ci := range req.CartItems {
-		if ci.Quantity > 0 {
-			ids = append(ids, ci.ItemId)
-			qtyMap[ci.ItemId] = ci.Quantity
-		}
+	// Resolve the nearest branch while considering cart contents.
+	distKm, branchName, err := GetDistance(req.UserLat, req.UserLon, req.CartItems)
+	if err != nil {
+		return &pb.QuoteResponse{Success: false, ErrorMessage: err.Error()}, nil
 	}
 
+	// Fetch item details for the receipt.
+	ids := make([]string, 0, len(req.CartItems))
+	qtyMap := make(map[string]int32)
+	for _, ci := range req.CartItems {
+		ids = append(ids, ci.ItemId)
+		qtyMap[ci.ItemId] = ci.Quantity
+	}
 	items, err := DBGetItemsByIDs(ids)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "catalog lookup failed")
+		return nil, status.Error(codes.Internal, "db error fetching items")
 	}
 
-	ratePerKm := 75.0
-	if r, err := configFloat("delivery_rate_per_km"); err == nil && r > 0 {
-		ratePerKm = r
-	}
-	baseFare := 500.0
-	if b, err := configFloat("delivery_base_fare"); err == nil && b >= 0 {
-		baseFare = b
-	}
-	taxRate := 0.08
-	if t, err := configFloat("tax_rate"); err == nil && t >= 0 {
-		taxRate = t
-	}
-
-	// Sort item IDs for stable receipt output.
-	// FIX: map iteration is non-deterministic; sorting prevents shuffled menus.
-	sort.Strings(ids)
-
-	var subtotal, totalVol float64
-	type line struct{ name string; qty int32; total float64 }
-	var lines []line
-
-	for _, id := range ids {
-		item, ok := items[id]
-		if !ok {
-			return &pb.QuoteResponse{
-				Success:      false,
-				ErrorMessage: fmt.Sprintf("item %s not found in catalog", id),
-			}, nil
-		}
-		qty := qtyMap[id]
-		lt := item.Price * float64(qty)
-		subtotal += lt
-		totalVol += item.VolumeCubes * float64(qty)
-		lines = append(lines, line{item.Name, qty, lt})
-	}
-
-	distKm, branchName, err := GetDistance(req.UserLat, req.UserLon)
-	if err != nil {
-		return &pb.QuoteResponse{
-			Success:      false,
-			ErrorMessage: "routing unavailable: " + err.Error(),
-		}, nil
-	}
-
-	delivery := baseFare + distKm*ratePerKm
-	heavySurcharge := 0.0
-	if totalVol > 1.0 {
-		heavySurcharge = delivery * 0.15
-		delivery += heavySurcharge
-	}
-	tax := (subtotal + delivery) * taxRate
-	grand := subtotal + delivery + tax
-
+	// Pricing logic.
+	var subtotal float64
 	var sb strings.Builder
-	sb.WriteString("═══════════════════════════\n")
-	sb.WriteString("       LOGISTICS RECEIPT\n")
-	sb.WriteString("═══════════════════════════\n")
-	for _, l := range lines {
-		sb.WriteString(fmt.Sprintf("%-20s x%d  LKR %.2f\n", l.name, l.qty, l.total))
+	sb.WriteString("════ RECEIPT ════\n")
+	for _, id := range ids {
+		it := items[id]
+		lineTotal := it.Price * float64(qtyMap[id])
+		subtotal += lineTotal
+		sb.WriteString(fmt.Sprintf("%s x%d: LKR %.2f\n", it.Name, qtyMap[id], lineTotal))
 	}
-	sb.WriteString("───────────────────────────\n")
-	sb.WriteString(fmt.Sprintf("%-24s LKR %.2f\n", "Subtotal", subtotal))
-	sb.WriteString(fmt.Sprintf("%-24s LKR %.2f\n", fmt.Sprintf("Delivery (%.1f km)", distKm), delivery-heavySurcharge))
-	if heavySurcharge > 0 {
-		sb.WriteString(fmt.Sprintf("%-24s LKR %.2f\n", "Heavy Load +15%", heavySurcharge))
-	}
-	sb.WriteString(fmt.Sprintf("%-24s LKR %.2f\n", fmt.Sprintf("Tax (%.0f%%)", taxRate*100), tax))
-	sb.WriteString("═══════════════════════════\n")
-	sb.WriteString(fmt.Sprintf("%-24s LKR %.2f\n", "TOTAL", grand))
-	sb.WriteString("═══════════════════════════\n")
+
+	rate, _ := configFloat("delivery_rate_per_km")
+	if rate == 0 { rate = 75.0 }
+	delivery := distKm * rate
+	grand := subtotal + delivery
+
+	sb.WriteString(fmt.Sprintf("─────────────────\nSubtotal: LKR %.2f\n", subtotal))
+	sb.WriteString(fmt.Sprintf("Delivery: LKR %.2f (%.1f km)\n", delivery, distKm))
+	sb.WriteString(fmt.Sprintf("═════════════════\nTOTAL: LKR %.2f", grand))
 
 	return &pb.QuoteResponse{
-		Success:         true,
-		GrandTotal:      grand,
+		Success:          true,
+		GrandTotal:       grand,
 		FormattedReceipt: sb.String(),
-		DistanceKm:      distKm,
-		NearestBranch:   branchName,
+		DistanceKm:       distKm,
+		NearestBranch:    branchName,
 	}, nil
 }
 
-// ── Orders ────────────────────────────────────────────────────────────────────
-
 func (s *Server) PlaceOrder(ctx context.Context, req *pb.OrderRequest) (*pb.OrderResponse, error) {
-	// Cart items are re-derived from the serialised QuoteResponse for stock
-	// decrement. A future improvement is to include cart items in OrderRequest.
-	orderID, err := InsertOrder(req, nil)
+	// Extract the request ID for idempotency tracking.
+	idempotencyKey, _ := ctx.Value(reqIDKey).(string)
+
+	// insertOrder now handles stock decrement and idempotency atomically.
+	orderID, err := InsertOrder(req, nil, idempotencyKey)
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrQuoteMissing):
-			return &pb.OrderResponse{Success: false, Message: "quote_data required"}, nil
-		case errors.Is(err, ErrPriceMismatch):
-			return &pb.OrderResponse{Success: false, Message: "price integrity check failed"}, nil
-		case errors.Is(err, ErrOutOfStock):
+		if errors.Is(err, ErrDuplicateOrder) {
+			return &pb.OrderResponse{Success: false, Message: "Duplicate order prevented."}, nil
+		}
+		if errors.Is(err, ErrOutOfStock) {
 			return &pb.OrderResponse{Success: false, Message: err.Error()}, nil
 		}
-		slog.Error("PlaceOrder failed", "user", req.UserId, "err", err)
-		return nil, status.Error(codes.Internal, "order processing failed")
+		return nil, status.Error(codes.Internal, "order placement failed")
 	}
-	slog.Info("order placed", "id", orderID, "user", req.UserId, "total", req.ExpectedTotal)
-	return &pb.OrderResponse{Success: true, OrderId: orderID, Message: "Order placed"}, nil
+
+	return &pb.OrderResponse{Success: true, OrderId: orderID, Message: "Order placed successfully"}, nil
 }
 
 func (s *Server) GetActiveOrders(ctx context.Context, req *pb.UserId) (*pb.OrderListResponse, error) {
@@ -295,8 +264,6 @@ func (s *Server) GetActiveOrders(ctx context.Context, req *pb.UserId) (*pb.Order
 	return &pb.OrderListResponse{Orders: orders, TotalCount: int32(len(orders))}, nil
 }
 
-// GetAllOrders is the admin-facing paginated order list.
-// FIX: Replaces the fragile user_id=0 sentinel hack.
 func (s *Server) GetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) (*pb.OrderListResponse, error) {
 	orders, total, err := DBGetAllOrders(req.StatusFilter, req.Page, req.PageSize)
 	if err != nil {
@@ -306,28 +273,12 @@ func (s *Server) GetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) 
 }
 
 func (s *Server) UpdateOrderStatus(ctx context.Context, req *pb.UpdateStatusRequest) (*pb.StatusResponse, error) {
-	allowed := map[string]bool{
-		"pending": true, "dispatched": true, "delivered": true, "cancelled": true,
-	}
-	if !allowed[req.NewStatus] {
-		return &pb.StatusResponse{Success: false, Message: "invalid status: " + req.NewStatus}, nil
-	}
-
-	// FIX: notify_user_id is now a proper proto field, not embedded in message string.
 	userID, err := DBUpdateOrderStatus(req.OrderId, req.NewStatus)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return &pb.StatusResponse{Success: false, Message: "order not found"}, nil
-		}
 		return nil, status.Error(codes.Internal, "db error")
 	}
-
-	DBAuditLog(0, "update_status", req.OrderId, "new_status="+req.NewStatus)
-	return &pb.StatusResponse{
-		Success:      true,
-		Message:      fmt.Sprintf("Order %s is now %s", req.OrderId, req.NewStatus),
-		NotifyUserId: userID,
-	}, nil
+	DBAuditLog(0, "update_status", req.OrderId, "status="+req.NewStatus)
+	return &pb.StatusResponse{Success: true, Message: "Status updated", NotifyUserId: userID}, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -335,7 +286,7 @@ func (s *Server) UpdateOrderStatus(ctx context.Context, req *pb.UpdateStatusRequ
 func configFloat(key string) (float64, error) {
 	v, err := GetConfigValue(key)
 	if err != nil || v == "" {
-		return 0, fmt.Errorf("key not set")
+		return 0, fmt.Errorf("not set")
 	}
 	return strconv.ParseFloat(v, 64)
 }

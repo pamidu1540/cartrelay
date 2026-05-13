@@ -6,16 +6,17 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
+
+	pb "logistics-engine/api"
 )
 
-// FIX: All Mapbox calls use this client with a 5 s timeout.
-// The default http.Client has no timeout and can block a gRPC handler forever.
+// mapboxClient uses a 5s timeout to prevent gRPC handlers from blocking forever.
+// The default http.Client has no timeout and can block indefinitely.
 var mapboxClient = &http.Client{Timeout: 5 * time.Second}
 
-// distanceCache stores quantized-key → km values.
+// distCache stores quantized-key → km values.
 // Evicted every hour to prevent unbounded growth.
 var distCache sync.Map
 
@@ -31,77 +32,36 @@ func init() {
 }
 
 // quantize rounds a coordinate to ~1.1 km precision for cache bucketing.
-// Two locations within the same ~1 km cell share a cached distance, which is
-// accurate enough for delivery pricing.
+// Two locations within the same ~1 km cell share a cached distance.
 func quantize(c float64) float64 { return math.Round(c*100) / 100 }
 
-type depot struct {
-	Name string  `json:"name"`
-	Lat  float64 `json:"lat"`
-	Lon  float64 `json:"lon"`
-}
-
-// loadDepots reads depot config. Supports two formats:
-//  1. New (preferred): depots_json = [{"name":"HQ","lat":6.9,"lon":79.8},...]
-//  2. Legacy: depot_lat + depot_lon + depot_name keys.
-func loadDepots() ([]depot, error) {
-	raw, err := GetConfigValue("depots_json")
-	if err != nil {
-		return nil, err
-	}
-	if raw != "" {
-		var ds []depot
-		if err := json.Unmarshal([]byte(raw), &ds); err != nil {
-			return nil, fmt.Errorf("depots_json parse error: %w", err)
-		}
-		return ds, nil
+// GetDistance evaluates all active warehouses and calculates the driving
+// distance to the nearest valid depot.
+//
+// [FIX]: Accepts cartItems to allow for future stock-aware filtering (A-003).
+func GetDistance(userLat, userLon float64, cartItems []*pb.CartItem) (float64, string, error) {
+	// Dynamically load warehouses from the database (Phase 1)
+	warehouses, err := DBGetWarehouses()
+	
+	// [FIX]: Handle the empty origin state meaningfully.
+	// If the database has no warehouses, we cannot calculate a distance.
+	if err != nil || len(warehouses) == 0 {
+		slog.Error("GetDistance failed: no warehouses configured in database")
+		return 0, "", fmt.Errorf("delivery unavailable: no warehouses configured by admin")
 	}
 
-	// Legacy single-depot fallback.
-	// FIX: strconv.ParseFloat replaces fmt.Sscanf — errors are no longer silently swallowed.
-	latStr, _ := GetConfigValue("depot_lat")
-	lonStr, _ := GetConfigValue("depot_lon")
-	nameStr, _ := GetConfigValue("depot_name")
-
-	if latStr == "" || lonStr == "" {
-		// Absolute fallback — Colombo, Sri Lanka.
-		slog.Warn("depot coordinates not configured, using built-in fallback")
-		return []depot{{Name: "Main Warehouse", Lat: 6.9271, Lon: 79.8612}}, nil
-	}
-
-	lat, err := strconv.ParseFloat(latStr, 64)
-	if err != nil {
-		return nil, fmt.Errorf("depot_lat is not a valid float (%q): %w", latStr, err)
-	}
-	lon, err := strconv.ParseFloat(lonStr, 64)
-	if err != nil {
-		return nil, fmt.Errorf("depot_lon is not a valid float (%q): %w", lonStr, err)
-	}
-	if nameStr == "" {
-		nameStr = "Main Warehouse"
-	}
-	return []depot{{Name: nameStr, Lat: lat, Lon: lon}}, nil
-}
-
-// GetDistance returns the driving distance (km) and the name of the nearest
-// depot to the user's coordinates. Results are cached by quantized grid cell.
-// Mapbox failures fall back to Haversine × 1.3 (road-distance approximation).
-func GetDistance(userLat, userLon float64) (float64, string, error) {
-	depots, err := loadDepots()
-	if err != nil || len(depots) == 0 {
-		return 0, "", fmt.Errorf("no depots available: %w", err)
-	}
-
-	// Pick the nearest depot by straight-line distance.
-	best := depots[0]
+	// Step 1: The Haversine Race to find the closest warehouse origin.
+	// In the future, this loop will filter out warehouses that lack stock for cartItems.
+	best := warehouses[0]
 	bestH := math.MaxFloat64
-	for _, d := range depots {
-		if h := Haversine(d.Lon, d.Lat, userLon, userLat); h < bestH {
+	for _, w := range warehouses {
+		if h := Haversine(w.Lon, w.Lat, userLon, userLat); h < bestH {
 			bestH = h
-			best = d
+			best = w
 		}
 	}
 
+	// Step 2: Check the Cache using quantized grid cell keys.
 	cacheKey := fmt.Sprintf("%.2f,%.2f→%.2f,%.2f",
 		quantize(best.Lat), quantize(best.Lon),
 		quantize(userLat), quantize(userLon))
@@ -110,9 +70,11 @@ func GetDistance(userLat, userLon float64) (float64, string, error) {
 		return v.(float64), best.Name, nil
 	}
 
+	// Step 3: Fetch real road distance from Mapbox.
 	dist, err := fetchMapboxDistance(best.Lon, best.Lat, userLon, userLat)
 	if err != nil {
-		slog.Warn("Mapbox unavailable — Haversine fallback", "depot", best.Name, "err", err)
+		// [FIX]: Mapbox failures fall back to Haversine × 1.3 (road approximation).
+		slog.Warn("Mapbox unavailable — Haversine fallback", "warehouse", best.Name, "err", err)
 		dist = bestH * 1.3
 	}
 
@@ -149,7 +111,9 @@ func fetchMapboxDistance(fromLon, fromLat, toLon, toLat float64) (float64, error
 	if len(result.Routes) == 0 {
 		return 0, fmt.Errorf("mapbox returned no routes")
 	}
-	return result.Routes[0].Distance / 1000.0, nil // metres → km
+	
+	// Convert metres → km
+	return result.Routes[0].Distance / 1000.0, nil 
 }
 
 // Haversine returns the great-circle distance in km between two lon/lat points.

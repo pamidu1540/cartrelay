@@ -15,6 +15,10 @@ service LogisticsEngine {
   rpc GetActiveOrders   (UserId)              returns (OrderListResponse);
   rpc GetAllOrders      (GetAllOrdersRequest) returns (OrderListResponse);
   rpc UpdateOrderStatus (UpdateStatusRequest) returns (StatusResponse);
+
+  // --- Warehouse Management ---
+  rpc AddWarehouse      (AddWarehouseRequest) returns (StatusResponse);
+  rpc ListWarehouses    (Empty)               returns (ListWarehouseResponse);
 }
 
 message Empty {}
@@ -25,8 +29,6 @@ message HealthStatus {
   string version          = 3;
 }
 
-// notify_user_id is populated on UpdateOrderStatus so the bot can push
-// a Telegram notification without fragile string parsing.
 message StatusResponse {
   bool   success        = 1;
   string message        = 2;
@@ -52,7 +54,6 @@ message EditPriceRequest {
   double new_price = 2;
 }
 
-// delta > 0 = restock, delta < 0 = manual deduction
 message EditStockRequest {
   string item_id = 1;
   int32  delta   = 2;
@@ -94,7 +95,6 @@ message OrderResponse {
   string message  = 3;
 }
 
-// user_id added so admin views can send targeted notifications.
 message Order {
   string order_id  = 1;
   string status    = 2;
@@ -117,7 +117,24 @@ message UpdateStatusRequest {
 }
 
 message GetAllOrdersRequest {
-  string status_filter = 1;   // "" = all statuses
-  int32  page          = 2;   // 0-indexed
-  int32  page_size     = 3;   // default 20
+  string status_filter = 1;
+  int32  page          = 2;
+  int32  page_size     = 3;
+}
+
+message Warehouse {
+  string id   = 1;
+  string name = 2;
+  double lat  = 3;
+  double lon  = 4;
+}
+
+message AddWarehouseRequest {
+  string name = 1;
+  double lat  = 2;
+  double lon  = 3;
+}
+
+message ListWarehouseResponse {
+  repeated Warehouse warehouses = 1;
 }
