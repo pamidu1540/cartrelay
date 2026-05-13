@@ -345,7 +345,7 @@ async def admin_list_warehouses(update: Update, ctx: ContextTypes.DEFAULT_TYPE) 
             text=f"🏢 *{wh.name}*\nID: `{wh.id}`",
             parse_mode=ParseMode.MARKDOWN
         )
-        
+
     await ctx.bot.send_message(
         chat_id=update.effective_chat.id,
         text="Warehouse listing complete.",
@@ -384,7 +384,7 @@ async def wizard_receive_wh_loc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) 
     if not loc:
         await update.message.reply_text("❌ Please send a valid Telegram Location attachment (📎).")
         return ADMIN_WH_LOC
-        
+
     name = ctx.user_data.get("wh_name", "Unknown Warehouse")
 
     try:

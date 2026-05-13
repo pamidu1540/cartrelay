@@ -56,11 +56,11 @@ def _meta(request_id: str | None = None) -> tuple:
     """Return gRPC call metadata with HMAC auth and correlation id."""
     ts = str(int(time.time()))
     req_id = request_id or str(uuid.uuid4())
-    
+
     # [FIX SEC-002]: HMAC-SHA256 signature to prevent replay and forgery
     payload = f"{ts}:{req_id}".encode("utf-8")
     signature = hmac.new(INTERNAL_TOKEN.encode("utf-8"), payload, hashlib.sha256).hexdigest()
-    
+
     return (
         ("x-timestamp", ts),
         ("x-request-id", req_id),
@@ -75,7 +75,7 @@ class EngineClient:
 
     async def init_pool(self) -> None:
         """
-        [FIX]: Initializes the gRPC channel pool inside the correct active 
+        [FIX]: Initializes the gRPC channel pool inside the correct active
         event loop to prevent the 'Future attached to different loop' error.
         """
         global _channels, _pool
