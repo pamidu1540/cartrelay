@@ -1,12 +1,5 @@
 """
 Admin panel Telegram handlers.
-
-Key Features:
-  - Catalog Management (View/Add/Remove)
-  - Order Processing (Pending/All/Dispatch/Cancel)
-  - Stock Adjustments
-  - Warehouse Management (Add/List)
-  - Maintenance Mode Toggles
 """
 
 from __future__ import annotations
@@ -39,7 +32,6 @@ def is_admin(user_id: int) -> bool:
 
 
 async def _require_admin(update: Update) -> bool:
-    """Reply with a rejection message if user is not an admin. Returns True if admin."""
     if is_admin(update.effective_user.id):
         return True
     text = "⛔ You are not authorised to use the admin panel."
@@ -313,7 +305,6 @@ async def admin_toggle_maintenance(update: Update, ctx: ContextTypes.DEFAULT_TYP
 # ── Warehouses ────────────────────────────────────────────────────────────────
 
 async def admin_list_warehouses(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Fetches all warehouses and sends them to the admin as Telegram location pins."""
     query = update.callback_query
     await query.answer()
     if not await _require_admin(update):
@@ -334,7 +325,7 @@ async def admin_list_warehouses(update: Update, ctx: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
-    await query.edit_message_text("📍 Here are the active warehouses:")
+    await query.edit_message_text("📍 Active Warehouses:")
     for wh in resp.warehouses:
         await ctx.bot.send_location(
             chat_id=update.effective_chat.id,
@@ -365,7 +356,7 @@ async def wizard_start_add_warehouse(update: Update, ctx: ContextTypes.DEFAULT_T
 
     ctx.user_data.clear()
     await query.edit_message_text(
-        "🏢 *New Warehouse*\n\nEnter a name for the new warehouse (e.g., 'South Depot'):",
+        "🏢 *New Warehouse*\n\nEnter a name for the new warehouse:",
         parse_mode=ParseMode.MARKDOWN
     )
     return ADMIN_WH_NAME
@@ -373,37 +364,23 @@ async def wizard_start_add_warehouse(update: Update, ctx: ContextTypes.DEFAULT_T
 
 async def wizard_receive_wh_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["wh_name"] = update.message.text.strip()
-    await update.message.reply_text(
-        f"Great. Now use Telegram's attachment menu (📎) to send the exact Location of '{ctx.user_data['wh_name']}'.\n"
-        "(Or type /cancel to abort)"
-    )
+    await update.message.reply_text("Send the Location pin (📎) for this warehouse:")
     return ADMIN_WH_LOC
 
 
 async def wizard_receive_wh_loc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     loc = update.message.location
     if not loc:
-        await update.message.reply_text("❌ Please send a valid Telegram Location attachment (📎).")
+        await update.message.reply_text("❌ Please send a valid Location pin.")
         return ADMIN_WH_LOC
 
-    name = ctx.user_data.get("wh_name", "Unknown Warehouse")
-
+    name = ctx.user_data.get("wh_name", "Unknown")
     try:
         resp = await engine.add_warehouse(name, loc.latitude, loc.longitude)
-        if resp.success:
-            text = f"✅ {resp.message}"
-        else:
-            text = f"❌ Failed: {resp.message}"
+        await update.message.reply_text(f"✅ {resp.message}")
     except Exception as exc:
-        text = f"⚠️ Error: {exc}"
+        await update.message.reply_text(f"⚠️ Error: {exc}")
 
-    await update.message.reply_text(
-        text,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Dashboard", callback_data="admin_dash")]
-        ])
-    )
-    ctx.user_data.clear()
     return ConversationHandler.END
 
 
@@ -413,20 +390,16 @@ async def wizard_start_add_item(update: Update, ctx: ContextTypes.DEFAULT_TYPE) 
     query = update.callback_query
     await query.answer()
     if not is_admin(query.from_user.id):
-        await query.answer("⛔ Not authorised.", show_alert=True)
         return ConversationHandler.END
 
     ctx.user_data.clear()
-    await query.edit_message_text("➕ *New Item*\n\nEnter item *name*:", parse_mode=ParseMode.MARKDOWN)
+    await query.edit_message_text("➕ *New Item*\n\nEnter item name:")
     return ADMIN_ADD_NAME
 
 
 async def wizard_receive_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["item_name"] = update.message.text.strip()
-    await update.message.reply_text(
-        f"Name: *{ctx.user_data['item_name']}*\n\nEnter *price* (LKR):",
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    await update.message.reply_text(f"Name: *{update.message.text}*\n\nEnter price (LKR):", parse_mode=ParseMode.MARKDOWN)
     return ADMIN_ADD_PRICE
 
 
@@ -434,9 +407,8 @@ async def wizard_receive_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
     try:
         ctx.user_data["item_price"] = float(update.message.text.strip())
     except ValueError:
-        await update.message.reply_text("❌ Invalid price. Enter a number (e.g. 1500):")
         return ADMIN_ADD_PRICE
-    await update.message.reply_text("Enter *volume* in m³ (e.g. 0.5):", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("Enter volume (m³):")
     return ADMIN_ADD_VOL
 
 
@@ -444,48 +416,36 @@ async def wizard_receive_vol(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
     try:
         ctx.user_data["item_vol"] = float(update.message.text.strip())
     except ValueError:
-        await update.message.reply_text("❌ Invalid volume. Enter a number (e.g. 0.5):")
         return ADMIN_ADD_VOL
-    await update.message.reply_text("Enter *category* (e.g. Electronics):", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("Enter category:")
     return ADMIN_ADD_CAT
 
 
 async def wizard_receive_cat(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["item_cat"] = update.message.text.strip()
-    await update.message.reply_text("Enter initial *stock* quantity:", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("Enter initial stock:")
     return ADMIN_ADD_STOCK
 
 
 async def wizard_receive_stock(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         stock = int(update.message.text.strip())
-        if stock < 0:
-            raise ValueError
     except ValueError:
-        await update.message.reply_text("❌ Stock must be a non-negative integer:")
         return ADMIN_ADD_STOCK
 
     item = logistics_pb2.Item(
-        name         = ctx.user_data["item_name"],
-        price        = ctx.user_data["item_price"],
-        volume_cubes = ctx.user_data["item_vol"],
-        category     = ctx.user_data["item_cat"],
-        stock        = stock,
-        photo_file_id= "",
+        name=ctx.user_data["item_name"],
+        price=ctx.user_data["item_price"],
+        volume_cubes=ctx.user_data["item_vol"],
+        category=ctx.user_data["item_cat"],
+        stock=stock
     )
     try:
         resp = await engine.add_item(item)
+        await update.message.reply_text(f"✅ {resp.message}")
     except Exception as exc:
-        await update.message.reply_text(f"⚠️ Failed to add item: {exc}")
-        return ConversationHandler.END
+        await update.message.reply_text(f"⚠️ Failed: {exc}")
 
-    await update.message.reply_text(
-        f"✅ {resp.message}",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Dashboard", callback_data="admin_dash")]
-        ]),
-    )
-    ctx.user_data.clear()
     return ConversationHandler.END
 
 
@@ -495,57 +455,30 @@ async def wizard_start_edit_stock(update: Update, ctx: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     if not is_admin(query.from_user.id):
-        await query.answer("⛔ Not authorised.", show_alert=True)
         return ConversationHandler.END
 
-    ctx.user_data.clear()
-    await query.edit_message_text(
-        "📈 *Adjust Stock*\n\nEnter the *item ID* to adjust:",
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    await query.edit_message_text("📈 *Adjust Stock*\nEnter Item ID:")
     return ADMIN_EDIT_STOCK_ITEM
 
 
 async def wizard_receive_stock_item(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["stock_item_id"] = update.message.text.strip()
-    await update.message.reply_text(
-        f"Item: `{ctx.user_data['stock_item_id']}`\n\n"
-        "Enter *delta* (+N to restock, −N to deduct):",
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    await update.message.reply_text("Enter delta (+ or -):")
     return ADMIN_EDIT_STOCK_DELTA
 
 
 async def wizard_receive_stock_delta(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         delta = int(update.message.text.strip())
-    except ValueError:
-        await update.message.reply_text("❌ Enter an integer (e.g. +50 or -5):")
-        return ADMIN_EDIT_STOCK_DELTA
-
-    item_id = ctx.user_data.get("stock_item_id", "")
-    try:
-        resp = await engine.edit_item_stock(item_id, delta)
+        resp = await engine.edit_item_stock(ctx.user_data["stock_item_id"], delta)
+        await update.message.reply_text(f"✅ {resp.message}")
     except Exception as exc:
-        await update.message.reply_text(f"⚠️ Failed: {exc}")
-        return ConversationHandler.END
+        await update.message.reply_text(f"⚠️ Error: {exc}")
 
-    await update.message.reply_text(
-        f"{'✅' if resp.success else '❌'} {resp.message}",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Dashboard", callback_data="admin_dash")]
-        ]),
-    )
-    ctx.user_data.clear()
     return ConversationHandler.END
 
 
 async def cancel_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data.clear()
-    await update.message.reply_text(
-        "Wizard cancelled.",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ Dashboard", callback_data="admin_dash")]
-        ]),
-    )
+    await update.message.reply_text("Wizard cancelled.")
     return ConversationHandler.END
