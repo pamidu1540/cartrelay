@@ -94,6 +94,16 @@ class LogisticsEngineStub(object):
                 request_serializer=logistics__pb2.UpdateStatusRequest.SerializeToString,
                 response_deserializer=logistics__pb2.StatusResponse.FromString,
                 _registered_method=True)
+        self.AddWarehouse = channel.unary_unary(
+                '/logistics.LogisticsEngine/AddWarehouse',
+                request_serializer=logistics__pb2.AddWarehouseRequest.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.ListWarehouses = channel.unary_unary(
+                '/logistics.LogisticsEngine/ListWarehouses',
+                request_serializer=logistics__pb2.Empty.SerializeToString,
+                response_deserializer=logistics__pb2.ListWarehouseResponse.FromString,
+                _registered_method=True)
 
 
 class LogisticsEngineServicer(object):
@@ -171,6 +181,19 @@ class LogisticsEngineServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def AddWarehouse(self, request, context):
+        """--- Warehouse Management ---
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListWarehouses(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_LogisticsEngineServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -233,6 +256,16 @@ def add_LogisticsEngineServicer_to_server(servicer, server):
                     servicer.UpdateOrderStatus,
                     request_deserializer=logistics__pb2.UpdateStatusRequest.FromString,
                     response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'AddWarehouse': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddWarehouse,
+                    request_deserializer=logistics__pb2.AddWarehouseRequest.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'ListWarehouses': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListWarehouses,
+                    request_deserializer=logistics__pb2.Empty.FromString,
+                    response_serializer=logistics__pb2.ListWarehouseResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -559,6 +592,60 @@ class LogisticsEngine(object):
             '/logistics.LogisticsEngine/UpdateOrderStatus',
             logistics__pb2.UpdateStatusRequest.SerializeToString,
             logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AddWarehouse(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/AddWarehouse',
+            logistics__pb2.AddWarehouseRequest.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListWarehouses(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/ListWarehouses',
+            logistics__pb2.Empty.SerializeToString,
+            logistics__pb2.ListWarehouseResponse.FromString,
             options,
             channel_credentials,
             insecure,
