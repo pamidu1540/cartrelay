@@ -1,14 +1,3 @@
-"""
-gRPC client for the Logistics Engine.
-
-Key Fixes:
-- Async Loop Bug: Channels are now initialized inside the active event loop
-  via the init_pool() method called during bot startup.
-- HMAC Security: Every request is signed with a SHA256 HMAC and timestamp
-  to prevent replay attacks and forgery.
-- Multi-Depot Support: Added AddWarehouse and ListWarehouses methods.
-"""
-
 import hashlib
 import hmac
 import logging
