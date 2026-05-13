@@ -22,8 +22,8 @@ from admin_handlers import (
     ADMIN_ADD_VOL,
     ADMIN_EDIT_STOCK_DELTA,
     ADMIN_EDIT_STOCK_ITEM,
-    ADMIN_WH_NAME,
     ADMIN_WH_LOC,
+    ADMIN_WH_NAME,
     admin_cancel_order,
     admin_dashboard,
     admin_dispatch_order,
@@ -72,6 +72,7 @@ if not BOT_TOKEN:
     logger.critical("TELEGRAM_BOT_TOKEN is not set.")
     sys.exit(1)
 
+
 # ── Lifecycle Hooks ──────────────────────────────────────────────────────────
 
 async def post_init(application) -> None:
@@ -92,11 +93,11 @@ async def post_init(application) -> None:
 async def post_shutdown(application) -> None:
     """Catches SIGTERM/SIGINT and gracefully flushes data."""
     logger.info("Shutdown signal received. Flushing pending carts...")
-    
+
     # [FIX BUG-003]: Flush all pending carts in memory to the Engine
     if hasattr(engine, 'flush_pending_carts'):
         await engine.flush_pending_carts()
-        
+
     await engine.close()
     logger.info("gRPC channel pool closed.")
 
@@ -163,7 +164,7 @@ def main() -> None:
         ],
         allow_reentry=True,
     )
-    app.add_handler(add_wh_wizard)
+    app.add_handler(wh_wizard)
 
     # Add Item wizard
     add_item_wizard = ConversationHandler(
