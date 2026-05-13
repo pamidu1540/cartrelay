@@ -117,8 +117,6 @@ func (x *HealthStatus) GetVersion() string {
 	return ""
 }
 
-// notify_user_id is populated on UpdateOrderStatus so the bot can push
-// a Telegram notification without fragile string parsing.
 type StatusResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -367,7 +365,6 @@ func (x *EditPriceRequest) GetNewPrice() float64 {
 	return 0
 }
 
-// delta > 0 = restock, delta < 0 = manual deduction
 type EditStockRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
@@ -796,7 +793,6 @@ func (x *OrderResponse) GetMessage() string {
 	return ""
 }
 
-// user_id added so admin views can send targeted notifications.
 type Order struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
@@ -1031,9 +1027,9 @@ func (x *UpdateStatusRequest) GetNewStatus() string {
 
 type GetAllOrdersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	StatusFilter  string                 `protobuf:"bytes,1,opt,name=status_filter,json=statusFilter,proto3" json:"status_filter,omitempty"` // "" = all statuses
-	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`                                    // 0-indexed
-	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`            // default 20
+	StatusFilter  string                 `protobuf:"bytes,1,opt,name=status_filter,json=statusFilter,proto3" json:"status_filter,omitempty"`
+	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1087,6 +1083,178 @@ func (x *GetAllOrdersRequest) GetPageSize() int32 {
 		return x.PageSize
 	}
 	return 0
+}
+
+type Warehouse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Lat           float64                `protobuf:"fixed64,3,opt,name=lat,proto3" json:"lat,omitempty"`
+	Lon           float64                `protobuf:"fixed64,4,opt,name=lon,proto3" json:"lon,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Warehouse) Reset() {
+	*x = Warehouse{}
+	mi := &file_logistics_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Warehouse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Warehouse) ProtoMessage() {}
+
+func (x *Warehouse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Warehouse.ProtoReflect.Descriptor instead.
+func (*Warehouse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *Warehouse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Warehouse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Warehouse) GetLat() float64 {
+	if x != nil {
+		return x.Lat
+	}
+	return 0
+}
+
+func (x *Warehouse) GetLon() float64 {
+	if x != nil {
+		return x.Lon
+	}
+	return 0
+}
+
+type AddWarehouseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Lat           float64                `protobuf:"fixed64,2,opt,name=lat,proto3" json:"lat,omitempty"`
+	Lon           float64                `protobuf:"fixed64,3,opt,name=lon,proto3" json:"lon,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddWarehouseRequest) Reset() {
+	*x = AddWarehouseRequest{}
+	mi := &file_logistics_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddWarehouseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddWarehouseRequest) ProtoMessage() {}
+
+func (x *AddWarehouseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddWarehouseRequest.ProtoReflect.Descriptor instead.
+func (*AddWarehouseRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *AddWarehouseRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *AddWarehouseRequest) GetLat() float64 {
+	if x != nil {
+		return x.Lat
+	}
+	return 0
+}
+
+func (x *AddWarehouseRequest) GetLon() float64 {
+	if x != nil {
+		return x.Lon
+	}
+	return 0
+}
+
+type ListWarehouseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Warehouses    []*Warehouse           `protobuf:"bytes,1,rep,name=warehouses,proto3" json:"warehouses,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWarehouseResponse) Reset() {
+	*x = ListWarehouseResponse{}
+	mi := &file_logistics_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWarehouseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWarehouseResponse) ProtoMessage() {}
+
+func (x *ListWarehouseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWarehouseResponse.ProtoReflect.Descriptor instead.
+func (*ListWarehouseResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ListWarehouseResponse) GetWarehouses() []*Warehouse {
+	if x != nil {
+		return x.Warehouses
+	}
+	return nil
 }
 
 var File_logistics_proto protoreflect.FileDescriptor
@@ -1174,7 +1342,20 @@ const file_logistics_proto_rawDesc = "" +
 	"\x13GetAllOrdersRequest\x12#\n" +
 	"\rstatus_filter\x18\x01 \x01(\tR\fstatusFilter\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x03 \x01(\x05R\bpageSize2\xb6\x06\n" +
+	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\"S\n" +
+	"\tWarehouse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x10\n" +
+	"\x03lat\x18\x03 \x01(\x01R\x03lat\x12\x10\n" +
+	"\x03lon\x18\x04 \x01(\x01R\x03lon\"M\n" +
+	"\x13AddWarehouseRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03lat\x18\x02 \x01(\x01R\x03lat\x12\x10\n" +
+	"\x03lon\x18\x03 \x01(\x01R\x03lon\"M\n" +
+	"\x15ListWarehouseResponse\x124\n" +
+	"\n" +
+	"warehouses\x18\x01 \x03(\v2\x14.logistics.WarehouseR\n" +
+	"warehouses2\xc7\a\n" +
 	"\x0fLogisticsEngine\x128\n" +
 	"\vCheckHealth\x12\x10.logistics.Empty\x1a\x17.logistics.HealthStatus\x12@\n" +
 	"\x11ToggleMaintenance\x12\x10.logistics.Empty\x1a\x19.logistics.StatusResponse\x12:\n" +
@@ -1190,7 +1371,9 @@ const file_logistics_proto_rawDesc = "" +
 	"PlaceOrder\x12\x17.logistics.OrderRequest\x1a\x18.logistics.OrderResponse\x12B\n" +
 	"\x0fGetActiveOrders\x12\x11.logistics.UserId\x1a\x1c.logistics.OrderListResponse\x12L\n" +
 	"\fGetAllOrders\x12\x1e.logistics.GetAllOrdersRequest\x1a\x1c.logistics.OrderListResponse\x12N\n" +
-	"\x11UpdateOrderStatus\x12\x1e.logistics.UpdateStatusRequest\x1a\x19.logistics.StatusResponseB$Z\"logistics-engine/api;logistics_apib\x06proto3"
+	"\x11UpdateOrderStatus\x12\x1e.logistics.UpdateStatusRequest\x1a\x19.logistics.StatusResponse\x12I\n" +
+	"\fAddWarehouse\x12\x1e.logistics.AddWarehouseRequest\x1a\x19.logistics.StatusResponse\x12D\n" +
+	"\x0eListWarehouses\x12\x10.logistics.Empty\x1a .logistics.ListWarehouseResponseB$Z\"logistics-engine/api;logistics_apib\x06proto3"
 
 var (
 	file_logistics_proto_rawDescOnce sync.Once
@@ -1204,62 +1387,70 @@ func file_logistics_proto_rawDescGZIP() []byte {
 	return file_logistics_proto_rawDescData
 }
 
-var file_logistics_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_logistics_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_logistics_proto_goTypes = []any{
-	(*Empty)(nil),               // 0: logistics.Empty
-	(*HealthStatus)(nil),        // 1: logistics.HealthStatus
-	(*StatusResponse)(nil),      // 2: logistics.StatusResponse
-	(*Item)(nil),                // 3: logistics.Item
-	(*CatalogResponse)(nil),     // 4: logistics.CatalogResponse
-	(*EditPriceRequest)(nil),    // 5: logistics.EditPriceRequest
-	(*EditStockRequest)(nil),    // 6: logistics.EditStockRequest
-	(*ItemId)(nil),              // 7: logistics.ItemId
-	(*CartItem)(nil),            // 8: logistics.CartItem
-	(*QuoteRequest)(nil),        // 9: logistics.QuoteRequest
-	(*QuoteResponse)(nil),       // 10: logistics.QuoteResponse
-	(*OrderRequest)(nil),        // 11: logistics.OrderRequest
-	(*OrderResponse)(nil),       // 12: logistics.OrderResponse
-	(*Order)(nil),               // 13: logistics.Order
-	(*OrderListResponse)(nil),   // 14: logistics.OrderListResponse
-	(*UserId)(nil),              // 15: logistics.UserId
-	(*UpdateStatusRequest)(nil), // 16: logistics.UpdateStatusRequest
-	(*GetAllOrdersRequest)(nil), // 17: logistics.GetAllOrdersRequest
-	nil,                         // 18: logistics.CatalogResponse.ItemsEntry
+	(*Empty)(nil),                 // 0: logistics.Empty
+	(*HealthStatus)(nil),          // 1: logistics.HealthStatus
+	(*StatusResponse)(nil),        // 2: logistics.StatusResponse
+	(*Item)(nil),                  // 3: logistics.Item
+	(*CatalogResponse)(nil),       // 4: logistics.CatalogResponse
+	(*EditPriceRequest)(nil),      // 5: logistics.EditPriceRequest
+	(*EditStockRequest)(nil),      // 6: logistics.EditStockRequest
+	(*ItemId)(nil),                // 7: logistics.ItemId
+	(*CartItem)(nil),              // 8: logistics.CartItem
+	(*QuoteRequest)(nil),          // 9: logistics.QuoteRequest
+	(*QuoteResponse)(nil),         // 10: logistics.QuoteResponse
+	(*OrderRequest)(nil),          // 11: logistics.OrderRequest
+	(*OrderResponse)(nil),         // 12: logistics.OrderResponse
+	(*Order)(nil),                 // 13: logistics.Order
+	(*OrderListResponse)(nil),     // 14: logistics.OrderListResponse
+	(*UserId)(nil),                // 15: logistics.UserId
+	(*UpdateStatusRequest)(nil),   // 16: logistics.UpdateStatusRequest
+	(*GetAllOrdersRequest)(nil),   // 17: logistics.GetAllOrdersRequest
+	(*Warehouse)(nil),             // 18: logistics.Warehouse
+	(*AddWarehouseRequest)(nil),   // 19: logistics.AddWarehouseRequest
+	(*ListWarehouseResponse)(nil), // 20: logistics.ListWarehouseResponse
+	nil,                           // 21: logistics.CatalogResponse.ItemsEntry
 }
 var file_logistics_proto_depIdxs = []int32{
-	18, // 0: logistics.CatalogResponse.items:type_name -> logistics.CatalogResponse.ItemsEntry
+	21, // 0: logistics.CatalogResponse.items:type_name -> logistics.CatalogResponse.ItemsEntry
 	8,  // 1: logistics.QuoteRequest.cart_items:type_name -> logistics.CartItem
 	13, // 2: logistics.OrderListResponse.orders:type_name -> logistics.Order
-	3,  // 3: logistics.CatalogResponse.ItemsEntry.value:type_name -> logistics.Item
-	0,  // 4: logistics.LogisticsEngine.CheckHealth:input_type -> logistics.Empty
-	0,  // 5: logistics.LogisticsEngine.ToggleMaintenance:input_type -> logistics.Empty
-	0,  // 6: logistics.LogisticsEngine.GetCatalog:input_type -> logistics.Empty
-	3,  // 7: logistics.LogisticsEngine.AddItem:input_type -> logistics.Item
-	5,  // 8: logistics.LogisticsEngine.EditItemPrice:input_type -> logistics.EditPriceRequest
-	6,  // 9: logistics.LogisticsEngine.EditItemStock:input_type -> logistics.EditStockRequest
-	7,  // 10: logistics.LogisticsEngine.RemoveItem:input_type -> logistics.ItemId
-	9,  // 11: logistics.LogisticsEngine.CalculateQuote:input_type -> logistics.QuoteRequest
-	11, // 12: logistics.LogisticsEngine.PlaceOrder:input_type -> logistics.OrderRequest
-	15, // 13: logistics.LogisticsEngine.GetActiveOrders:input_type -> logistics.UserId
-	17, // 14: logistics.LogisticsEngine.GetAllOrders:input_type -> logistics.GetAllOrdersRequest
-	16, // 15: logistics.LogisticsEngine.UpdateOrderStatus:input_type -> logistics.UpdateStatusRequest
-	1,  // 16: logistics.LogisticsEngine.CheckHealth:output_type -> logistics.HealthStatus
-	2,  // 17: logistics.LogisticsEngine.ToggleMaintenance:output_type -> logistics.StatusResponse
-	4,  // 18: logistics.LogisticsEngine.GetCatalog:output_type -> logistics.CatalogResponse
-	2,  // 19: logistics.LogisticsEngine.AddItem:output_type -> logistics.StatusResponse
-	2,  // 20: logistics.LogisticsEngine.EditItemPrice:output_type -> logistics.StatusResponse
-	2,  // 21: logistics.LogisticsEngine.EditItemStock:output_type -> logistics.StatusResponse
-	2,  // 22: logistics.LogisticsEngine.RemoveItem:output_type -> logistics.StatusResponse
-	10, // 23: logistics.LogisticsEngine.CalculateQuote:output_type -> logistics.QuoteResponse
-	12, // 24: logistics.LogisticsEngine.PlaceOrder:output_type -> logistics.OrderResponse
-	14, // 25: logistics.LogisticsEngine.GetActiveOrders:output_type -> logistics.OrderListResponse
-	14, // 26: logistics.LogisticsEngine.GetAllOrders:output_type -> logistics.OrderListResponse
-	2,  // 27: logistics.LogisticsEngine.UpdateOrderStatus:output_type -> logistics.StatusResponse
-	16, // [16:28] is the sub-list for method output_type
-	4,  // [4:16] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	18, // 3: logistics.ListWarehouseResponse.warehouses:type_name -> logistics.Warehouse
+	3,  // 4: logistics.CatalogResponse.ItemsEntry.value:type_name -> logistics.Item
+	0,  // 5: logistics.LogisticsEngine.CheckHealth:input_type -> logistics.Empty
+	0,  // 6: logistics.LogisticsEngine.ToggleMaintenance:input_type -> logistics.Empty
+	0,  // 7: logistics.LogisticsEngine.GetCatalog:input_type -> logistics.Empty
+	3,  // 8: logistics.LogisticsEngine.AddItem:input_type -> logistics.Item
+	5,  // 9: logistics.LogisticsEngine.EditItemPrice:input_type -> logistics.EditPriceRequest
+	6,  // 10: logistics.LogisticsEngine.EditItemStock:input_type -> logistics.EditStockRequest
+	7,  // 11: logistics.LogisticsEngine.RemoveItem:input_type -> logistics.ItemId
+	9,  // 12: logistics.LogisticsEngine.CalculateQuote:input_type -> logistics.QuoteRequest
+	11, // 13: logistics.LogisticsEngine.PlaceOrder:input_type -> logistics.OrderRequest
+	15, // 14: logistics.LogisticsEngine.GetActiveOrders:input_type -> logistics.UserId
+	17, // 15: logistics.LogisticsEngine.GetAllOrders:input_type -> logistics.GetAllOrdersRequest
+	16, // 16: logistics.LogisticsEngine.UpdateOrderStatus:input_type -> logistics.UpdateStatusRequest
+	19, // 17: logistics.LogisticsEngine.AddWarehouse:input_type -> logistics.AddWarehouseRequest
+	0,  // 18: logistics.LogisticsEngine.ListWarehouses:input_type -> logistics.Empty
+	1,  // 19: logistics.LogisticsEngine.CheckHealth:output_type -> logistics.HealthStatus
+	2,  // 20: logistics.LogisticsEngine.ToggleMaintenance:output_type -> logistics.StatusResponse
+	4,  // 21: logistics.LogisticsEngine.GetCatalog:output_type -> logistics.CatalogResponse
+	2,  // 22: logistics.LogisticsEngine.AddItem:output_type -> logistics.StatusResponse
+	2,  // 23: logistics.LogisticsEngine.EditItemPrice:output_type -> logistics.StatusResponse
+	2,  // 24: logistics.LogisticsEngine.EditItemStock:output_type -> logistics.StatusResponse
+	2,  // 25: logistics.LogisticsEngine.RemoveItem:output_type -> logistics.StatusResponse
+	10, // 26: logistics.LogisticsEngine.CalculateQuote:output_type -> logistics.QuoteResponse
+	12, // 27: logistics.LogisticsEngine.PlaceOrder:output_type -> logistics.OrderResponse
+	14, // 28: logistics.LogisticsEngine.GetActiveOrders:output_type -> logistics.OrderListResponse
+	14, // 29: logistics.LogisticsEngine.GetAllOrders:output_type -> logistics.OrderListResponse
+	2,  // 30: logistics.LogisticsEngine.UpdateOrderStatus:output_type -> logistics.StatusResponse
+	2,  // 31: logistics.LogisticsEngine.AddWarehouse:output_type -> logistics.StatusResponse
+	20, // 32: logistics.LogisticsEngine.ListWarehouses:output_type -> logistics.ListWarehouseResponse
+	19, // [19:33] is the sub-list for method output_type
+	5,  // [5:19] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_logistics_proto_init() }
@@ -1273,7 +1464,7 @@ func file_logistics_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_logistics_proto_rawDesc), len(file_logistics_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
