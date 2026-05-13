@@ -31,6 +31,8 @@ const (
 	LogisticsEngine_GetActiveOrders_FullMethodName   = "/logistics.LogisticsEngine/GetActiveOrders"
 	LogisticsEngine_GetAllOrders_FullMethodName      = "/logistics.LogisticsEngine/GetAllOrders"
 	LogisticsEngine_UpdateOrderStatus_FullMethodName = "/logistics.LogisticsEngine/UpdateOrderStatus"
+	LogisticsEngine_AddWarehouse_FullMethodName      = "/logistics.LogisticsEngine/AddWarehouse"
+	LogisticsEngine_ListWarehouses_FullMethodName    = "/logistics.LogisticsEngine/ListWarehouses"
 )
 
 // LogisticsEngineClient is the client API for LogisticsEngine service.
@@ -49,6 +51,9 @@ type LogisticsEngineClient interface {
 	GetActiveOrders(ctx context.Context, in *UserId, opts ...grpc.CallOption) (*OrderListResponse, error)
 	GetAllOrders(ctx context.Context, in *GetAllOrdersRequest, opts ...grpc.CallOption) (*OrderListResponse, error)
 	UpdateOrderStatus(ctx context.Context, in *UpdateStatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	// --- Warehouse Management ---
+	AddWarehouse(ctx context.Context, in *AddWarehouseRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	ListWarehouses(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListWarehouseResponse, error)
 }
 
 type logisticsEngineClient struct {
@@ -179,6 +184,26 @@ func (c *logisticsEngineClient) UpdateOrderStatus(ctx context.Context, in *Updat
 	return out, nil
 }
 
+func (c *logisticsEngineClient) AddWarehouse(ctx context.Context, in *AddWarehouseRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatusResponse)
+	err := c.cc.Invoke(ctx, LogisticsEngine_AddWarehouse_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *logisticsEngineClient) ListWarehouses(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListWarehouseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWarehouseResponse)
+	err := c.cc.Invoke(ctx, LogisticsEngine_ListWarehouses_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LogisticsEngineServer is the server API for LogisticsEngine service.
 // All implementations must embed UnimplementedLogisticsEngineServer
 // for forward compatibility.
@@ -195,6 +220,9 @@ type LogisticsEngineServer interface {
 	GetActiveOrders(context.Context, *UserId) (*OrderListResponse, error)
 	GetAllOrders(context.Context, *GetAllOrdersRequest) (*OrderListResponse, error)
 	UpdateOrderStatus(context.Context, *UpdateStatusRequest) (*StatusResponse, error)
+	// --- Warehouse Management ---
+	AddWarehouse(context.Context, *AddWarehouseRequest) (*StatusResponse, error)
+	ListWarehouses(context.Context, *Empty) (*ListWarehouseResponse, error)
 	mustEmbedUnimplementedLogisticsEngineServer()
 }
 
@@ -240,6 +268,12 @@ func (UnimplementedLogisticsEngineServer) GetAllOrders(context.Context, *GetAllO
 }
 func (UnimplementedLogisticsEngineServer) UpdateOrderStatus(context.Context, *UpdateStatusRequest) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateOrderStatus not implemented")
+}
+func (UnimplementedLogisticsEngineServer) AddWarehouse(context.Context, *AddWarehouseRequest) (*StatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddWarehouse not implemented")
+}
+func (UnimplementedLogisticsEngineServer) ListWarehouses(context.Context, *Empty) (*ListWarehouseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListWarehouses not implemented")
 }
 func (UnimplementedLogisticsEngineServer) mustEmbedUnimplementedLogisticsEngineServer() {}
 func (UnimplementedLogisticsEngineServer) testEmbeddedByValue()                         {}
@@ -478,6 +512,42 @@ func _LogisticsEngine_UpdateOrderStatus_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LogisticsEngine_AddWarehouse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddWarehouseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogisticsEngineServer).AddWarehouse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LogisticsEngine_AddWarehouse_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogisticsEngineServer).AddWarehouse(ctx, req.(*AddWarehouseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LogisticsEngine_ListWarehouses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogisticsEngineServer).ListWarehouses(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LogisticsEngine_ListWarehouses_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogisticsEngineServer).ListWarehouses(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LogisticsEngine_ServiceDesc is the grpc.ServiceDesc for LogisticsEngine service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -532,6 +602,14 @@ var LogisticsEngine_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateOrderStatus",
 			Handler:    _LogisticsEngine_UpdateOrderStatus_Handler,
+		},
+		{
+			MethodName: "AddWarehouse",
+			Handler:    _LogisticsEngine_AddWarehouse_Handler,
+		},
+		{
+			MethodName: "ListWarehouses",
+			Handler:    _LogisticsEngine_ListWarehouses_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
