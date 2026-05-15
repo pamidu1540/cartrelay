@@ -22,6 +22,7 @@ from admin_handlers import (
     ADMIN_ADD_VOL,
     ADMIN_EDIT_STOCK_DELTA,
     ADMIN_EDIT_STOCK_ITEM,
+    ADMIN_WH_ADMIN_ID,
     ADMIN_WH_LOC,
     ADMIN_WH_NAME,
     admin_cancel_order,
@@ -41,6 +42,7 @@ from admin_handlers import (
     wizard_receive_stock_delta,
     wizard_receive_stock_item,
     wizard_receive_vol,
+    wizard_receive_wh_admin_id,
     wizard_receive_wh_loc,
     wizard_receive_wh_name,
     wizard_start_add_item,
@@ -81,6 +83,12 @@ async def post_init(application) -> None:
 
     # Start the background task for lazy cart flushing
     await start_cart_flush()
+
+    # Register SIGTERM inside the running loop — avoids the 'Future attached
+    # to a different loop' error caused by calling asyncio.get_event_loop()
+    # before run_polling() creates its own loop via asyncio.run().
+    loop = asyncio.get_running_loop()
+    loop.add_signal_handler(signal.SIGTERM, application.stop_running)
 
     try:
         health = await engine.check_health()
@@ -154,11 +162,13 @@ def main() -> None:
     wh_wizard = ConversationHandler(
         entry_points=[CallbackQueryHandler(wizard_start_add_warehouse, pattern="^admin_add_wh$")],
         states={
-            ADMIN_WH_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_receive_wh_name)],
-            ADMIN_WH_LOC:  [MessageHandler(filters.LOCATION, wizard_receive_wh_loc)],
+            ADMIN_WH_NAME:     [MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_receive_wh_name)],
+            ADMIN_WH_LOC:      [MessageHandler(filters.LOCATION, wizard_receive_wh_loc)],
+            ADMIN_WH_ADMIN_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_receive_wh_admin_id)],
         },
         fallbacks=[
             CommandHandler("cancel", cancel_wizard),
+            CommandHandler("skip",   wizard_receive_wh_admin_id),
             MessageHandler(filters.COMMAND, cancel_wizard),
         ],
         allow_reentry=True,
@@ -197,16 +207,6 @@ def main() -> None:
         allow_reentry=True,
     )
     app.add_handler(edit_stock_wizard)
-
-    # ── Signal Handling ───────────────────────────────────────────────────────
-
-    loop = asyncio.get_event_loop()
-
-    def _sigterm_handler():
-        logger.info("SIGTERM received — stopping bot gracefully")
-        app.stop_running()
-
-    loop.add_signal_handler(signal.SIGTERM, _sigterm_handler)
 
     logger.info("bot starting")
     app.run_polling(allowed_updates=Update.ALL_TYPES)

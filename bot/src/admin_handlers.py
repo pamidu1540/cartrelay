@@ -53,7 +53,8 @@ async def _require_admin(update: Update) -> bool:
     ADMIN_EDIT_STOCK_DELTA,
     ADMIN_WH_NAME,
     ADMIN_WH_LOC,
-) = range(9)
+    ADMIN_WH_ADMIN_ID,
+) = range(10)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -327,6 +328,11 @@ async def admin_list_warehouses(update: Update, ctx: ContextTypes.DEFAULT_TYPE) 
 
     await query.edit_message_text("📍 Active Warehouses:")
     for wh in resp.warehouses:
+        admin_label = (
+            f"👤 Admin ID: `{wh.admin_telegram_id}`"
+            if wh.admin_telegram_id
+            else "👤 Admin: _unassigned_"
+        )
         await ctx.bot.send_location(
             chat_id=update.effective_chat.id,
             latitude=wh.lat,
@@ -334,7 +340,7 @@ async def admin_list_warehouses(update: Update, ctx: ContextTypes.DEFAULT_TYPE) 
         )
         await ctx.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f"🏢 *{wh.name}*\nID: `{wh.id}`",
+            text=f"🏢 *{wh.name}*\nID: `{wh.id}`\n{admin_label}",
             parse_mode=ParseMode.MARKDOWN
         )
 
@@ -374,10 +380,46 @@ async def wizard_receive_wh_loc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("❌ Please send a valid Location pin.")
         return ADMIN_WH_LOC
 
+    ctx.user_data["wh_lat"] = loc.latitude
+    ctx.user_data["wh_lon"] = loc.longitude
+    await update.message.reply_text(
+        "👤 *Assign a warehouse admin*\n\n"
+        "Enter the Telegram user ID of the admin responsible for this warehouse.\n"
+        "Send `0` or /skip to leave unassigned.",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    return ADMIN_WH_ADMIN_ID
+
+
+async def wizard_receive_wh_admin_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    raw = update.message.text.strip()
+
+    # Allow /skip or "0" to leave unassigned
+    if raw.lower() in ("/skip", "0", "skip"):
+        admin_id = 0
+    else:
+        try:
+            admin_id = int(raw)
+            if admin_id < 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Please enter a valid numeric Telegram user ID, or send `0` to skip.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return ADMIN_WH_ADMIN_ID
+
     name = ctx.user_data.get("wh_name", "Unknown")
+    lat  = ctx.user_data.get("wh_lat", 0.0)
+    lon  = ctx.user_data.get("wh_lon", 0.0)
+
     try:
-        resp = await engine.add_warehouse(name, loc.latitude, loc.longitude)
-        await update.message.reply_text(f"✅ {resp.message}")
+        resp = await engine.add_warehouse(name, lat, lon, admin_telegram_id=admin_id)
+        admin_note = f"\n👤 Admin ID: `{admin_id}`" if admin_id else "\n👤 Admin: unassigned"
+        await update.message.reply_text(
+            f"✅ {resp.message}{admin_note}",
+            parse_mode=ParseMode.MARKDOWN,
+        )
     except Exception as exc:
         await update.message.reply_text(f"⚠️ Error: {exc}")
 

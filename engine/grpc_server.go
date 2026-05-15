@@ -166,11 +166,11 @@ func (s *Server) RemoveItem(ctx context.Context, req *pb.ItemId) (*pb.StatusResp
 // ── Warehouse Management (Phase 1) ────────────────────────────────────────────
 
 func (s *Server) AddWarehouse(ctx context.Context, req *pb.AddWarehouseRequest) (*pb.StatusResponse, error) {
-	id, err := DBAddWarehouse(req.Name, req.Lat, req.Lon)
+	id, err := DBAddWarehouse(req.Name, req.Lat, req.Lon, req.AdminTelegramId)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "db error")
 	}
-	DBAuditLog(0, "add_warehouse", id, fmt.Sprintf("name=%q", req.Name))
+	DBAuditLog(0, "add_warehouse", id, fmt.Sprintf("name=%q admin_id=%d", req.Name, req.AdminTelegramId))
 	return &pb.StatusResponse{Success: true, Message: "Warehouse added: " + id}, nil
 }
 
