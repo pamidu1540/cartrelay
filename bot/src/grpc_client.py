@@ -140,9 +140,15 @@ class EngineClient:
 
     # ── Warehouse Management (Phase 1) ────────────────────────────────────────
 
-    async def add_warehouse(self, name: str, lat: float, lon: float, request_id: str | None = None):
+    async def add_warehouse(
+        self, name: str, lat: float, lon: float,
+        admin_telegram_id: int = 0, request_id: str | None = None
+    ):
         return await self._stub().AddWarehouse(
-            logistics_pb2.AddWarehouseRequest(name=name, lat=lat, lon=lon),
+            logistics_pb2.AddWarehouseRequest(
+                name=name, lat=lat, lon=lon,
+                admin_telegram_id=admin_telegram_id,
+            ),
             metadata=_meta(request_id),
             timeout=self.DEFAULT_TIMEOUT,
         )

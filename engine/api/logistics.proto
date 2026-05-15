@@ -123,16 +123,18 @@ message GetAllOrdersRequest {
 }
 
 message Warehouse {
-  string id   = 1;
-  string name = 2;
-  double lat  = 3;
-  double lon  = 4;
+  string id                = 1;
+  string name              = 2;
+  double lat               = 3;
+  double lon               = 4;
+  int64  admin_telegram_id = 5;  // Telegram user ID of the assigned warehouse admin (0 = unassigned)
 }
 
 message AddWarehouseRequest {
-  string name = 1;
-  double lat  = 2;
-  double lon  = 3;
+  string name              = 1;
+  double lat               = 2;
+  double lon               = 3;
+  int64  admin_telegram_id = 4;  // Telegram user ID of the assigned warehouse admin
 }
 
 message ListWarehouseResponse {

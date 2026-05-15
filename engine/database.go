@@ -105,10 +105,11 @@ func createSchema() error {
 
 		// [Phase 1: Cluster A] Warehouse storage
 		`CREATE TABLE IF NOT EXISTS warehouses (
-			id   TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			lat  REAL NOT NULL,
-			lon  REAL NOT NULL
+			id                TEXT    PRIMARY KEY,
+			name              TEXT    NOT NULL,
+			lat               REAL    NOT NULL,
+			lon               REAL    NOT NULL,
+			admin_telegram_id INTEGER NOT NULL DEFAULT 0
 		)`,
 
 		`CREATE TABLE IF NOT EXISTS carts (
@@ -136,6 +137,19 @@ func createSchema() error {
 			return fmt.Errorf("schema: %w", err)
 		}
 	}
+
+	// ── Migrations (idempotent ALTER TABLE statements) ────────────────────────
+	// SQLite raises "duplicate column name" when the column already exists.
+	// We ignore that specific error so migrations are safe to run on every boot.
+	migrations := []string{
+		`ALTER TABLE warehouses ADD COLUMN admin_telegram_id INTEGER NOT NULL DEFAULT 0`,
+	}
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migration: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -441,17 +455,17 @@ func DBExpireCarts(olderThanHours int) error {
 
 // ── Warehouses (Phase 1: Cluster A) ───────────────────────────────────────────
 
-func DBAddWarehouse(name string, lat, lon float64) (string, error) {
+func DBAddWarehouse(name string, lat, lon float64, adminTelegramID int64) (string, error) {
 	id := "WH-" + uuid.NewString()
 	_, err := db.Exec(
-		`INSERT INTO warehouses(id, name, lat, lon) VALUES(?,?,?,?)`,
-		id, name, lat, lon,
+		`INSERT INTO warehouses(id, name, lat, lon, admin_telegram_id) VALUES(?,?,?,?,?)`,
+		id, name, lat, lon, adminTelegramID,
 	)
 	return id, err
 }
 
 func DBGetWarehouses() ([]*pb.Warehouse, error) {
-	rows, err := db.Query(`SELECT id, name, lat, lon FROM warehouses`)
+	rows, err := db.Query(`SELECT id, name, lat, lon, admin_telegram_id FROM warehouses`)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +474,7 @@ func DBGetWarehouses() ([]*pb.Warehouse, error) {
 	var whs []*pb.Warehouse
 	for rows.Next() {
 		var w pb.Warehouse
-		if err := rows.Scan(&w.Id, &w.Name, &w.Lat, &w.Lon); err != nil {
+		if err := rows.Scan(&w.Id, &w.Name, &w.Lat, &w.Lon, &w.AdminTelegramId); err != nil {
 			return nil, err
 		}
 		whs = append(whs, &w)
