@@ -4,6 +4,7 @@ import os
 import signal
 import sys
 
+import grpc.aio
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -79,6 +80,12 @@ if not BOT_TOKEN:
 
 async def post_init(application) -> None:
     """Initializes async resources after the PTB event loop starts."""
+    # Must be the FIRST grpc.aio call — binds grpc's internal thread pool and
+    # completion queue to THIS loop (the one asyncio.run() created inside
+    # run_polling).  Any grpc.aio work done before this point latches onto a
+    # stale loop and causes 'Future attached to a different loop'.
+    grpc.aio.init_grpc_aio()
+
     await engine.init_pool()
 
     # Start the background task for lazy cart flushing
