@@ -1,12 +1,13 @@
 name: Release
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Triggered when you push a version tag: git tag v4.1.0 && git push --tags
+# Triggered when you push a version tag: git tag v4.3.2 && git push --tags
 #
 # What it does (all automatically, no local work needed):
 #   1. Builds Linux amd64 binaries for engine and supervisor
-#   2. Pushes versioned Docker images to GHCR  (:v4.1.0 and :latest)
-#   3. Creates a GitHub Release with the binaries attached and docker pull cmds
+#   2. Pushes versioned Docker images to GHCR  (:v4.3.2 and :latest)
+#   3. Creates a GitHub Release with binaries attached and docker pull cmds
+#   4. Uploads binaries + install.sh to Cloudflare R2
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -42,7 +43,7 @@ jobs:
             engine/go.sum
             supervisor/go.sum
 
-# ── Binaries ────────────────────────────────────────────────────────
+      # ── Binaries ──────────────────────────────────────────────────────────
       - name: Build engine binary (linux/amd64)
         working-directory: engine
         run: |
@@ -60,7 +61,7 @@ jobs:
             -o ../dist/logistics-supervisor-linux-amd64 \
             .
 
-      # ── Docker images ────────────────────────────────────────────────────
+      # ── Docker images ──────────────────────────────────────────────────────
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -107,7 +108,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ── Changelog ────────────────────────────────────────────────────────
+      # ── Changelog ──────────────────────────────────────────────────────────
       - name: Generate changelog
         id: changelog
         run: |
@@ -123,6 +124,26 @@ jobs:
             echo "EOF"
           } >> $GITHUB_OUTPUT
 
+      # ── GitHub Release ─────────────────────────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            ## What's changed
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ## Docker images
+            ```
+            docker pull ghcr.io/${{ github.repository }}/engine:${{ github.ref_name }}
+            docker pull ghcr.io/${{ github.repository }}/bot:${{ github.ref_name }}
+            ```
+          files: |
+            dist/logistics-engine-linux-amd64
+            dist/logistics-supervisor-linux-amd64
+          fail_on_unmatched_files: true
+
       # ── Cloudflare R2 Distribution ─────────────────────────────────────────
       - name: Upload Binaries to Cloudflare R2
         env:
@@ -131,23 +152,22 @@ jobs:
           AWS_DEFAULT_REGION: auto
         run: |
           echo "Initiating secure upload to Cloudflare R2..."
-          
-          # Base endpoint URL for your specific Cloudflare account
+
           ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
           BUCKET="s3://${{ secrets.R2_BUCKET_NAME }}/${{ github.ref_name }}"
-          
+
           # 1. Upload the engine binary
           aws s3 cp ./dist/logistics-engine-linux-amd64 $BUCKET/logistics-engine-linux-amd64 \
             --endpoint-url $ENDPOINT
-            
+
           # 2. Upload the supervisor binary
           aws s3 cp ./dist/logistics-supervisor-linux-amd64 $BUCKET/logistics-supervisor-linux-amd64 \
             --endpoint-url $ENDPOINT
-            
+
           # 3. Upload the installation script
           aws s3 cp ./install.sh $BUCKET/install.sh \
             --endpoint-url $ENDPOINT
-            
+
           # 4. Mirror to a 'latest' folder for static CDN URLs
           aws s3 cp ./dist/logistics-supervisor-linux-amd64 s3://${{ secrets.R2_BUCKET_NAME }}/latest/supervisor \
             --endpoint-url $ENDPOINT
