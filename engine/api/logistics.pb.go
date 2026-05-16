@@ -1086,13 +1086,14 @@ func (x *GetAllOrdersRequest) GetPageSize() int32 {
 }
 
 type Warehouse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Lat           float64                `protobuf:"fixed64,3,opt,name=lat,proto3" json:"lat,omitempty"`
-	Lon           float64                `protobuf:"fixed64,4,opt,name=lon,proto3" json:"lon,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Lat             float64                `protobuf:"fixed64,3,opt,name=lat,proto3" json:"lat,omitempty"`
+	Lon             float64                `protobuf:"fixed64,4,opt,name=lon,proto3" json:"lon,omitempty"`
+	AdminTelegramId int64                  `protobuf:"varint,5,opt,name=admin_telegram_id,json=adminTelegramId,proto3" json:"admin_telegram_id,omitempty"` // Telegram user ID of the assigned warehouse admin (0 = unassigned)
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Warehouse) Reset() {
@@ -1153,13 +1154,21 @@ func (x *Warehouse) GetLon() float64 {
 	return 0
 }
 
+func (x *Warehouse) GetAdminTelegramId() int64 {
+	if x != nil {
+		return x.AdminTelegramId
+	}
+	return 0
+}
+
 type AddWarehouseRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Lat           float64                `protobuf:"fixed64,2,opt,name=lat,proto3" json:"lat,omitempty"`
-	Lon           float64                `protobuf:"fixed64,3,opt,name=lon,proto3" json:"lon,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Lat             float64                `protobuf:"fixed64,2,opt,name=lat,proto3" json:"lat,omitempty"`
+	Lon             float64                `protobuf:"fixed64,3,opt,name=lon,proto3" json:"lon,omitempty"`
+	AdminTelegramId int64                  `protobuf:"varint,4,opt,name=admin_telegram_id,json=adminTelegramId,proto3" json:"admin_telegram_id,omitempty"` // Telegram user ID of the assigned warehouse admin
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *AddWarehouseRequest) Reset() {
@@ -1209,6 +1218,13 @@ func (x *AddWarehouseRequest) GetLat() float64 {
 func (x *AddWarehouseRequest) GetLon() float64 {
 	if x != nil {
 		return x.Lon
+	}
+	return 0
+}
+
+func (x *AddWarehouseRequest) GetAdminTelegramId() int64 {
+	if x != nil {
+		return x.AdminTelegramId
 	}
 	return 0
 }
@@ -1342,16 +1358,18 @@ const file_logistics_proto_rawDesc = "" +
 	"\x13GetAllOrdersRequest\x12#\n" +
 	"\rstatus_filter\x18\x01 \x01(\tR\fstatusFilter\x12\x12\n" +
 	"\x04page\x18\x02 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\"S\n" +
+	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\"\x7f\n" +
 	"\tWarehouse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x10\n" +
 	"\x03lat\x18\x03 \x01(\x01R\x03lat\x12\x10\n" +
-	"\x03lon\x18\x04 \x01(\x01R\x03lon\"M\n" +
+	"\x03lon\x18\x04 \x01(\x01R\x03lon\x12*\n" +
+	"\x11admin_telegram_id\x18\x05 \x01(\x03R\x0fadminTelegramId\"y\n" +
 	"\x13AddWarehouseRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03lat\x18\x02 \x01(\x01R\x03lat\x12\x10\n" +
-	"\x03lon\x18\x03 \x01(\x01R\x03lon\"M\n" +
+	"\x03lon\x18\x03 \x01(\x01R\x03lon\x12*\n" +
+	"\x11admin_telegram_id\x18\x04 \x01(\x03R\x0fadminTelegramId\"M\n" +
 	"\x15ListWarehouseResponse\x124\n" +
 	"\n" +
 	"warehouses\x18\x01 \x03(\v2\x14.logistics.WarehouseR\n" +
