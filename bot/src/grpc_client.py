@@ -64,12 +64,24 @@ class EngineClient:
 
     async def init_pool(self) -> None:
         """
-        [FIX]: Initializes the gRPC channel pool inside the correct active
-        event loop to prevent the 'Future attached to different loop' error.
+        Initializes the gRPC channel pool inside the running PTB event loop.
+
+        grpc.aio binds its internal state to whichever event loop is *running*
+        when grpc.aio.init_grpc_aio() is first called. Calling it here
+        (inside post_init, which runs inside asyncio.run()) guarantees that
+        every channel and every Future grpc.aio creates belongs to the same
+        loop as Application._update_fetcher, eliminating the
+        'Future attached to a different loop' crash on Python 3.12.
         """
         global _channels, _pool
         if _channels:
             return  # Prevent double initialization
+
+        # Explicitly initialise grpc.aio against the *currently running* loop.
+        # Without this, grpc.aio latches onto whatever loop existed at import
+        # time, which is always the wrong loop once asyncio.run() starts a
+        # new one inside run_polling().
+        grpc.aio.init_grpc_aio()
 
         _channels = [
             grpc.aio.insecure_channel(SOCKET_PATH, options=_CHANNEL_OPTIONS)
