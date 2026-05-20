@@ -71,7 +71,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Install Python gRPC tools
-        run: pip install --quiet grpcio-tools
+        run: pip install --quiet grpcio-tools==1.80.0
 
       - name: go mod tidy — engine
         working-directory: engine
@@ -119,7 +119,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "Nothing to commit — all generated files are already up to date."
           else
-            git commit -m "chore: auto-update generated files[skip ci]"
+            git commit -m "chore: auto-update generated files [skip ci]"
             git push origin main
           fi
 
@@ -188,7 +188,6 @@ jobs:
         working-directory: bot
         run: |
           pip install --quiet -e ".[dev]"
-          pip install --quiet grpcio grpcio-tools
 
       - name: ruff lint — bot
         working-directory: bot
@@ -203,60 +202,14 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: govulncheck — engine
-        working-directory: engine
-        run: |
-          set +e
-          govulncheck ./... > vuln_report.txt 2>&1
-          exit_code=$?
-          set -e
-          cat vuln_report.txt
-          
-          if [ $exit_code -eq 3 ]; then
-            # Fail safe: Ensure output matches expected format before bypassing
-            if ! grep -q "Fixed in:" vuln_report.txt; then
-              echo "❌ Vulnerabilities found, but 'Fixed in:' string not detected. Failing to be safe."
-              exit 3
-            fi
-
-            # Check if any "Fixed in:" line does NOT contain "N/A"
-            if grep "Fixed in:" vuln_report.txt | grep -v "N/A" > /dev/null; then
-              echo "❌ Found fixable vulnerabilities! Failing the build."
-              exit 3
-            else
-              echo "⚠️ All found vulnerabilities are marked as 'Fixed in: N/A'. Ignoring."
-              exit 0
-            fi
-          elif [ $exit_code -ne 0 ]; then
-            echo "❌ govulncheck failed with exit code $exit_code"
-            exit $exit_code
-          fi
+        env:
+          WORK_DIR: engine
+        run: bash .github/scripts/govulncheck.sh
 
       - name: govulncheck — supervisor
-        working-directory: supervisor
-        run: |
-          set +e
-          govulncheck ./... > vuln_report.txt 2>&1
-          exit_code=$?
-          set -e
-          cat vuln_report.txt
-          
-          if [ $exit_code -eq 3 ]; then
-            if ! grep -q "Fixed in:" vuln_report.txt; then
-              echo "❌ Vulnerabilities found, but 'Fixed in:' string not detected. Failing to be safe."
-              exit 3
-            fi
-
-            if grep "Fixed in:" vuln_report.txt | grep -v "N/A" > /dev/null; then
-              echo "❌ Found fixable vulnerabilities! Failing the build."
-              exit 3
-            else
-              echo "⚠️ All found vulnerabilities are marked as 'Fixed in: N/A'. Ignoring."
-              exit 0
-            fi
-          elif [ $exit_code -ne 0 ]; then
-            echo "❌ govulncheck failed with exit code $exit_code"
-            exit $exit_code
-          fi
+        env:
+          WORK_DIR: supervisor
+        run: bash .github/scripts/govulncheck.sh
 
 # ─── Job 3: DOCKER ───────────────────────────────────────────────────────────
   docker:
@@ -283,17 +236,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Prepare CI .env
-        working-directory: deploy
-        run: |
-          cp .env.example .env
-          sed -i 's|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=stub_ci_token|'                      .env
-          sed -i 's|^INTERNAL_TOKEN=.*|INTERNAL_TOKEN=stub_ci_internal_00000000000000000000|'       .env
-          sed -i 's|^MAPBOX_TOKEN=.*|MAPBOX_TOKEN=stub_ci_mapbox|'                                 .env
-          sed -i 's|^ADMIN_USER_IDS=.*|ADMIN_USER_IDS=123456789|'                                  .env
-          sed -i 's|^BUILD_VERSION=.*|BUILD_VERSION=${{ github.sha }}|'                            .env
-          sed -i 's|^# DEV_BYPASS_SECRET=.*|DEV_BYPASS_SECRET=stub_ci_bypass_secret_32chars000|'   .env
-          sed -i 's|^# SKIP_LICENSE_CHECK=.*|SKIP_LICENSE_CHECK=stub_ci_bypass_secret_32chars000|' .env
+
 
       - name: Build & push engine image
         uses: docker/build-push-action@v6

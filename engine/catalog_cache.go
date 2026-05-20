@@ -47,11 +47,17 @@ func GetCachedCatalog() (map[string]*pb.Item, error) {
 		return catalogCache, nil
 	}
 
+	// Clear the dirty flag BEFORE fetching to prevent a race condition.
+	// If an invalidation occurs during FetchCatalogItems, it will set the flag to true,
+	// and we will leave it as true so the next call rebuilds the cache.
+	catalogIsDirty.Store(false)
+
 	items, err := FetchCatalogItems()
 	if err != nil {
+		// Revert the dirty flag on error
+		catalogIsDirty.Store(true)
 		return nil, err
 	}
 	catalogCache = items
-	catalogIsDirty.Store(false)
 	return items, nil
 }

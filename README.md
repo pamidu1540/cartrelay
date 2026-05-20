@@ -1,10 +1,8 @@
 # Logistics Engine v4
 
-A Telegram-based delivery management system: customers browse a catalog, get a
-live delivery quote, and place orders; admins manage catalog and order lifecycle
-via an in-chat admin panel.
+A robust, microservice-based delivery management system built for Telegram. Customers can browse a catalog, get live delivery quotes via Mapbox routing, and place orders directly in-chat. Administrators have access to an interactive, in-chat lifecycle management panel.
 
-```
+```text
 ┌─────────────┐   gRPC/Unix socket   ┌──────────────────┐
 │ Telegram    │◄────────────────────►│  Engine (Go)      │
 │ Bot (Python)│                      │  • gRPC server    │
@@ -21,7 +19,37 @@ via an in-chat admin panel.
 
 ---
 
-## Quick start
+## 🏗️ Comprehensive Tech Stack
+
+### 1. Backend Engine (Go)
+- **Runtime**: Go 1.25.10
+- **Architecture**: A high-performance gRPC server handling all core business logic, pricing, and stock management.
+- **Database**: SQLite3. Highly tuned for concurrent access (WAL mode, `MaxOpenConns=1`, 64MB page cache, 256MB mmap, 5-second busy timeout). Includes an `audit_log` table for admin mutations.
+- **External APIs**: Integrates with the **Mapbox API** to calculate precise delivery distances. Implements a coordinate-quantized cache (evicted hourly) and a 2-second per-user debounce to prevent API rate-limit storms.
+- **Optimizations**: In-memory catalog caching (invalidated only on writes) and atomic stock decrements. 
+
+### 2. Telegram Frontend Bot (Python)
+- **Runtime**: Python 3.12
+- **Framework**: `python-telegram-bot` (v21.3+)
+- **gRPC Integration**: Connects to the engine via a Unix socket. To safely bridge synchronous `grpcio` calls into the bot's `asyncio` event loop without loop-binding errors, all RPCs are offloaded to a dedicated `ThreadPoolExecutor`.
+- **State Management**: User cart states are buffered in memory and lazily flushed to the engine after 5 seconds of inactivity, drastically reducing SQLite write volume.
+
+### 3. Supervisor & Deployment Tooling
+- **Supervisor**: A standalone Go binary utilizing the Docker SDK and gRPC to monitor and manage the stack. Features an interactive Terminal UI (TUI) for reading logs, checking health, and triggering OTA (Over-The-Air) updates.
+- **Containerization**: The engine and bot run in isolated Docker containers deployed via Docker Compose.
+
+### 4. CI/CD & Infrastructure
+- **GitHub Actions**: Fully automated pipelines that:
+  - Auto-generate and commit protobuf bindings.
+  - Run `go test`, `pytest`, `ruff`, and `govulncheck`.
+  - Perform static analysis via CodeQL and block CVEs via Dependency Review.
+- **Distribution**: 
+  - Docker images are continuously published to **GHCR** (GitHub Container Registry).
+  - Standalone Supervisor binaries are automatically uploaded to **Cloudflare R2** on release tags for seamless OTA rollouts.
+
+---
+
+## 🚀 Quick Start
 
 ```bash
 cp deploy/.env.example deploy/.env
@@ -38,7 +66,9 @@ docker compose up -d --build
 
 ---
 
-## Supervisor CLI
+## 🛠️ Supervisor CLI
+
+The supervisor binary provides a suite of tools for managing the active node.
 
 | Command | Description |
 |---|---|
@@ -54,41 +84,3 @@ docker compose up -d --build
 | `logistics update --dry-run` | Check what update is available |
 | `logistics rollback` | Re-apply previous tarball |
 | `logistics maintenance` | Toggle engine maintenance mode |
-
----
-
-## Key fixes in v4 (vs v3)
-
-| # | Fix |
-|---|---|
-| 1 | `INTERNAL_TOKEN=""` no longer authenticates — engine refuses to start if unset |
-| 2 | `quote_data` is now mandatory; callers cannot skip the price-integrity check |
-| 3 | Stock is decremented atomically in the same transaction that inserts the order |
-| 4 | Carts moved from the `config` table to a dedicated `carts` table with TTL |
-| 5 | `UpdateOrderStatus` returns `notify_user_id` as a typed proto field, not a string |
-| 6 | `FetchMapboxDistance` uses an HTTP client with a 5 s timeout |
-| 7 | OTA verifier streams SHA-256 hash instead of loading the whole tarball into RAM |
-| 8 | `publicKeyPEM` / `publicKeyHex` placeholder detected at startup with a clear error |
-| 9 | `nearestDepot` uses `strconv.ParseFloat` — float parse errors no longer silently zero |
-| 10 | Item and order IDs use UUIDv4 — no collision risk under concurrent load |
-| 11 | `Version` injected at build time via `-ldflags`; not hardcoded to `"3.0.0"` |
-| 12 | `GetConfigValue` returns `(string, error)` — DB failures no longer silently return `""` |
-| 13 | `GRPCToggleMaintenance` uses the generated `pb.StatusResponse` type |
-
-## Optimisations in v4
-
-| Area | Change |
-|---|---|
-| SQLite | `MaxOpenConns=1`, 64 MB page cache, 256 MB mmap, 5 s busy timeout |
-| N+1 query | `GenerateQuote` fetches all cart items in one `WHERE id IN (?)` query |
-| Mapbox cache | Coordinate-quantized distance cache, evicted hourly |
-| Catalog cache | In-memory cache invalidated only on admin writes |
-| gRPC server | `LimitListener(512)`, `MaxConcurrentStreams(256)`, keepalive |
-| gRPC client | 8-channel pool in the bot with keepalive options |
-| Cart writes | Buffered in bot memory, flushed lazily after 5 s idle |
-| Order index | `idx_orders_status_ts` makes pending-order queries O(log n) |
-| Quote debounce | 2 s per-user cooldown prevents Mapbox API storms |
-| Stats collector | Background goroutine; TUI reads `atomic.Value` — never blocks on Docker |
-| Pricing | `baseFare`, `ratePerKm`, `taxRate` configurable via config table at runtime |
-| Soft deletes | Removed items kept in DB for historical receipt integrity |
-| Audit log | All admin mutations written to `audit_log` table |

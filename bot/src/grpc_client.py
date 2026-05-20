@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import hashlib
 import hmac
 import logging
@@ -52,7 +53,7 @@ class EngineClient:
     Async wrapper around the LogisticsEngine gRPC stub.
 
     Uses a synchronous gRPC channel so there is no event-loop binding at all.
-    Every public method offloads the blocking RPC to asyncio.to_thread(),
+    Every public method offloads the blocking RPC to a ThreadPoolExecutor,
     keeping the bot's event loop free and eliminating the
     'Future attached to a different loop' error permanently.
     """
@@ -62,6 +63,16 @@ class EngineClient:
     def __init__(self) -> None:
         self._channel:  grpc.Channel | None = None
         self._stub_obj: logistics_pb2_grpc.LogisticsEngineStub | None = None
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
+
+    async def _call(self, func, *args, **kwargs):
+        # run_in_executor does not support **kwargs directly.
+        # Wrapping in a lambda captures args/kwargs by closure so the stub
+        # callable receives them correctly inside the worker thread.
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._executor, lambda: func(*args, **kwargs)
+        )
 
     async def init_pool(self) -> None:
         if self._channel is not None:
@@ -81,46 +92,44 @@ class EngineClient:
             self._channel  = None
             self._stub_obj = None
             logger.info("gRPC channel closed.")
+        self._executor.shutdown(wait=False)
+        logger.info("gRPC thread pool shut down.")
 
     # ── Health & Maintenance ──────────────────────────────────────────────────
 
     async def check_health(self, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.CheckHealth,
-            logistics_pb2.Empty(), metadata=meta, timeout=3.0)
+        return await self._call(stub.CheckHealth, logistics_pb2.Empty(), metadata=meta, timeout=3.0)
 
     async def toggle_maintenance(self, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.ToggleMaintenance,
-            logistics_pb2.Empty(), metadata=meta, timeout=5.0)
+        return await self._call(stub.ToggleMaintenance, logistics_pb2.Empty(), metadata=meta, timeout=5.0)
 
     # ── Catalog ───────────────────────────────────────────────────────────────
 
     async def get_catalog(self, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.GetCatalog,
-            logistics_pb2.Empty(), metadata=meta, timeout=self.DEFAULT_TIMEOUT)
+        return await self._call(stub.GetCatalog, logistics_pb2.Empty(), metadata=meta, timeout=self.DEFAULT_TIMEOUT)
 
     async def add_item(self, item_proto, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.AddItem,
-            item_proto, metadata=meta, timeout=10.0)
+        return await self._call(stub.AddItem, item_proto, metadata=meta, timeout=10.0)
 
     async def edit_item_price(self, item_id: str, new_price: float, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.EditItemPrice,
+        return await self._call(stub.EditItemPrice,
             logistics_pb2.EditPriceRequest(item_id=item_id, new_price=new_price),
             metadata=meta, timeout=self.DEFAULT_TIMEOUT)
 
     async def edit_item_stock(self, item_id: str, delta: int, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.EditItemStock,
+        return await self._call(stub.EditItemStock,
             logistics_pb2.EditStockRequest(item_id=item_id, delta=delta),
             metadata=meta, timeout=self.DEFAULT_TIMEOUT)
 
     async def remove_item(self, item_id: str, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.RemoveItem,
+        return await self._call(stub.RemoveItem,
             logistics_pb2.ItemId(id=item_id),
             metadata=meta, timeout=self.DEFAULT_TIMEOUT)
 
@@ -129,14 +138,14 @@ class EngineClient:
     async def add_warehouse(self, name: str, lat: float, lon: float,
                             admin_telegram_id: int = 0, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.AddWarehouse,
+        return await self._call(stub.AddWarehouse,
             logistics_pb2.AddWarehouseRequest(
                 name=name, lat=lat, lon=lon, admin_telegram_id=admin_telegram_id),
             metadata=meta, timeout=self.DEFAULT_TIMEOUT)
 
     async def list_warehouses(self, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.ListWarehouses,
+        return await self._call(stub.ListWarehouses,
             logistics_pb2.Empty(), metadata=meta, timeout=self.DEFAULT_TIMEOUT)
 
     # ── Quotes & Orders ───────────────────────────────────────────────────────
@@ -148,7 +157,7 @@ class EngineClient:
             logistics_pb2.CartItem(item_id=str(k), quantity=int(v.get("qty", 0)))
             for k, v in cart_dict.items() if v.get("qty", 0) > 0
         ]
-        return await asyncio.to_thread(stub.CalculateQuote,
+        return await self._call(stub.CalculateQuote,
             logistics_pb2.QuoteRequest(user_lat=lat, user_lon=lon, cart_items=cart_items),
             metadata=meta, timeout=12.0)
 
@@ -156,7 +165,7 @@ class EngineClient:
                           expected_total: float, receipt_text: str,
                           request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.PlaceOrder,
+        return await self._call(stub.PlaceOrder,
             logistics_pb2.OrderRequest(
                 user_id=int(user_id), username=str(username),
                 quote_data=quote_data, expected_total=float(expected_total),
@@ -165,14 +174,14 @@ class EngineClient:
 
     async def get_orders(self, user_id: int, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.GetActiveOrders,
+        return await self._call(stub.GetActiveOrders,
             logistics_pb2.UserId(user_id=int(user_id)),
             metadata=meta, timeout=self.DEFAULT_TIMEOUT)
 
     async def get_all_orders(self, status_filter: str = "pending", page: int = 0,
                              page_size: int = 20, request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.GetAllOrders,
+        return await self._call(stub.GetAllOrders,
             logistics_pb2.GetAllOrdersRequest(
                 status_filter=status_filter, page=page, page_size=page_size),
             metadata=meta, timeout=self.DEFAULT_TIMEOUT)
@@ -180,7 +189,7 @@ class EngineClient:
     async def update_order_status(self, order_id: str, new_status: str,
                                   request_id: str | None = None):
         stub, meta = self._stub(), _meta(request_id)
-        return await asyncio.to_thread(stub.UpdateOrderStatus,
+        return await self._call(stub.UpdateOrderStatus,
             logistics_pb2.UpdateStatusRequest(order_id=order_id, new_status=new_status),
             metadata=meta, timeout=self.DEFAULT_TIMEOUT)
 

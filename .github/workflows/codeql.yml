@@ -44,9 +44,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          # Always analyse the latest committed code including prep's output
-          ref: main
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
