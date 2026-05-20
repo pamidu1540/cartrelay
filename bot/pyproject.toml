@@ -4,8 +4,8 @@ version = "4.0.0"
 requires-python = ">=3.11"
 dependencies = [
     "python-telegram-bot[callback-data]>=21.3",
-    "grpcio>=1.65.0",
-    "grpcio-tools>=1.65.0",
+    "grpcio==1.80.0",        # Must match the version used to generate logistics_pb2_grpc.py
+    "grpcio-tools==1.80.0",  # Keeps re-generated stubs consistent with the installed runtime
     "protobuf>=5.27.0",
 ]
 
