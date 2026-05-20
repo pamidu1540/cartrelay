@@ -35,13 +35,13 @@ func main() {
 		slog.Warn("MAPBOX_TOKEN not set — Haversine fallback active")
 	}
 
-	if err := VerifyLicense(); err != nil {
-		slog.Error("license check failed", "err", err)
+	if err := InitDatabase("/app/data/logistics.db"); err != nil {
+		slog.Error("database init failed", "err", err)
 		os.Exit(1)
 	}
 
-	if err := InitDatabase("/app/data/logistics.db"); err != nil {
-		slog.Error("database init failed", "err", err)
+	if err := VerifyLicense(); err != nil {
+		slog.Error("license check failed", "err", err)
 		os.Exit(1)
 	}
 
