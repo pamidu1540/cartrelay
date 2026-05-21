@@ -14,8 +14,6 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from telegram.ext import Application
 
 from api import logistics_pb2 as pb
 from grpc_client import pool
