@@ -31,6 +31,7 @@ const (
 	LogisticsEngine_GetActiveOrders_FullMethodName   = "/logistics.LogisticsEngine/GetActiveOrders"
 	LogisticsEngine_GetAllOrders_FullMethodName      = "/logistics.LogisticsEngine/GetAllOrders"
 	LogisticsEngine_UpdateOrderStatus_FullMethodName = "/logistics.LogisticsEngine/UpdateOrderStatus"
+	LogisticsEngine_SaveCart_FullMethodName          = "/logistics.LogisticsEngine/SaveCart"
 	LogisticsEngine_AddWarehouse_FullMethodName      = "/logistics.LogisticsEngine/AddWarehouse"
 	LogisticsEngine_ListWarehouses_FullMethodName    = "/logistics.LogisticsEngine/ListWarehouses"
 )
@@ -51,6 +52,7 @@ type LogisticsEngineClient interface {
 	GetActiveOrders(ctx context.Context, in *UserId, opts ...grpc.CallOption) (*OrderListResponse, error)
 	GetAllOrders(ctx context.Context, in *GetAllOrdersRequest, opts ...grpc.CallOption) (*OrderListResponse, error)
 	UpdateOrderStatus(ctx context.Context, in *UpdateStatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	SaveCart(ctx context.Context, in *SaveCartRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	// --- Warehouse Management ---
 	AddWarehouse(ctx context.Context, in *AddWarehouseRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	ListWarehouses(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ListWarehouseResponse, error)
@@ -184,6 +186,16 @@ func (c *logisticsEngineClient) UpdateOrderStatus(ctx context.Context, in *Updat
 	return out, nil
 }
 
+func (c *logisticsEngineClient) SaveCart(ctx context.Context, in *SaveCartRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatusResponse)
+	err := c.cc.Invoke(ctx, LogisticsEngine_SaveCart_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *logisticsEngineClient) AddWarehouse(ctx context.Context, in *AddWarehouseRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StatusResponse)
@@ -220,6 +232,7 @@ type LogisticsEngineServer interface {
 	GetActiveOrders(context.Context, *UserId) (*OrderListResponse, error)
 	GetAllOrders(context.Context, *GetAllOrdersRequest) (*OrderListResponse, error)
 	UpdateOrderStatus(context.Context, *UpdateStatusRequest) (*StatusResponse, error)
+	SaveCart(context.Context, *SaveCartRequest) (*StatusResponse, error)
 	// --- Warehouse Management ---
 	AddWarehouse(context.Context, *AddWarehouseRequest) (*StatusResponse, error)
 	ListWarehouses(context.Context, *Empty) (*ListWarehouseResponse, error)
@@ -268,6 +281,9 @@ func (UnimplementedLogisticsEngineServer) GetAllOrders(context.Context, *GetAllO
 }
 func (UnimplementedLogisticsEngineServer) UpdateOrderStatus(context.Context, *UpdateStatusRequest) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateOrderStatus not implemented")
+}
+func (UnimplementedLogisticsEngineServer) SaveCart(context.Context, *SaveCartRequest) (*StatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveCart not implemented")
 }
 func (UnimplementedLogisticsEngineServer) AddWarehouse(context.Context, *AddWarehouseRequest) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AddWarehouse not implemented")
@@ -512,6 +528,24 @@ func _LogisticsEngine_UpdateOrderStatus_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LogisticsEngine_SaveCart_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveCartRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogisticsEngineServer).SaveCart(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LogisticsEngine_SaveCart_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogisticsEngineServer).SaveCart(ctx, req.(*SaveCartRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _LogisticsEngine_AddWarehouse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AddWarehouseRequest)
 	if err := dec(in); err != nil {
@@ -602,6 +636,10 @@ var LogisticsEngine_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateOrderStatus",
 			Handler:    _LogisticsEngine_UpdateOrderStatus_Handler,
+		},
+		{
+			MethodName: "SaveCart",
+			Handler:    _LogisticsEngine_SaveCart_Handler,
 		},
 		{
 			MethodName: "AddWarehouse",

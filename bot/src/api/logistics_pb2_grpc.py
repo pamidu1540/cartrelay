@@ -94,6 +94,11 @@ class LogisticsEngineStub(object):
                 request_serializer=logistics__pb2.UpdateStatusRequest.SerializeToString,
                 response_deserializer=logistics__pb2.StatusResponse.FromString,
                 _registered_method=True)
+        self.SaveCart = channel.unary_unary(
+                '/logistics.LogisticsEngine/SaveCart',
+                request_serializer=logistics__pb2.SaveCartRequest.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
         self.AddWarehouse = channel.unary_unary(
                 '/logistics.LogisticsEngine/AddWarehouse',
                 request_serializer=logistics__pb2.AddWarehouseRequest.SerializeToString,
@@ -181,6 +186,12 @@ class LogisticsEngineServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SaveCart(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def AddWarehouse(self, request, context):
         """--- Warehouse Management ---
         """
@@ -255,6 +266,11 @@ def add_LogisticsEngineServicer_to_server(servicer, server):
             'UpdateOrderStatus': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateOrderStatus,
                     request_deserializer=logistics__pb2.UpdateStatusRequest.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'SaveCart': grpc.unary_unary_rpc_method_handler(
+                    servicer.SaveCart,
+                    request_deserializer=logistics__pb2.SaveCartRequest.FromString,
                     response_serializer=logistics__pb2.StatusResponse.SerializeToString,
             ),
             'AddWarehouse': grpc.unary_unary_rpc_method_handler(
@@ -591,6 +607,33 @@ class LogisticsEngine(object):
             target,
             '/logistics.LogisticsEngine/UpdateOrderStatus',
             logistics__pb2.UpdateStatusRequest.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SaveCart(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/SaveCart',
+            logistics__pb2.SaveCartRequest.SerializeToString,
             logistics__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
