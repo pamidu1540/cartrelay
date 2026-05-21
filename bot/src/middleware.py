@@ -15,7 +15,7 @@ import functools
 import logging
 import time
 from collections import defaultdict
-from typing import Callable
+from collections.abc import Callable
 
 from telegram import Update
 from telegram.ext import ContextTypes

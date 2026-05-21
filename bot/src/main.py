@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import signal
 
 from telegram import Update
 from telegram.ext import (
@@ -57,9 +56,7 @@ from user_handlers import (
     cmd_orders,
     cb_order_detail,
     cb_reorder,
-    cmd_cancel_order,
     cb_confirm_cancel,
-    cmd_report_issue,
     cb_issue_type,
     cb_issue_submit,
     cb_orders_page,
@@ -72,7 +69,6 @@ from user_handlers import (
     cmd_addresses,
     cb_address_default,
     cb_address_delete,
-    cmd_add_address,
     msg_new_address,
     # loyalty
     cmd_points,

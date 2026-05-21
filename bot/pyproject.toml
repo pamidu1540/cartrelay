@@ -25,7 +25,8 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [tool.ruff]
-line-length = 100
+line-length = 120
+exclude = ["src/api"]
 target-version = "py312"
 
 [tool.ruff.lint]

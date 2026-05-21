@@ -46,6 +46,9 @@ import time
 import uuid
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from cart_manager import CartManager
+
 import grpc
 from telegram import (
     InlineKeyboardButton,
@@ -81,7 +84,7 @@ PAGE_SIZE = 10  # items per catalog page
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _cart(context: ContextTypes.DEFAULT_TYPE) -> "CartManager":
+def _cart(context: ContextTypes.DEFAULT_TYPE) -> CartManager:
     return context.application.bot_data["cart_manager"]
 
 
@@ -928,7 +931,6 @@ async def cb_reorder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     query = update.callback_query
     await query.answer()
     order_id = query.data.split(":", 1)[1]
-    user_id = update.effective_user.id
 
     try:
         order = await pool.call(
@@ -1440,7 +1442,6 @@ async def poll_notifications(app) -> None:
     Background task: poll the engine for pending notifications every 30 s
     and forward them to users via Telegram.
     """
-    import asyncio
     from telegram.error import TelegramError
 
     # We need all unique user IDs that have interacted — stored in bot_data
