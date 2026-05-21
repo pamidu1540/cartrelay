@@ -156,6 +156,9 @@ func (s *Server) EditItemStock(ctx context.Context, req *pb.EditStockRequest) (*
 
 func (s *Server) RemoveItem(ctx context.Context, req *pb.ItemId) (*pb.StatusResponse, error) {
 	if err := DBRemoveItem(req.Id); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return &pb.StatusResponse{Success: false, Message: "item not found"}, nil
+		}
 		return nil, status.Error(codes.Internal, "db error")
 	}
 	InvalidateCatalog()
@@ -212,7 +215,10 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 	var sb strings.Builder
 	sb.WriteString("════ RECEIPT ════\n")
 	for _, id := range ids {
-		it := items[id]
+		it, ok := items[id]
+		if !ok || it == nil {
+			return &pb.QuoteResponse{Success: false, ErrorMessage: fmt.Sprintf("item %s no longer available", id)}, nil
+		}
 		lineTotal := it.Price * float64(qtyMap[id])
 		subtotal += lineTotal
 		sb.WriteString(fmt.Sprintf("%s x%d: LKR %.2f\n", it.Name, qtyMap[id], lineTotal))
@@ -233,6 +239,7 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 		FormattedReceipt: sb.String(),
 		DistanceKm:       distKm,
 		NearestBranch:    branchName,
+		CartItems:        req.CartItems,
 	}, nil
 }
 
@@ -241,7 +248,12 @@ func (s *Server) PlaceOrder(ctx context.Context, req *pb.OrderRequest) (*pb.Orde
 	idempotencyKey, _ := ctx.Value(reqIDKey).(string)
 
 	// InsertOrder now handles stock decrement and idempotency atomically.
-	orderID, err := InsertOrder(req, nil, idempotencyKey)
+	var quote pb.QuoteResponse
+	if err := unmarshalProto(req.QuoteData, &quote); err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid quote_data")
+	}
+
+	orderID, err := InsertOrder(req, quote.CartItems, idempotencyKey)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateOrder) {
 			return &pb.OrderResponse{Success: false, Message: "Duplicate order prevented."}, nil
@@ -272,12 +284,24 @@ func (s *Server) GetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) 
 }
 
 func (s *Server) UpdateOrderStatus(ctx context.Context, req *pb.UpdateStatusRequest) (*pb.StatusResponse, error) {
+	validStatuses := map[string]bool{"pending": true, "dispatched": true, "delivered": true, "cancelled": true}
+	if !validStatuses[req.NewStatus] {
+		return nil, status.Error(codes.InvalidArgument, "invalid status: "+req.NewStatus)
+	}
+
 	userID, err := DBUpdateOrderStatus(req.OrderId, req.NewStatus)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "db error")
 	}
 	DBAuditLog(0, "update_status", req.OrderId, "status="+req.NewStatus)
 	return &pb.StatusResponse{Success: true, Message: "Status updated", NotifyUserId: userID}, nil
+}
+
+func (s *Server) SaveCart(ctx context.Context, req *pb.SaveCartRequest) (*pb.StatusResponse, error) {
+	if err := DBSaveCart(req.UserId, req.CartJson); err != nil {
+		return nil, status.Error(codes.Internal, "failed to save cart")
+	}
+	return &pb.StatusResponse{Success: true, Message: "Cart saved"}, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

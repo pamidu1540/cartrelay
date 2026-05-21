@@ -20,11 +20,19 @@ var mapboxClient = &http.Client{Timeout: 5 * time.Second}
 // Evicted every hour to prevent unbounded growth.
 var distCache sync.Map
 
+type distEntry struct {
+	dist     float64
+	cachedAt time.Time
+}
+
 func init() {
 	go func() {
 		for range time.Tick(time.Hour) {
-			distCache.Range(func(k, _ any) bool {
-				distCache.Delete(k)
+			now := time.Now()
+			distCache.Range(func(k, v any) bool {
+				if entry, ok := v.(distEntry); ok && now.Sub(entry.cachedAt) >= time.Hour {
+					distCache.Delete(k)
+				}
 				return true
 			})
 		}
@@ -67,7 +75,7 @@ func GetDistance(userLat, userLon float64, cartItems []*pb.CartItem) (float64, s
 		quantize(userLat), quantize(userLon))
 
 	if v, ok := distCache.Load(cacheKey); ok {
-		return v.(float64), best.Name, nil
+		return v.(distEntry).dist, best.Name, nil
 	}
 
 	// Step 3: Fetch real road distance from Mapbox.
@@ -78,7 +86,7 @@ func GetDistance(userLat, userLon float64, cartItems []*pb.CartItem) (float64, s
 		dist = bestH * 1.3
 	}
 
-	distCache.Store(cacheKey, dist)
+	distCache.Store(cacheKey, distEntry{dist: dist, cachedAt: time.Now()})
 	return dist, best.Name, nil
 }
 

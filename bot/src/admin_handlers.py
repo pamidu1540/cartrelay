@@ -180,9 +180,9 @@ async def _show_orders(
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀ Prev", callback_data=f"orders_page_{status_filter}_{page-1}"))
-    if (page + 1) * 10 < total:
-        nav.append(InlineKeyboardButton("Next ▶", callback_data=f"orders_page_{status_filter}_{page+1}"))
+        nav.append(InlineKeyboardButton("◀ Prev", callback_data=f"orders_page|{status_filter}|{page-1}"))
+    if total > (page + 1) * page_size:
+        nav.append(InlineKeyboardButton("Next ▶", callback_data=f"orders_page|{status_filter}|{page+1}"))
 
     rows = action_rows
     if nav:
@@ -206,10 +206,8 @@ async def admin_view_orders_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE) 
 
 async def admin_orders_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    parts = query.data.split("_")
-    page   = int(parts[-1])
-    status = parts[-2] if parts[-2] != "orders" else ""
-    await _show_orders(update, status_filter=status, page=page)
+    _, status, page_str = query.data.split("|")
+    await _show_orders(update, status_filter=status, page=int(page_str))
 
 
 async def admin_dispatch_order(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -326,27 +324,19 @@ async def admin_list_warehouses(update: Update, ctx: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
-    await query.edit_message_text("📍 Active Warehouses:")
+    lines = ["📍 *Active Warehouses:*\n"]
     for wh in resp.warehouses:
         admin_label = (
             f"👤 Admin ID: `{wh.admin_telegram_id}`"
             if wh.admin_telegram_id
             else "👤 Admin: _unassigned_"
         )
-        await ctx.bot.send_location(
-            chat_id=update.effective_chat.id,
-            latitude=wh.lat,
-            longitude=wh.lon,
-        )
-        await ctx.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"🏢 *{wh.name}*\nID: `{wh.id}`\n{admin_label}",
-            parse_mode=ParseMode.MARKDOWN
-        )
+        maps_link = f"[📍 Map](https://www.google.com/maps?q={wh.lat},{wh.lon})"
+        lines.append(f"🏢 *{wh.name}*  {maps_link}\nID: `{wh.id}`\n{admin_label}\n")
 
-    await ctx.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text="Warehouse listing complete.",
+    await query.edit_message_text(
+        "\n".join(lines),
+        parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("⬅️ Dashboard", callback_data="admin_dash")]
         ])

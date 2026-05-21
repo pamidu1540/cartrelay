@@ -67,9 +67,6 @@ func InitDatabase(path string) error {
 }
 
 func createSchema() error {
-	// [FIX BUG-012]: Seamless schema migration to add idempotency tracking.
-	// Exec will ignore errors if the column already exists.
-	_, _ = db.Exec("ALTER TABLE orders ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT '';")
 
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS items (
@@ -143,6 +140,7 @@ func createSchema() error {
 	// We ignore that specific error so migrations are safe to run on every boot.
 	migrations := []string{
 		`ALTER TABLE warehouses ADD COLUMN admin_telegram_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE orders ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
