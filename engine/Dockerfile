@@ -4,7 +4,7 @@
 # Stage 3: minimal runtime image
 
 # ── Stage 1: proto codegen ────────────────────────────────────────────────────
-FROM golang:1.22-bookworm AS proto-gen
+FROM golang:1.25-bookworm AS proto-gen
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         protobuf-compiler=3.21.* \
@@ -26,7 +26,7 @@ RUN mkdir -p api/generated && \
       api/logistics.proto
 
 # ── Stage 2: build ────────────────────────────────────────────────────────────
-FROM golang:1.22-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 WORKDIR /src
 COPY --from=proto-gen /src/ .
