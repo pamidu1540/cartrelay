@@ -102,8 +102,10 @@ async def post_shutdown(application) -> None:
     logger.info("Shutdown signal received. Flushing pending carts...")
 
     # [FIX BUG-003]: Flush all pending carts in memory to the Engine
-    if hasattr(engine, 'flush_pending_carts'):
-        await engine.flush_pending_carts()
+    from user_handlers import _cart_mem, _cart_dirty
+    to_flush = {uid: _cart_mem.get(uid, {}) for uid in _cart_dirty}
+    if to_flush:
+        await engine.flush_pending_carts(to_flush)
 
     await engine.close()
     logger.info("gRPC channel pool closed.")
@@ -152,7 +154,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(admin_view_catalog,       pattern="^admin_view_cat$"))
     app.add_handler(CallbackQueryHandler(admin_view_orders_pending,pattern="^admin_view_orders_pending$"))
     app.add_handler(CallbackQueryHandler(admin_view_orders_all,    pattern="^admin_view_orders_all$"))
-    app.add_handler(CallbackQueryHandler(admin_orders_page,        pattern="^orders_page_"))
+    app.add_handler(CallbackQueryHandler(admin_orders_page,        pattern="^orders_page\|"))
     app.add_handler(CallbackQueryHandler(admin_dispatch_order,     pattern="^dispatch_"))
     app.add_handler(CallbackQueryHandler(admin_cancel_order,       pattern="^cancelord_"))
     app.add_handler(CallbackQueryHandler(admin_toggle_maintenance, pattern="^admin_toggle_maint$"))

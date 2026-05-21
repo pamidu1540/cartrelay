@@ -15,6 +15,7 @@ service LogisticsEngine {
   rpc GetActiveOrders   (UserId)              returns (OrderListResponse);
   rpc GetAllOrders      (GetAllOrdersRequest) returns (OrderListResponse);
   rpc UpdateOrderStatus (UpdateStatusRequest) returns (StatusResponse);
+  rpc SaveCart          (SaveCartRequest)     returns (StatusResponse);
 
   // --- Warehouse Management ---
   rpc AddWarehouse      (AddWarehouseRequest) returns (StatusResponse);
@@ -79,6 +80,7 @@ message QuoteResponse {
   string formatted_receipt = 4;
   double distance_km       = 5;
   string nearest_branch    = 6;
+  repeated CartItem cart_items = 7;
 }
 
 message OrderRequest {
@@ -139,4 +141,9 @@ message AddWarehouseRequest {
 
 message ListWarehouseResponse {
   repeated Warehouse warehouses = 1;
+}
+
+message SaveCartRequest {
+  int64  user_id   = 1;
+  string cart_json = 2;
 }

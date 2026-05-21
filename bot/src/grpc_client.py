@@ -193,5 +193,18 @@ class EngineClient:
             logistics_pb2.UpdateStatusRequest(order_id=order_id, new_status=new_status),
             metadata=meta, timeout=self.DEFAULT_TIMEOUT)
 
+    async def flush_pending_carts(self, user_carts: dict):
+        import json
+        stub = self._stub()
+        for uid, cart_dict in user_carts.items():
+            meta = _meta()
+            cart_json = json.dumps(cart_dict)
+            try:
+                await self._call(stub.SaveCart,
+                    logistics_pb2.SaveCartRequest(user_id=uid, cart_json=cart_json),
+                    metadata=meta, timeout=5.0)
+            except Exception as e:
+                logger.error(f"Failed to flush cart for user {uid}: {e}")
+
 
 engine = EngineClient()

@@ -203,7 +203,7 @@ func VerifyLicense() error {
 		return fmt.Errorf("license server unreachable: %w", err)
 	}
 
-	if status == 200 {
+	if status == 200 && sr.Success {
 		writeCache(&licenseCache{
 			Token:      sr.Token,
 			TokenExp:   sr.TokenExp,
@@ -257,7 +257,7 @@ func doCheck(licenseKey, tokenSecret, instanceID string, shutdown func()) {
 		return
 	}
 
-	if status == 200 {
+	if status == 200 && sr.Success {
 		writeCache(&licenseCache{
 			Token:      sr.Token,
 			TokenExp:   sr.TokenExp,

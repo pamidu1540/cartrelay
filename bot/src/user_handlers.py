@@ -43,14 +43,17 @@ _flush_task: asyncio.Task | None = None
 
 async def _flush_loop() -> None:
     """Flush dirty carts that have been idle for ≥5 s."""
+    from grpc_client import engine
     while True:
         await asyncio.sleep(5)
         now = time.monotonic()
+        to_flush = {}
         for uid, ts in list(_cart_dirty.items()):
             if now - ts >= 5.0:
-                # Cart flush is a no-op until engine.save_cart RPC is wired up.
-                # The in-memory cart (_cart_mem) remains valid for the session.
+                to_flush[uid] = _cart_mem.get(uid, {})
                 del _cart_dirty[uid]
+        if to_flush:
+            await engine.flush_pending_carts(to_flush)
 
 
 async def start_cart_flush() -> None:
