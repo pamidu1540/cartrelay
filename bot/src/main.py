@@ -54,6 +54,8 @@ from user_handlers import (
     AWAIT_LOCATION,
     CONFIRM_CHECKOUT,
     USER_SHOP,
+    _cart_dirty,
+    _cart_mem,
     calculate_live_quote,
     handle_buy_item,
     prompt_checkout_location,
@@ -102,7 +104,6 @@ async def post_shutdown(application) -> None:
     logger.info("Shutdown signal received. Flushing pending carts...")
 
     # [FIX BUG-003]: Flush all pending carts in memory to the Engine
-    from user_handlers import _cart_mem, _cart_dirty
     to_flush = {uid: _cart_mem.get(uid, {}) for uid in _cart_dirty}
     if to_flush:
         await engine.flush_pending_carts(to_flush)
@@ -154,7 +155,7 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(admin_view_catalog,       pattern="^admin_view_cat$"))
     app.add_handler(CallbackQueryHandler(admin_view_orders_pending,pattern="^admin_view_orders_pending$"))
     app.add_handler(CallbackQueryHandler(admin_view_orders_all,    pattern="^admin_view_orders_all$"))
-    app.add_handler(CallbackQueryHandler(admin_orders_page,        pattern="^orders_page\|"))
+    app.add_handler(CallbackQueryHandler(admin_orders_page,        pattern=r"^orders_page\|"))
     app.add_handler(CallbackQueryHandler(admin_dispatch_order,     pattern="^dispatch_"))
     app.add_handler(CallbackQueryHandler(admin_cancel_order,       pattern="^cancelord_"))
     app.add_handler(CallbackQueryHandler(admin_toggle_maintenance, pattern="^admin_toggle_maint$"))

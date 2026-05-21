@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -92,6 +93,13 @@ func CheckAndApplyUpdate() error {
 		return fmt.Errorf("copy to deploy dir: %w", err)
 	}
 
+	// [FIX]: Extract the update tarball over the deploy directory!
+	cmd := exec.Command("tar", "-xzf", "update.tar.gz")
+	cmd.Dir = deployDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("extract tarball: %w (output: %s)", err, out)
+	}
+
 	if err := executeDockerCompose("pull"); err != nil {
 		return fmt.Errorf("compose pull: %w", err)
 	}
@@ -121,6 +129,14 @@ func RollbackUpdate() error {
 	if err := copyFile(src, filepath.Join(deployDir, "update.tar.gz")); err != nil {
 		return fmt.Errorf("copy backup: %w", err)
 	}
+
+	// [FIX]: Extract the rollback tarball over the deploy directory!
+	cmd := exec.Command("tar", "-xzf", "update.tar.gz")
+	cmd.Dir = deployDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("extract rollback: %w (output: %s)", err, out)
+	}
+
 	if err := executeDockerCompose("up", "-d", "--build"); err != nil {
 		return fmt.Errorf("compose up after rollback: %w", err)
 	}

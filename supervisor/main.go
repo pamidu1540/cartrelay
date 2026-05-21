@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -13,7 +14,27 @@ import (
 // to take effect — a missing variable causes the flag to be silently ignored.
 var Version = "dev"
 
+func loadEnv() {
+	content, err := os.ReadFile("/opt/logistics-system/deploy/.env")
+	if err != nil {
+		return
+	}
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			os.Setenv(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+		}
+	}
+}
+
 func main() {
+	loadEnv()
+
 	root := &cobra.Command{
 		Use:   "logistics",
 		Short: "Logistics System Supervisor CLI v4",
