@@ -18,7 +18,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, v10-rewrite]
     # [skip ci] commits from the prep job never re-trigger this workflow.
   workflow_dispatch:
 
@@ -120,7 +120,7 @@ jobs:
             echo "Nothing to commit — all generated files are already up to date."
           else
             git commit -m "chore: auto-update generated files [skip ci]"
-            git push origin main
+            git push origin ${{ github.ref_name }}
           fi
 
 # ─── Job 2: VALIDATE ─────────────────────────────────────────────────────────
@@ -133,7 +133,7 @@ jobs:
       - name: Checkout (post-prep HEAD)
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -224,7 +224,7 @@ jobs:
       - name: Checkout (post-prep HEAD)
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref_name }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -241,7 +241,7 @@ jobs:
       - name: Build & push engine image
         uses: docker/build-push-action@v6
         with:
-          context: engine
+          context: .
           file: engine/Dockerfile
           push: true
           tags: |
