@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 from typing import TYPE_CHECKING
@@ -49,7 +50,6 @@ import grpc
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    InputMediaPhoto,
     Update,
 )
 from telegram.constants import ParseMode
@@ -1478,5 +1478,40 @@ async def poll_notifications(app) -> None:
             pass
 
 
-# ── Missing import for os in this module ─────────────────────────────────────
-import os
+async def cb_orders_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    page = int(query.data.split(":")[1])
+    context.user_data["orders_page"] = page
+    await cmd_orders(update, context)
+
+
+async def cb_orders_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    context.user_data["orders_page"] = 0
+    await cmd_orders(update, context)
+
+
+async def cb_issue_submit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")
+    order_id = parts[1]
+    issue_type = parts[2]
+    try:
+        await pool.call(
+            "/logistics.LogisticsEngine/UpdateOrderStatus",
+            lambda stub, meta: stub.UpdateOrderStatus(
+                pb.UpdateOrderStatusRequest(
+                    order_id=order_id,
+                    status="issue",
+                    reason=f"Customer reported issue: {issue_type}"
+                ),
+                metadata=meta,
+            ),
+            user_id=update.effective_user.id,
+        )
+        await query.edit_message_text(f"✅ Issue reported ({issue_type}). Our support team will contact you shortly.")
+    except grpc.RpcError as e:
+        await query.edit_message_text(f"⚠️ {e.details()}")

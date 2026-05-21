@@ -829,7 +829,7 @@ func notifyDriver(ctx context.Context, driverID, orderID string) {
 
 // autoDispatch assigns the nearest available driver to a newly placed order.
 func autoDispatch(ctx context.Context, orderID string) {
-	order, err := DBGetOrder(ctx, orderID)
+	_, err := DBGetOrder(ctx, orderID)
 	if err != nil {
 		return
 	}

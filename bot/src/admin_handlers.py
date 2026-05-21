@@ -1289,3 +1289,62 @@ async def msg_maintenance_window(update: Update, context: ContextTypes.DEFAULT_T
     except grpc.RpcError as e:
         await _rpc_error(update, e)
     return ConversationHandler.END
+
+
+async def cb_admin_op(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    page = int(query.data.split(":")[1])
+    context.user_data["admin_orders_page"] = page
+    await cmd_all_orders(update, context)
+
+
+async def cb_admin_sf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")
+    status_f = parts[1] if len(parts) > 1 else ""
+    context.user_data["admin_orders_status"] = status_f
+    context.user_data["admin_orders_page"] = 0
+    await cmd_all_orders(update, context)
+
+
+async def cb_do_assign(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")
+    order_id = parts[1]
+    driver_id = parts[2]
+    try:
+        await pool.call(
+            "/logistics.LogisticsEngine/AssignDriver",
+            lambda stub, meta: stub.AssignDriver(
+                pb.AssignDriverRequest(order_id=order_id, driver_id=driver_id),
+                metadata=meta,
+            ),
+            user_id=update.effective_user.id,
+        )
+        await query.edit_message_text(f"✅ Driver {driver_id} assigned to order {order_id}")
+    except grpc.RpcError as e:
+        await query.edit_message_text(f"⚠️ {e.details()}")
+
+
+async def cb_do_resolve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")
+    order_id = parts[1]
+    resolution = parts[2]
+    try:
+        await pool.call(
+            "/logistics.LogisticsEngine/ResolveOrderIssue",
+            lambda stub, meta: stub.ResolveOrderIssue(
+                pb.ResolveOrderIssueRequest(order_id=order_id, resolution=resolution, admin_notes=""),
+                metadata=meta,
+            ),
+            user_id=update.effective_user.id,
+        )
+        await query.edit_message_text(f"✅ Issue resolved: {resolution}")
+    except grpc.RpcError as e:
+        await query.edit_message_text(f"⚠️ {e.details()}")
+    return ConversationHandler.END
