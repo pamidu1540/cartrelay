@@ -361,7 +361,7 @@ func (s *Server) PlaceOrder(ctx context.Context, req *pb.OrderRequest) (*pb.Orde
 		case ErrPriceMismatch:
 			return nil, status.Errorf(codes.InvalidArgument, "price mismatch — please requote")
 		case ErrOutOfStock:
-			return nil, status.Errorf(codes.ResourceExhausted, err.Error())
+			return nil, status.Error(codes.ResourceExhausted, err.Error())
 		default:
 			slog.Error("PlaceOrder failed", "user", req.UserId, "err", err)
 			return nil, status.Errorf(codes.Internal, "place order failed")
@@ -786,17 +786,17 @@ func (s *Server) GetLowStockReport(ctx context.Context, req *pb.LowStockRequest)
 func grpcErr(err error) error {
 	switch err {
 	case ErrNotFound:
-		return status.Errorf(codes.NotFound, err.Error())
+		return status.Error(codes.NotFound, err.Error())
 	case ErrUnauthorized:
-		return status.Errorf(codes.PermissionDenied, err.Error())
+		return status.Error(codes.PermissionDenied, err.Error())
 	case ErrOutOfStock:
-		return status.Errorf(codes.ResourceExhausted, err.Error())
+		return status.Error(codes.ResourceExhausted, err.Error())
 	case ErrInvalidTransition:
-		return status.Errorf(codes.InvalidArgument, err.Error())
+		return status.Error(codes.InvalidArgument, err.Error())
 	case ErrDuplicateOrder:
-		return status.Errorf(codes.AlreadyExists, err.Error())
+		return status.Error(codes.AlreadyExists, err.Error())
 	default:
-		return status.Errorf(codes.Internal, err.Error())
+		return status.Error(codes.Internal, err.Error())
 	}
 }
 
