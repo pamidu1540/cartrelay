@@ -1,43 +1,52 @@
-# ── Stage 1: Generate proto + build binary ────────────────────────────────────
-FROM golang:1.25.10-alpine AS builder
+# engine/Dockerfile — multi-stage build (v5)
+# Stage 1: generate protobuf Go bindings
+# Stage 2: build the engine binary
+# Stage 3: minimal runtime image
 
-WORKDIR /app
+# ── Stage 1: proto codegen ────────────────────────────────────────────────────
+FROM golang:1.22-bookworm AS proto-gen
 
-# Install protoc and Go plugins so proto generation is reproducible in CI.
-RUN apk add --no-cache protobuf protobuf-dev curl
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest \
- && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        protobuf-compiler=3.21.* \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY go.mod go.sum ./
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.3 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+
+WORKDIR /src
+COPY engine/go.mod engine/go.sum ./
 RUN go mod download
 
-COPY . .
+COPY engine/ .
+RUN mkdir -p api/generated && \
+    protoc \
+      --go_out=api/generated --go_opt=paths=source_relative \
+      --go-grpc_out=api/generated --go-grpc_opt=paths=source_relative \
+      -I api \
+      api/logistics.proto
 
-# Regenerate the proto bindings from source so the build always matches the .proto.
-RUN protoc \
-    --go_out=. --go_opt=paths=source_relative \
-    --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-    api/logistics.proto
+# ── Stage 2: build ────────────────────────────────────────────────────────────
+FROM golang:1.22-bookworm AS builder
 
-# BUILD_VERSION is injected by docker buildx / the CI pipeline.
-# Fallback to "unknown" so the binary still compiles in local builds.
-ARG BUILD_VERSION=unknown
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-w -s -X main.Version=${BUILD_VERSION}" \
-    -o engine_bin .
+WORKDIR /src
+COPY --from=proto-gen /src/ .
 
-# ── Stage 2: Minimal runtime image ───────────────────────────────────────────
-FROM alpine:3.20
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build \
+      -ldflags="-s -w -X main.Version=${VERSION}" \
+      -o /engine \
+      .
 
-# ca-certificates is needed for HTTPS calls to Mapbox.
-RUN apk add --no-cache ca-certificates
+# ── Stage 3: runtime ──────────────────────────────────────────────────────────
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 
-WORKDIR /app
+# TLS certificates from host (mounted at runtime via volume or secret)
+COPY --from=builder /engine /engine
 
-COPY --from=builder /app/engine_bin .
-RUN mkdir -p /app/sockets /app/data && chmod +x ./engine_bin
+# Non-root user (distroless nonroot = uid 65532)
+USER nonroot
 
-HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
-    CMD test -S /app/sockets/logistics.sock || exit 1
+EXPOSE 50051
 
-CMD ["./engine_bin"]
+ENTRYPOINT ["/engine"]

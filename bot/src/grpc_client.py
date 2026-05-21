@@ -1,210 +1,324 @@
+"""
+grpc_client.py — gRPC channel pool for the logistics bot (v5)
+
+Fixes addressed:
+  BUG-001: channels created lazily inside the asyncio loop (not at module level)
+  BUG-005: exponential-backoff retry on every stub call
+  BUG-010: unhealthy channels removed and replaced asynchronously
+  PERF-008: least-in-flight channel selection replaces round-robin
+  SEC-001: TLS credentials used when TLS_CERT_FILE env is set
+  SEC-002: HMAC-signed x-auth-token header on every call
+"""
+
+from __future__ import annotations
+
 import asyncio
-import concurrent.futures
 import hashlib
 import hmac
 import logging
 import os
-import sys
 import time
-import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from typing import Any
 
-# ── Use SYNCHRONOUS gRPC, not grpc.aio ────────────────────────────────────────
-# grpc.aio binds its completion queue to the event loop active at init time.
-# In Python 3.12 + grpcio 1.80, that loop is always different from the one
-# asyncio.run() creates inside run_polling() → "Future attached to a different
-# loop" on every RPC call. Sync gRPC channels carry zero event-loop state and
-# are thread-safe. asyncio.to_thread() offloads each blocking call to the
-# default ThreadPoolExecutor so the bot's event loop is never blocked.
 import grpc
+import grpc.aio
 
-from api import logistics_pb2, logistics_pb2_grpc
+from api import logistics_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
-SOCKET_PATH    = "unix:///app/sockets/logistics.sock"
-INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN")
-if not INTERNAL_TOKEN:
-    logger.critical("INTERNAL_TOKEN not set — engine auth will fail on every call.")
-    sys.exit(1)
+# ── Configuration ─────────────────────────────────────────────────────────────
 
-_CHANNEL_OPTIONS = [
-    ("grpc.keepalive_time_ms",              10_000),
-    ("grpc.keepalive_timeout_ms",            3_000),
-    ("grpc.keepalive_permit_without_calls",      1),
-    ("grpc.http2.max_pings_without_data",        0),
-    ("grpc.http2.min_time_between_pings_ms",  5_000),
-]
+SOCKET_PATH: str = os.getenv("ENGINE_SOCKET", "/app/sockets/logistics.sock")
+GRPC_HOST: str = os.getenv("ENGINE_HOST", "")  # non-empty = TCP mode
+GRPC_PORT: int = int(os.getenv("ENGINE_PORT", "50051"))
+POOL_SIZE: int = int(os.getenv("GRPC_POOL_SIZE", "4"))
+INTERNAL_TOKEN: str = os.getenv("INTERNAL_TOKEN", "")
+TLS_CERT_FILE: str = os.getenv("TLS_CERT_FILE", "")
 
+# Retry settings
+RETRY_ATTEMPTS: int = 3
+RETRY_BASE_DELAY: float = 0.5   # seconds; doubles each attempt
+RETRY_MAX_DELAY: float = 4.0
 
-def _meta(request_id: str | None = None) -> list[tuple[str, str]]:
-    ts     = str(int(time.time()))
-    req_id = request_id or str(uuid.uuid4())
-    payload   = f"{ts}:{req_id}".encode()
-    signature = hmac.new(INTERNAL_TOKEN.encode(), payload, hashlib.sha256).hexdigest()
-    return [
-        ("x-timestamp",      ts),
-        ("x-request-id",     req_id),
-        ("x-hmac-signature", signature),
-    ]
+# Circuit breaker
+CB_FAILURE_THRESHOLD: int = 5   # consecutive failures to trip
+CB_RECOVERY_TIMEOUT: float = 10.0  # seconds before half-open probe
 
 
-class EngineClient:
+# ── HMAC token generation ─────────────────────────────────────────────────────
+
+def make_auth_token(method: str) -> str:
+    """Generate HMAC-SHA256 token matching interceptors.go validateHMACToken."""
+    minute = int(time.time()) // 60
+    msg = f"{method}:{minute}".encode()
+    token = hmac.new(INTERNAL_TOKEN.encode(), msg, hashlib.sha256).hexdigest()
+    return token
+
+
+# ── Channel wrapper ────────────────────────────────────────────────────────────
+
+@dataclass
+class ChannelSlot:
+    channel: grpc.aio.Channel
+    in_flight: int = 0
+    healthy: bool = True
+    last_health_check: float = field(default_factory=time.monotonic)
+
+    def acquire(self) -> None:
+        self.in_flight += 1
+
+    def release(self) -> None:
+        self.in_flight = max(0, self.in_flight - 1)
+
+
+# ── Circuit breaker ────────────────────────────────────────────────────────────
+
+class CircuitBreaker:
+    """Half-open circuit breaker wrapping the channel pool."""
+
+    def __init__(self, threshold: int = CB_FAILURE_THRESHOLD,
+                 timeout: float = CB_RECOVERY_TIMEOUT) -> None:
+        self._threshold = threshold
+        self._timeout = timeout
+        self._failures = 0
+        self._opened_at: float | None = None
+        self._state = "closed"  # closed | open | half-open
+        self._lock = asyncio.Lock()
+
+    async def allow(self) -> bool:
+        async with self._lock:
+            if self._state == "closed":
+                return True
+            if self._state == "open":
+                if time.monotonic() - self._opened_at >= self._timeout:
+                    self._state = "half-open"
+                    logger.info("circuit breaker → half-open, probing engine")
+                    return True
+                return False
+            return True  # half-open: allow one probe
+
+    async def record_success(self) -> None:
+        async with self._lock:
+            self._failures = 0
+            if self._state != "closed":
+                logger.info("circuit breaker → closed")
+            self._state = "closed"
+
+    async def record_failure(self) -> None:
+        async with self._lock:
+            self._failures += 1
+            if self._state == "half-open":
+                self._state = "open"
+                self._opened_at = time.monotonic()
+                logger.warning("circuit breaker → open (probe failed)")
+            elif self._failures >= self._threshold:
+                self._state = "open"
+                self._opened_at = time.monotonic()
+                logger.warning(
+                    "circuit breaker tripped after %d failures", self._failures
+                )
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+
+# ── Channel pool ──────────────────────────────────────────────────────────────
+
+class ChannelPool:
     """
-    Async wrapper around the LogisticsEngine gRPC stub.
+    Manages POOL_SIZE gRPC channels.
 
-    Uses a synchronous gRPC channel so there is no event-loop binding at all.
-    Every public method offloads the blocking RPC to a ThreadPoolExecutor,
-    keeping the bot's event loop free and eliminating the
-    'Future attached to a different loop' error permanently.
+    BUG-001 fix: __init__ does NOT open any channels.
+    Call await pool.start() inside the bot's post_init hook.
     """
-
-    DEFAULT_TIMEOUT = 8.0
 
     def __init__(self) -> None:
-        self._channel:  grpc.Channel | None = None
-        self._stub_obj: logistics_pb2_grpc.LogisticsEngineStub | None = None
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=10)
+        self._slots: list[ChannelSlot] = []
+        self._lock = asyncio.Lock()
+        self._circuit_breaker = CircuitBreaker()
+        self._health_task: asyncio.Task | None = None
 
-    async def _call(self, func, *args, **kwargs):
-        # run_in_executor does not support **kwargs directly.
-        # Wrapping in a lambda captures args/kwargs by closure so the stub
-        # callable receives them correctly inside the worker thread.
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            self._executor, lambda: func(*args, **kwargs)
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    async def start(self) -> None:
+        """Create all channels. Must be called from within the asyncio loop."""
+        async with self._lock:
+            for _ in range(POOL_SIZE):
+                ch = await self._make_channel()
+                self._slots.append(ChannelSlot(channel=ch))
+        self._health_task = asyncio.create_task(self._health_loop())
+        logger.info(
+            "gRPC channel pool started: %d channels → %s",
+            POOL_SIZE,
+            self._target(),
         )
 
-    async def init_pool(self) -> None:
-        if self._channel is not None:
-            return
-        self._channel  = grpc.insecure_channel(SOCKET_PATH, options=_CHANNEL_OPTIONS)
-        self._stub_obj = logistics_pb2_grpc.LogisticsEngineStub(self._channel)
-        logger.info("gRPC sync channel initialised → %s", SOCKET_PATH)
+    async def stop(self) -> None:
+        if self._health_task:
+            self._health_task.cancel()
+        async with self._lock:
+            for slot in self._slots:
+                await slot.channel.close()
+            self._slots.clear()
+        logger.info("gRPC channel pool stopped")
 
-    def _stub(self) -> logistics_pb2_grpc.LogisticsEngineStub:
-        if self._stub_obj is None:
-            raise RuntimeError("gRPC channel not initialised — call init_pool() first.")
-        return self._stub_obj
+    # ── Channel selection ──────────────────────────────────────────────────────
 
-    async def close(self) -> None:
-        if self._channel is not None:
-            self._channel.close()
-            self._channel  = None
-            self._stub_obj = None
-            logger.info("gRPC channel closed.")
-        self._executor.shutdown(wait=False)
-        logger.info("gRPC thread pool shut down.")
+    @asynccontextmanager
+    async def acquire(self) -> AsyncIterator[ChannelSlot]:
+        """
+        PERF-008: least-in-flight selection.
+        Raises RuntimeError if the circuit breaker is open.
+        """
+        if not await self._circuit_breaker.allow():
+            raise RuntimeError(
+                f"Engine is temporarily unavailable "
+                f"(circuit breaker {self._circuit_breaker.state})"
+            )
 
-    # ── Health & Maintenance ──────────────────────────────────────────────────
+        async with self._lock:
+            healthy = [s for s in self._slots if s.healthy]
+            if not healthy:
+                # All channels unhealthy — allow one attempt anyway
+                healthy = self._slots
 
-    async def check_health(self, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.CheckHealth, logistics_pb2.Empty(), metadata=meta, timeout=3.0)
+            slot = min(healthy, key=lambda s: s.in_flight)
+            slot.acquire()
 
-    async def toggle_maintenance(self, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.ToggleMaintenance, logistics_pb2.Empty(), metadata=meta, timeout=5.0)
+        try:
+            yield slot
+            await self._circuit_breaker.record_success()
+        except grpc.RpcError as exc:
+            code = exc.code()
+            if code in (
+                grpc.StatusCode.UNAVAILABLE,
+                grpc.StatusCode.UNKNOWN,
+            ):
+                slot.healthy = False
+                await self._circuit_breaker.record_failure()
+            raise
+        finally:
+            slot.release()
 
-    # ── Catalog ───────────────────────────────────────────────────────────────
+    # ── Retry helper ──────────────────────────────────────────────────────────
 
-    async def get_catalog(self, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.GetCatalog, logistics_pb2.Empty(), metadata=meta, timeout=self.DEFAULT_TIMEOUT)
+    async def call(self, method_name: str, coro_factory, *args, **kwargs) -> Any:
+        """
+        BUG-005 fix: wraps a stub call in exponential-backoff retry.
 
-    async def add_item(self, item_proto, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.AddItem, item_proto, metadata=meta, timeout=10.0)
+        Usage:
+            resp = await pool.call(
+                "/logistics.LogisticsEngine/GetCatalog",
+                lambda stub: stub.GetCatalog(request, metadata=meta),
+            )
+        """
+        delay = RETRY_BASE_DELAY
+        last_exc: Exception | None = None
 
-    async def edit_item_price(self, item_id: str, new_price: float, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.EditItemPrice,
-            logistics_pb2.EditPriceRequest(item_id=item_id, new_price=new_price),
-            metadata=meta, timeout=self.DEFAULT_TIMEOUT)
-
-    async def edit_item_stock(self, item_id: str, delta: int, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.EditItemStock,
-            logistics_pb2.EditStockRequest(item_id=item_id, delta=delta),
-            metadata=meta, timeout=self.DEFAULT_TIMEOUT)
-
-    async def remove_item(self, item_id: str, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.RemoveItem,
-            logistics_pb2.ItemId(id=item_id),
-            metadata=meta, timeout=self.DEFAULT_TIMEOUT)
-
-    # ── Warehouses ────────────────────────────────────────────────────────────
-
-    async def add_warehouse(self, name: str, lat: float, lon: float,
-                            admin_telegram_id: int = 0, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.AddWarehouse,
-            logistics_pb2.AddWarehouseRequest(
-                name=name, lat=lat, lon=lon, admin_telegram_id=admin_telegram_id),
-            metadata=meta, timeout=self.DEFAULT_TIMEOUT)
-
-    async def list_warehouses(self, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.ListWarehouses,
-            logistics_pb2.Empty(), metadata=meta, timeout=self.DEFAULT_TIMEOUT)
-
-    # ── Quotes & Orders ───────────────────────────────────────────────────────
-
-    async def calculate_quote(self, lat: float, lon: float, cart_dict: dict,
-                              request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        cart_items = [
-            logistics_pb2.CartItem(item_id=str(k), quantity=int(v.get("qty", 0)))
-            for k, v in cart_dict.items() if v.get("qty", 0) > 0
-        ]
-        return await self._call(stub.CalculateQuote,
-            logistics_pb2.QuoteRequest(user_lat=lat, user_lon=lon, cart_items=cart_items),
-            metadata=meta, timeout=12.0)
-
-    async def place_order(self, user_id: int, username: str, quote_data: bytes,
-                          expected_total: float, receipt_text: str,
-                          request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.PlaceOrder,
-            logistics_pb2.OrderRequest(
-                user_id=int(user_id), username=str(username),
-                quote_data=quote_data, expected_total=float(expected_total),
-                receipt_text=str(receipt_text)),
-            metadata=meta, timeout=15.0)
-
-    async def get_orders(self, user_id: int, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.GetActiveOrders,
-            logistics_pb2.UserId(user_id=int(user_id)),
-            metadata=meta, timeout=self.DEFAULT_TIMEOUT)
-
-    async def get_all_orders(self, status_filter: str = "pending", page: int = 0,
-                             page_size: int = 20, request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.GetAllOrders,
-            logistics_pb2.GetAllOrdersRequest(
-                status_filter=status_filter, page=page, page_size=page_size),
-            metadata=meta, timeout=self.DEFAULT_TIMEOUT)
-
-    async def update_order_status(self, order_id: str, new_status: str,
-                                  request_id: str | None = None):
-        stub, meta = self._stub(), _meta(request_id)
-        return await self._call(stub.UpdateOrderStatus,
-            logistics_pb2.UpdateStatusRequest(order_id=order_id, new_status=new_status),
-            metadata=meta, timeout=self.DEFAULT_TIMEOUT)
-
-    async def flush_pending_carts(self, user_carts: dict):
-        import json
-        stub = self._stub()
-        for uid, cart_dict in user_carts.items():
-            meta = _meta()
-            cart_json = json.dumps(cart_dict)
+        for attempt in range(1, RETRY_ATTEMPTS + 1):
             try:
-                await self._call(stub.SaveCart,
-                    logistics_pb2.SaveCartRequest(user_id=uid, cart_json=cart_json),
-                    metadata=meta, timeout=5.0)
-            except Exception as e:
-                logger.error(f"Failed to flush cart for user {uid}: {e}")
+                meta = _build_metadata(method_name, kwargs.get("user_id"))
+                async with self.acquire() as slot:
+                    stub = logistics_pb2_grpc.LogisticsEngineStub(slot.channel)
+                    return await coro_factory(stub, meta)
+            except grpc.RpcError as exc:
+                last_exc = exc
+                code = exc.code()
+                # Do not retry on client errors
+                if code in (
+                    grpc.StatusCode.INVALID_ARGUMENT,
+                    grpc.StatusCode.NOT_FOUND,
+                    grpc.StatusCode.ALREADY_EXISTS,
+                    grpc.StatusCode.PERMISSION_DENIED,
+                    grpc.StatusCode.UNAUTHENTICATED,
+                    grpc.StatusCode.RESOURCE_EXHAUSTED,
+                ):
+                    raise
+                if attempt < RETRY_ATTEMPTS:
+                    logger.warning(
+                        "gRPC %s attempt %d/%d failed (%s) — retrying in %.1fs",
+                        method_name, attempt, RETRY_ATTEMPTS,
+                        code.name, delay,
+                    )
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, RETRY_MAX_DELAY)
+            except RuntimeError:
+                # Circuit breaker open
+                raise
+
+        raise last_exc  # type: ignore[misc]
+
+    # ── Health loop ───────────────────────────────────────────────────────────
+
+    async def _health_loop(self) -> None:
+        """
+        BUG-010 fix: periodically check channel health.
+        Unhealthy channels are replaced with fresh ones.
+        """
+        while True:
+            await asyncio.sleep(30)
+            async with self._lock:
+                for i, slot in enumerate(self._slots):
+                    state = slot.channel.get_state(try_to_connect=False)
+                    is_healthy = state not in (
+                        grpc.ChannelConnectivity.TRANSIENT_FAILURE,
+                        grpc.ChannelConnectivity.SHUTDOWN,
+                    )
+                    if not is_healthy and slot.in_flight == 0:
+                        logger.warning(
+                            "replacing unhealthy channel %d (state=%s)", i, state
+                        )
+                        await slot.channel.close()
+                        self._slots[i] = ChannelSlot(
+                            channel=await self._make_channel()
+                        )
+
+    # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _target(self) -> str:
+        if GRPC_HOST:
+            return f"{GRPC_HOST}:{GRPC_PORT}"
+        return f"unix://{SOCKET_PATH}"
+
+    async def _make_channel(self) -> grpc.aio.Channel:
+        target = self._target()
+        opts = [
+            ("grpc.max_receive_message_length", 10 * 1024 * 1024),
+            ("grpc.max_send_message_length", 10 * 1024 * 1024),
+        ]
+
+        # SEC-001: use TLS if cert file is configured
+        if TLS_CERT_FILE and os.path.exists(TLS_CERT_FILE):
+            with open(TLS_CERT_FILE, "rb") as f:
+                creds = grpc.ssl_channel_credentials(f.read())
+            return grpc.aio.secure_channel(target, creds, options=opts)
+
+        return grpc.aio.insecure_channel(target, options=opts)
 
 
-engine = EngineClient()
+# ── Metadata builder ──────────────────────────────────────────────────────────
+
+def _build_metadata(
+    method: str,
+    user_id: int | None = None,
+    role: str = "",
+) -> list[tuple[str, str]]:
+    """Build gRPC metadata for a request including the HMAC token."""
+    meta = [("x-auth-token", make_auth_token(method))]
+    if user_id:
+        meta.append(("x-actor-id", str(user_id)))
+    if role:
+        meta.append(("x-actor-role", role))
+    return meta
+
+
+# ── Module-level singleton ─────────────────────────────────────────────────────
+# BUG-001 fix: pool is created here but NOT started.
+# start() is called from the bot's post_init hook.
+
+pool = ChannelPool()
