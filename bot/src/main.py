@@ -25,71 +25,6 @@ from telegram.ext import (
     filters,
 )
 
-from grpc_client import pool
-from user_handlers import (
-    # core
-    cmd_start,
-    cmd_help,
-    cmd_cancel,
-    # catalog
-    cmd_catalog,
-    cb_catalog_page,
-    cb_category_select,
-    cb_item_detail,
-    cb_add_to_cart,
-    cb_stock_notify,
-    # cart
-    cmd_cart,
-    cb_qty_plus,
-    cb_qty_minus,
-    cb_remove_item,
-    cb_clear_cart,
-    cb_checkout,
-    # quote + order
-    cb_confirm_order,
-    msg_delivery_address,
-    cb_address_select,
-    cb_use_promo,
-    msg_promo_code,
-    cb_slot_select,
-    # order management
-    cmd_orders,
-    cb_order_detail,
-    cb_reorder,
-    cb_confirm_cancel,
-    cb_issue_type,
-    cb_issue_submit,
-    cb_orders_page,
-    cb_orders_list,
-    # profile
-    cmd_profile,
-    cb_profile_edit,
-    msg_profile_name,
-    msg_profile_phone,
-    cmd_addresses,
-    cb_address_default,
-    cb_address_delete,
-    msg_new_address,
-    # loyalty
-    cmd_points,
-    # promo referral
-    cmd_refer,
-    # notifications
-    cmd_notifications,
-    cb_notif_toggle,
-    # language
-    cmd_language,
-    cb_language_select,
-    # spending
-    cmd_spending,
-    # gdpr
-    cmd_delete_account,
-    cb_confirm_delete,
-    # support
-    cmd_support,
-    # notif poll
-    poll_notifications,
-)
 from admin_handlers import (
     # catalog
     cmd_admin,
@@ -165,6 +100,71 @@ from admin_handlers import (
     msg_resolve_note,
 )
 from cart_manager import CartManager
+from grpc_client import pool
+from user_handlers import (
+    # core
+    cmd_start,
+    cmd_help,
+    cmd_cancel,
+    # catalog
+    cmd_catalog,
+    cb_catalog_page,
+    cb_category_select,
+    cb_item_detail,
+    cb_add_to_cart,
+    cb_stock_notify,
+    # cart
+    cmd_cart,
+    cb_qty_plus,
+    cb_qty_minus,
+    cb_remove_item,
+    cb_clear_cart,
+    cb_checkout,
+    # quote + order
+    cb_confirm_order,
+    msg_delivery_address,
+    cb_address_select,
+    cb_use_promo,
+    msg_promo_code,
+    cb_slot_select,
+    # order management
+    cmd_orders,
+    cb_order_detail,
+    cb_reorder,
+    cb_confirm_cancel,
+    cb_issue_type,
+    cb_issue_submit,
+    cb_orders_page,
+    cb_orders_list,
+    # profile
+    cmd_profile,
+    cb_profile_edit,
+    msg_profile_name,
+    msg_profile_phone,
+    cmd_addresses,
+    cb_address_default,
+    cb_address_delete,
+    msg_new_address,
+    # loyalty
+    cmd_points,
+    # promo referral
+    cmd_refer,
+    # notifications
+    cmd_notifications,
+    cb_notif_toggle,
+    # language
+    cmd_language,
+    cb_language_select,
+    # spending
+    cmd_spending,
+    # gdpr
+    cmd_delete_account,
+    cb_confirm_delete,
+    # support
+    cmd_support,
+    # notif poll
+    poll_notifications,
+)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
