@@ -27,7 +27,9 @@ func loadEnv() {
 		}
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) == 2 {
-			os.Setenv(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
+			val := strings.TrimSpace(parts[1])
+			val = strings.Trim(val, `"'`)
+			os.Setenv(strings.TrimSpace(parts[0]), val)
 		}
 	}
 }
