@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: logistics-bot
+Version: 5.0.0
+Requires-Python: >=3.11
+Requires-Dist: python-telegram-bot[job-queue]==21.10
+Requires-Dist: grpcio==1.69.0
+Requires-Dist: grpcio-tools==1.69.0
+Requires-Dist: protobuf==5.29.3
+Requires-Dist: anyio==4.7.0
+Requires-Dist: structlog==24.4.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.24; extra == "dev"
+Requires-Dist: pytest-mock>=3.14; extra == "dev"
+Requires-Dist: ruff>=0.8; extra == "dev"
+Requires-Dist: mypy>=1.13; extra == "dev"

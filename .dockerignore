@@ -1,0 +1,49 @@
+# .dockerignore — v5
+# PERF-011 fix: exclude everything that is not needed for Docker builds.
+# The build context is the repo root so all Dockerfiles can COPY from the
+# correct relative paths, but irrelevant files are excluded here.
+
+# Version control
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+docs/
+README*
+CHANGELOG*
+LICENSE*
+
+# Local environment files (never send secrets to Docker daemon)
+.env
+.env.*
+!.env.example
+
+# Development tooling
+.vscode/
+.idea/
+*.code-workspace
+supervisor/
+deploy/*.md
+deploy/.env
+
+# Test artefacts
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/node_modules/
+**/.mypy_cache/
+**/.ruff_cache/
+**/coverage/
+**/*.cover
+**/.coverage
+
+# Go build cache
+**/vendor/
+**/*.test
+
+# OS noise
+.DS_Store
+Thumbs.db
