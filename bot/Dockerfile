@@ -3,11 +3,12 @@
 # ── Stage 1: proto codegen ────────────────────────────────────────────────────
 FROM python:3.12-slim AS proto-gen
 
-RUN pip install --no-cache-dir grpcio-tools==1.69.0 protobuf==5.29.3
+RUN pip install --no-cache-dir grpcio-tools==1.80.0
 
 WORKDIR /proto
 COPY engine/api/logistics.proto ./logistics.proto
-RUN python -m grpc_tools.protoc \
+RUN mkdir -p /out && \
+    python -m grpc_tools.protoc \
       -I. \
       --python_out=/out \
       --grpc_python_out=/out \
