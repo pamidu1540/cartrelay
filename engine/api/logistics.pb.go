@@ -581,6 +581,7 @@ type QuoteResponse struct {
 	FormattedReceipt string                 `protobuf:"bytes,4,opt,name=formatted_receipt,json=formattedReceipt,proto3" json:"formatted_receipt,omitempty"`
 	DistanceKm       float64                `protobuf:"fixed64,5,opt,name=distance_km,json=distanceKm,proto3" json:"distance_km,omitempty"`
 	NearestBranch    string                 `protobuf:"bytes,6,opt,name=nearest_branch,json=nearestBranch,proto3" json:"nearest_branch,omitempty"`
+	CartItems        []*CartItem            `protobuf:"bytes,7,rep,name=cart_items,json=cartItems,proto3" json:"cart_items,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -655,6 +656,13 @@ func (x *QuoteResponse) GetNearestBranch() string {
 		return x.NearestBranch
 	}
 	return ""
+}
+
+func (x *QuoteResponse) GetCartItems() []*CartItem {
+	if x != nil {
+		return x.CartItems
+	}
+	return nil
 }
 
 type OrderRequest struct {
@@ -1273,6 +1281,58 @@ func (x *ListWarehouseResponse) GetWarehouses() []*Warehouse {
 	return nil
 }
 
+type SaveCartRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	CartJson      string                 `protobuf:"bytes,2,opt,name=cart_json,json=cartJson,proto3" json:"cart_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SaveCartRequest) Reset() {
+	*x = SaveCartRequest{}
+	mi := &file_logistics_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SaveCartRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SaveCartRequest) ProtoMessage() {}
+
+func (x *SaveCartRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SaveCartRequest.ProtoReflect.Descriptor instead.
+func (*SaveCartRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *SaveCartRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *SaveCartRequest) GetCartJson() string {
+	if x != nil {
+		return x.CartJson
+	}
+	return ""
+}
+
 var File_logistics_proto protoreflect.FileDescriptor
 
 const file_logistics_proto_rawDesc = "" +
@@ -1317,7 +1377,7 @@ const file_logistics_proto_rawDesc = "" +
 	"\buser_lat\x18\x01 \x01(\x01R\auserLat\x12\x19\n" +
 	"\buser_lon\x18\x02 \x01(\x01R\auserLon\x122\n" +
 	"\n" +
-	"cart_items\x18\x03 \x03(\v2\x13.logistics.CartItemR\tcartItems\"\xe4\x01\n" +
+	"cart_items\x18\x03 \x03(\v2\x13.logistics.CartItemR\tcartItems\"\x98\x02\n" +
 	"\rQuoteResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1f\n" +
@@ -1326,7 +1386,9 @@ const file_logistics_proto_rawDesc = "" +
 	"\x11formatted_receipt\x18\x04 \x01(\tR\x10formattedReceipt\x12\x1f\n" +
 	"\vdistance_km\x18\x05 \x01(\x01R\n" +
 	"distanceKm\x12%\n" +
-	"\x0enearest_branch\x18\x06 \x01(\tR\rnearestBranch\"\xac\x01\n" +
+	"\x0enearest_branch\x18\x06 \x01(\tR\rnearestBranch\x122\n" +
+	"\n" +
+	"cart_items\x18\a \x03(\v2\x13.logistics.CartItemR\tcartItems\"\xac\x01\n" +
 	"\fOrderRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1d\n" +
@@ -1373,7 +1435,10 @@ const file_logistics_proto_rawDesc = "" +
 	"\x15ListWarehouseResponse\x124\n" +
 	"\n" +
 	"warehouses\x18\x01 \x03(\v2\x14.logistics.WarehouseR\n" +
-	"warehouses2\xc7\a\n" +
+	"warehouses\"G\n" +
+	"\x0fSaveCartRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x1b\n" +
+	"\tcart_json\x18\x02 \x01(\tR\bcartJson2\x8a\b\n" +
 	"\x0fLogisticsEngine\x128\n" +
 	"\vCheckHealth\x12\x10.logistics.Empty\x1a\x17.logistics.HealthStatus\x12@\n" +
 	"\x11ToggleMaintenance\x12\x10.logistics.Empty\x1a\x19.logistics.StatusResponse\x12:\n" +
@@ -1389,7 +1454,8 @@ const file_logistics_proto_rawDesc = "" +
 	"PlaceOrder\x12\x17.logistics.OrderRequest\x1a\x18.logistics.OrderResponse\x12B\n" +
 	"\x0fGetActiveOrders\x12\x11.logistics.UserId\x1a\x1c.logistics.OrderListResponse\x12L\n" +
 	"\fGetAllOrders\x12\x1e.logistics.GetAllOrdersRequest\x1a\x1c.logistics.OrderListResponse\x12N\n" +
-	"\x11UpdateOrderStatus\x12\x1e.logistics.UpdateStatusRequest\x1a\x19.logistics.StatusResponse\x12I\n" +
+	"\x11UpdateOrderStatus\x12\x1e.logistics.UpdateStatusRequest\x1a\x19.logistics.StatusResponse\x12A\n" +
+	"\bSaveCart\x12\x1a.logistics.SaveCartRequest\x1a\x19.logistics.StatusResponse\x12I\n" +
 	"\fAddWarehouse\x12\x1e.logistics.AddWarehouseRequest\x1a\x19.logistics.StatusResponse\x12D\n" +
 	"\x0eListWarehouses\x12\x10.logistics.Empty\x1a .logistics.ListWarehouseResponseB$Z\"logistics-engine/api;logistics_apib\x06proto3"
 
@@ -1405,7 +1471,7 @@ func file_logistics_proto_rawDescGZIP() []byte {
 	return file_logistics_proto_rawDescData
 }
 
-var file_logistics_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_logistics_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_logistics_proto_goTypes = []any{
 	(*Empty)(nil),                 // 0: logistics.Empty
 	(*HealthStatus)(nil),          // 1: logistics.HealthStatus
@@ -1428,47 +1494,51 @@ var file_logistics_proto_goTypes = []any{
 	(*Warehouse)(nil),             // 18: logistics.Warehouse
 	(*AddWarehouseRequest)(nil),   // 19: logistics.AddWarehouseRequest
 	(*ListWarehouseResponse)(nil), // 20: logistics.ListWarehouseResponse
-	nil,                           // 21: logistics.CatalogResponse.ItemsEntry
+	(*SaveCartRequest)(nil),       // 21: logistics.SaveCartRequest
+	nil,                           // 22: logistics.CatalogResponse.ItemsEntry
 }
 var file_logistics_proto_depIdxs = []int32{
-	21, // 0: logistics.CatalogResponse.items:type_name -> logistics.CatalogResponse.ItemsEntry
+	22, // 0: logistics.CatalogResponse.items:type_name -> logistics.CatalogResponse.ItemsEntry
 	8,  // 1: logistics.QuoteRequest.cart_items:type_name -> logistics.CartItem
-	13, // 2: logistics.OrderListResponse.orders:type_name -> logistics.Order
-	18, // 3: logistics.ListWarehouseResponse.warehouses:type_name -> logistics.Warehouse
-	3,  // 4: logistics.CatalogResponse.ItemsEntry.value:type_name -> logistics.Item
-	0,  // 5: logistics.LogisticsEngine.CheckHealth:input_type -> logistics.Empty
-	0,  // 6: logistics.LogisticsEngine.ToggleMaintenance:input_type -> logistics.Empty
-	0,  // 7: logistics.LogisticsEngine.GetCatalog:input_type -> logistics.Empty
-	3,  // 8: logistics.LogisticsEngine.AddItem:input_type -> logistics.Item
-	5,  // 9: logistics.LogisticsEngine.EditItemPrice:input_type -> logistics.EditPriceRequest
-	6,  // 10: logistics.LogisticsEngine.EditItemStock:input_type -> logistics.EditStockRequest
-	7,  // 11: logistics.LogisticsEngine.RemoveItem:input_type -> logistics.ItemId
-	9,  // 12: logistics.LogisticsEngine.CalculateQuote:input_type -> logistics.QuoteRequest
-	11, // 13: logistics.LogisticsEngine.PlaceOrder:input_type -> logistics.OrderRequest
-	15, // 14: logistics.LogisticsEngine.GetActiveOrders:input_type -> logistics.UserId
-	17, // 15: logistics.LogisticsEngine.GetAllOrders:input_type -> logistics.GetAllOrdersRequest
-	16, // 16: logistics.LogisticsEngine.UpdateOrderStatus:input_type -> logistics.UpdateStatusRequest
-	19, // 17: logistics.LogisticsEngine.AddWarehouse:input_type -> logistics.AddWarehouseRequest
-	0,  // 18: logistics.LogisticsEngine.ListWarehouses:input_type -> logistics.Empty
-	1,  // 19: logistics.LogisticsEngine.CheckHealth:output_type -> logistics.HealthStatus
-	2,  // 20: logistics.LogisticsEngine.ToggleMaintenance:output_type -> logistics.StatusResponse
-	4,  // 21: logistics.LogisticsEngine.GetCatalog:output_type -> logistics.CatalogResponse
-	2,  // 22: logistics.LogisticsEngine.AddItem:output_type -> logistics.StatusResponse
-	2,  // 23: logistics.LogisticsEngine.EditItemPrice:output_type -> logistics.StatusResponse
-	2,  // 24: logistics.LogisticsEngine.EditItemStock:output_type -> logistics.StatusResponse
-	2,  // 25: logistics.LogisticsEngine.RemoveItem:output_type -> logistics.StatusResponse
-	10, // 26: logistics.LogisticsEngine.CalculateQuote:output_type -> logistics.QuoteResponse
-	12, // 27: logistics.LogisticsEngine.PlaceOrder:output_type -> logistics.OrderResponse
-	14, // 28: logistics.LogisticsEngine.GetActiveOrders:output_type -> logistics.OrderListResponse
-	14, // 29: logistics.LogisticsEngine.GetAllOrders:output_type -> logistics.OrderListResponse
-	2,  // 30: logistics.LogisticsEngine.UpdateOrderStatus:output_type -> logistics.StatusResponse
-	2,  // 31: logistics.LogisticsEngine.AddWarehouse:output_type -> logistics.StatusResponse
-	20, // 32: logistics.LogisticsEngine.ListWarehouses:output_type -> logistics.ListWarehouseResponse
-	19, // [19:33] is the sub-list for method output_type
-	5,  // [5:19] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	8,  // 2: logistics.QuoteResponse.cart_items:type_name -> logistics.CartItem
+	13, // 3: logistics.OrderListResponse.orders:type_name -> logistics.Order
+	18, // 4: logistics.ListWarehouseResponse.warehouses:type_name -> logistics.Warehouse
+	3,  // 5: logistics.CatalogResponse.ItemsEntry.value:type_name -> logistics.Item
+	0,  // 6: logistics.LogisticsEngine.CheckHealth:input_type -> logistics.Empty
+	0,  // 7: logistics.LogisticsEngine.ToggleMaintenance:input_type -> logistics.Empty
+	0,  // 8: logistics.LogisticsEngine.GetCatalog:input_type -> logistics.Empty
+	3,  // 9: logistics.LogisticsEngine.AddItem:input_type -> logistics.Item
+	5,  // 10: logistics.LogisticsEngine.EditItemPrice:input_type -> logistics.EditPriceRequest
+	6,  // 11: logistics.LogisticsEngine.EditItemStock:input_type -> logistics.EditStockRequest
+	7,  // 12: logistics.LogisticsEngine.RemoveItem:input_type -> logistics.ItemId
+	9,  // 13: logistics.LogisticsEngine.CalculateQuote:input_type -> logistics.QuoteRequest
+	11, // 14: logistics.LogisticsEngine.PlaceOrder:input_type -> logistics.OrderRequest
+	15, // 15: logistics.LogisticsEngine.GetActiveOrders:input_type -> logistics.UserId
+	17, // 16: logistics.LogisticsEngine.GetAllOrders:input_type -> logistics.GetAllOrdersRequest
+	16, // 17: logistics.LogisticsEngine.UpdateOrderStatus:input_type -> logistics.UpdateStatusRequest
+	21, // 18: logistics.LogisticsEngine.SaveCart:input_type -> logistics.SaveCartRequest
+	19, // 19: logistics.LogisticsEngine.AddWarehouse:input_type -> logistics.AddWarehouseRequest
+	0,  // 20: logistics.LogisticsEngine.ListWarehouses:input_type -> logistics.Empty
+	1,  // 21: logistics.LogisticsEngine.CheckHealth:output_type -> logistics.HealthStatus
+	2,  // 22: logistics.LogisticsEngine.ToggleMaintenance:output_type -> logistics.StatusResponse
+	4,  // 23: logistics.LogisticsEngine.GetCatalog:output_type -> logistics.CatalogResponse
+	2,  // 24: logistics.LogisticsEngine.AddItem:output_type -> logistics.StatusResponse
+	2,  // 25: logistics.LogisticsEngine.EditItemPrice:output_type -> logistics.StatusResponse
+	2,  // 26: logistics.LogisticsEngine.EditItemStock:output_type -> logistics.StatusResponse
+	2,  // 27: logistics.LogisticsEngine.RemoveItem:output_type -> logistics.StatusResponse
+	10, // 28: logistics.LogisticsEngine.CalculateQuote:output_type -> logistics.QuoteResponse
+	12, // 29: logistics.LogisticsEngine.PlaceOrder:output_type -> logistics.OrderResponse
+	14, // 30: logistics.LogisticsEngine.GetActiveOrders:output_type -> logistics.OrderListResponse
+	14, // 31: logistics.LogisticsEngine.GetAllOrders:output_type -> logistics.OrderListResponse
+	2,  // 32: logistics.LogisticsEngine.UpdateOrderStatus:output_type -> logistics.StatusResponse
+	2,  // 33: logistics.LogisticsEngine.SaveCart:output_type -> logistics.StatusResponse
+	2,  // 34: logistics.LogisticsEngine.AddWarehouse:output_type -> logistics.StatusResponse
+	20, // 35: logistics.LogisticsEngine.ListWarehouses:output_type -> logistics.ListWarehouseResponse
+	21, // [21:36] is the sub-list for method output_type
+	6,  // [6:21] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_logistics_proto_init() }
@@ -1482,7 +1552,7 @@ func file_logistics_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_logistics_proto_rawDesc), len(file_logistics_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   22,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
