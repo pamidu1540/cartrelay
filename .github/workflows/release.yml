@@ -135,6 +135,77 @@ jobs:
             dist/logistics-supervisor-linux-amd64
           fail_on_unmatched_files: true
 
+      # ── OTA Package Generation ───────────────────────────────────────────────
+      - name: Generate OTA Package
+        run: |
+          mkdir -p ota_payload
+          cat > ota_payload/docker-compose.yml << 'COMPOSE'
+          services:
+            engine:
+              image: ${{ env.IMAGE_ENGINE }}:${{ github.ref_name }}
+              container_name: logistics_engine
+              restart: unless-stopped
+              env_file: .env
+              environment:
+                - INTERNAL_TOKEN=${INTERNAL_TOKEN}
+                - MAPBOX_TOKEN=${MAPBOX_TOKEN}
+                - LICENSE_KEY=${LICENSE_KEY}
+                - BUILD_VERSION=${{ github.ref_name }}
+              volumes:
+                - engine_data:/app/data
+                - sockets:/app/sockets
+              healthcheck:
+                test: ["CMD", "test", "-S", "/app/sockets/logistics.sock"]
+                interval: 10s
+                timeout: 5s
+                retries: 6
+                start_period: 20s
+              deploy:
+                resources:
+                  limits:   {cpus: "1.5",  memory: 512M}
+                  reservations: {cpus: "0.25", memory: 128M}
+              logging:
+                driver: json-file
+                options: {max-size: 20m, max-file: "5"}
+            bot:
+              image: ${{ env.IMAGE_BOT }}:${{ github.ref_name }}
+              container_name: logistics_bot
+              restart: unless-stopped
+              env_file: .env
+              environment:
+                - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+                - INTERNAL_TOKEN=${INTERNAL_TOKEN}
+                - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+              volumes:
+                - sockets:/app/sockets
+              depends_on:
+                engine:
+                  condition: service_healthy
+              deploy:
+                resources:
+                  limits:   {cpus: "0.75", memory: 256M}
+                  reservations: {cpus: "0.10", memory: 64M}
+              logging:
+                driver: json-file
+                options: {max-size: 20m, max-file: "5"}
+          volumes:
+            engine_data: {driver: local}
+            sockets:     {driver: local}
+          COMPOSE
+          tar -czf update.tar.gz -C ota_payload docker-compose.yml
+          
+          # Sign the tarball
+          SIG=$(go run .github/scripts/sign_ota.go update.tar.gz "${{ secrets.OTA_PRIVATE_KEY }}")
+          
+          # Generate manifest
+          cat > manifest.json << MANIFEST
+          {
+            "version": "${{ github.ref_name }}",
+            "url": "https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/${{ github.ref_name }}/update.tar.gz",
+            "signature": "$SIG"
+          }
+          MANIFEST
+
       # ── Cloudflare R2 Distribution ─────────────────────────────────────────
       - name: Upload Binaries to Cloudflare R2
         env:
@@ -163,6 +234,12 @@ jobs:
           aws s3 cp ./dist/logistics-supervisor-linux-amd64 s3://${{ secrets.R2_BUCKET_NAME }}/latest/supervisor \
             --endpoint-url $ENDPOINT
           aws s3 cp ./install.sh s3://${{ secrets.R2_BUCKET_NAME }}/latest/install.sh \
+            --endpoint-url $ENDPOINT
+
+          # 5. Upload OTA updates
+          aws s3 cp ./update.tar.gz $BUCKET/update.tar.gz \
+            --endpoint-url $ENDPOINT
+          aws s3 cp ./manifest.json s3://${{ secrets.R2_BUCKET_NAME }}/latest/manifest.json \
             --endpoint-url $ENDPOINT
 
           echo "✅ Upload complete!"

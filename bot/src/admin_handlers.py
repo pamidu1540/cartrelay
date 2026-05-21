@@ -181,7 +181,7 @@ async def _show_orders(
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("◀ Prev", callback_data=f"orders_page|{status_filter}|{page-1}"))
-    if total > (page + 1) * page_size:
+    if total > (page + 1) * 10:
         nav.append(InlineKeyboardButton("Next ▶", callback_data=f"orders_page|{status_filter}|{page+1}"))
 
     rows = action_rows

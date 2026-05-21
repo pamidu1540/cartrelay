@@ -236,6 +236,7 @@ LICENSE_KEY=${LICENSE_KEY}
 BUILD_VERSION=${SELECTED_VERSION}
 ENGINE_IMAGE=${IMAGE_ENGINE}:${SELECTED_VERSION}
 BOT_IMAGE=${IMAGE_BOT}:${SELECTED_VERSION}
+UPDATE_MANIFEST_URL="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/manifest.json"
 ENV
   chmod 600 "$f"
   ok "Wrote ${f}  (mode 600 — root-readable only)"
