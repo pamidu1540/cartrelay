@@ -52,7 +52,6 @@ from user_handlers import (
     cb_address_select,
     cb_use_promo,
     msg_promo_code,
-    cb_use_loyalty,
     cb_slot_select,
     # order management
     cmd_orders,
@@ -62,6 +61,9 @@ from user_handlers import (
     cb_confirm_cancel,
     cmd_report_issue,
     cb_issue_type,
+    cb_issue_submit,
+    cb_orders_page,
+    cb_orders_list,
     # profile
     cmd_profile,
     cb_profile_edit,
@@ -117,6 +119,10 @@ from admin_handlers import (
     msg_order_search_query,
     cmd_add_note,
     msg_note_text,
+    cb_admin_op,
+    cb_admin_sf,
+    cb_do_assign,
+    cb_do_resolve,
     # warehouses
     cmd_warehouses,
     cmd_add_warehouse,
@@ -386,6 +392,13 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_admin_update_status,pattern=r"^admin_status:"))
     app.add_handler(CallbackQueryHandler(cb_admin_assign_driver,pattern=r"^admin_assign:"))
     app.add_handler(CallbackQueryHandler(cb_resolve_issue,      pattern=r"^resolve_issue:"))
+    app.add_handler(CallbackQueryHandler(cb_do_assign,          pattern=r"^do_assign:"))
+    app.add_handler(CallbackQueryHandler(cb_do_resolve,         pattern=r"^do_resolve:"))
+    app.add_handler(CallbackQueryHandler(cb_issue_submit,       pattern=r"^issue_submit:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_op,           pattern=r"^admin_op:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_sf,           pattern=r"^admin_sf:"))
+    app.add_handler(CallbackQueryHandler(cb_orders_page,        pattern=r"^orders_page:"))
+    app.add_handler(CallbackQueryHandler(cb_orders_list,        pattern=r"^orders_list$"))
 
     # Error handler
     app.add_error_handler(error_handler)

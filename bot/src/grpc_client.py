@@ -55,7 +55,7 @@ def make_auth_token(method: str) -> str:
     """Generate HMAC-SHA256 token matching interceptors.go validateHMACToken."""
     minute = int(time.time()) // 60
     msg = f"{method}:{minute}".encode()
-    token = hmac.new(INTERNAL_TOKEN.encode(), msg, hashlib.sha256).hexdigest()
+    token = hmac.HMAC(INTERNAL_TOKEN.encode(), msg, hashlib.sha256).hexdigest()
     return token
 
 

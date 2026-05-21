@@ -17,6 +17,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	pb "logistics-engine/api"
 )
 
 func TestMain(m *testing.M) {
@@ -51,7 +53,7 @@ func TestInsertOrder_DuplicateIdempotencyKey(t *testing.T) {
 	idemKey := fmt.Sprintf("idem-test-%d", time.Now().UnixNano())
 
 	req := testOrderRequest(idemKey)
-	orderID1, _, err := InsertOrder(ctx, req, []*cartItemPB{cart}, settings)
+	orderID1, _, err := InsertOrder(ctx, req, []*pb.CartItem{cart}, settings)
 	if err != nil {
 		t.Fatalf("first InsertOrder failed: %v", err)
 	}
@@ -60,7 +62,7 @@ func TestInsertOrder_DuplicateIdempotencyKey(t *testing.T) {
 	}
 
 	// Second call with same idempotency key must return the EXISTING order, not a new one
-	orderID2, _, err := InsertOrder(ctx, req, []*cartItemPB{cart}, settings)
+	orderID2, _, err := InsertOrder(ctx, req, []*pb.CartItem{cart}, settings)
 	if err != ErrDuplicateOrder {
 		t.Fatalf("expected ErrDuplicateOrder, got err=%v orderID=%s", err, orderID2)
 	}
@@ -91,7 +93,7 @@ func TestUpdateOrderStatus_ValidTransition(t *testing.T) {
 	cart := testCartItem(itemID, 1)
 	req := testOrderRequest(fmt.Sprintf("valid-trans-%d", time.Now().UnixNano()))
 
-	orderID, _, err := InsertOrder(ctx, req, []*cartItemPB{cart}, settings)
+	orderID, _, err := InsertOrder(ctx, req, []*pb.CartItem{cart}, settings)
 	if err != nil {
 		t.Fatalf("insert order: %v", err)
 	}
@@ -126,7 +128,7 @@ func TestGetAllOrders_Pagination(t *testing.T) {
 	ctx := context.Background()
 
 	// We rely on orders inserted by other tests; just verify page math.
-	resp, total, err := DBGetAllOrders(ctx, &getAllOrdersReq{Page: 0, PageSize: 3})
+	resp, total, err := DBGetAllOrders(ctx, &pb.GetAllOrdersRequest{Page: 0, PageSize: 3})
 	if err != nil {
 		t.Fatalf("GetAllOrders page 0: %v", err)
 	}
@@ -181,8 +183,8 @@ func mustInsertDeliveredOrder(t *testing.T, ctx context.Context) string {
 	return orderID
 }
 
-func defaultTestSettings() *systemSettingsPB {
-	return &systemSettingsPB{
+func defaultTestSettings() *pb.SystemSettings {
+	return &pb.SystemSettings{
 		DeliveryBaseFare:   500,
 		DeliveryRatePerKm:  75,
 		TaxRate:            0.08,
@@ -192,15 +194,15 @@ func defaultTestSettings() *systemSettingsPB {
 	}
 }
 
-func testCartItem(itemID string, qty int32) *cartItemPB {
-	return &cartItemPB{ItemId: itemID, Quantity: qty}
+func testCartItem(itemID string, qty int32) *pb.CartItem {
+	return &pb.CartItem{ItemId: itemID, Quantity: qty}
 }
 
-func testOrderRequest(idemKey string) *orderRequestPB {
+func testOrderRequest(idemKey string) *pb.OrderRequest {
 	// Minimal request — quote_data bypass for unit test
-	quote := &quoteResponsePB{GrandTotal: 200}
+	quote := &pb.QuoteResponse{GrandTotal: 200}
 	qd, _ := marshalProto(quote)
-	return &orderRequestPB{
+	return &pb.OrderRequest{
 		UserId:          999999,
 		Username:        "testuser",
 		QuoteData:       qd,
@@ -210,11 +212,3 @@ func testOrderRequest(idemKey string) *orderRequestPB {
 		DeliveryAddress: "123 Test St",
 	}
 }
-
-// ── Type aliases to avoid import cycle in test file ─────────────────────────
-// These match the pb generated types; use the real ones in production.
-type cartItemPB      = pb_CartItem
-type systemSettingsPB = pb_SystemSettings
-type orderRequestPB  = pb_OrderRequest
-type quoteResponsePB = pb_QuoteResponse
-type getAllOrdersReq  = pb_GetAllOrdersRequest
