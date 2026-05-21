@@ -374,19 +374,19 @@ func DBGetAllOrders(statusFilter string, page, pageSize int32) ([]*pb.Order, int
 		total int32
 	)
 	if statusFilter == "" {
+		_ = db.QueryRow("SELECT COUNT(*) FROM orders").Scan(&total)
 		rows, err = db.Query(
 			`SELECT order_id,status,total,timestamp,receipt,user_id
 			 FROM orders ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
 			pageSize, offset,
 		)
-		_ = db.QueryRow("SELECT COUNT(*) FROM orders").Scan(&total)
 	} else {
+		_ = db.QueryRow("SELECT COUNT(*) FROM orders WHERE status=?", statusFilter).Scan(&total)
 		rows, err = db.Query(
 			`SELECT order_id,status,total,timestamp,receipt,user_id
 			 FROM orders WHERE status=? ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
 			statusFilter, pageSize, offset,
 		)
-		_ = db.QueryRow("SELECT COUNT(*) FROM orders WHERE status=?", statusFilter).Scan(&total)
 	}
 	if err != nil {
 		return nil, 0, err
