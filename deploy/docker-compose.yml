@@ -40,8 +40,8 @@ services:
 
   bot:
     build:
-      context: ../bot
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: bot/Dockerfile
     container_name: logistics_bot
     restart: unless-stopped
     env_file: .env
