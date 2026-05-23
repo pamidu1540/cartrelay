@@ -50,7 +50,7 @@ def call_engine(stub, token: str, user_id: int) -> dict:
         # Step 2: Add to cart
         t = time.perf_counter()
         stub.SaveCart(logistics_pb2.SaveCartRequest(
-            user_id=str(user_id),
+            user_id=int(user_id),
             items=[logistics_pb2.CartItem(item_id=item_id, quantity=1)]
         ), metadata=meta)
         result["steps"]["add_cart_ms"] = round((time.perf_counter() - t) * 1000, 2)
@@ -58,9 +58,9 @@ def call_engine(stub, token: str, user_id: int) -> dict:
         # Step 3: Generate quote
         t = time.perf_counter()
         stub.CalculateQuote(logistics_pb2.QuoteRequest(
-            user_id=str(user_id),
-            destination_lat=40.7128,
-            destination_lon=-74.0060,
+            user_id=int(user_id),
+            user_lat=40.7128,
+            user_lon=-74.0060,
         ), metadata=meta)
         result["steps"]["quote_ms"] = round((time.perf_counter() - t) * 1000, 2)
 
