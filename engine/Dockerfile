@@ -39,13 +39,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
       .
 
 # ── Stage 3: runtime ──────────────────────────────────────────────────────────
-FROM gcr.io/distroless/static-debian12:nonroot AS runtime
+FROM gcr.io/distroless/static-debian12:latest AS runtime
 
 # TLS certificates from host (mounted at runtime via volume or secret)
 COPY --from=builder /engine /engine
-
-# Non-root user (distroless nonroot = uid 65532)
-USER nonroot
 
 EXPOSE 50051
 
