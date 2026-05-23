@@ -307,7 +307,7 @@ def build_report(args, grpc, sqlite, spike, logs):
       <div class="kpi">
         <div class="kpi-label">Spike Errors</div>
         <div class="kpi-value" style="color:{status_color(safe(spike_r.get('error_rate',0))*100,0.5,1)}">{round(safe(spike_r.get("error_rate",0))*100,2)}<span style="font-size:14px">%</span></div>
-        <div class="kpi-sub">0→{args.max_users} users in {spike.get("config",{{}}).get("ramp_secs","?") if spike else "?"}s</div>
+        <div class="kpi-sub">0→{args.max_users} users in {spike.get("config",{}).get("ramp_secs","?") if spike else "?"}s</div>
       </div>
     </div>
   </div>
@@ -339,9 +339,9 @@ def build_report(args, grpc, sqlite, spike, logs):
             f"<td>{html.escape(p['name'])}</td>"
             f"<td>{p.get('concurrency','-')}</td>"
             f"<td>{p.get('total_requests','-')}</td>"
-            f"<td>{safe(p.get('latency_ms',{{}}).get('p50'))}ms</td>"
-            f"<td>{safe(p.get('latency_ms',{{}}).get('p95'))}ms</td>"
-            f"<td>{safe(p.get('latency_ms',{{}}).get('p99'))}ms</td>"
+            f"<td>{safe(p.get('latency_ms',{}).get('p50'))}ms</td>"
+            f"<td>{safe(p.get('latency_ms',{}).get('p95'))}ms</td>"
+            f"<td>{safe(p.get('latency_ms',{}).get('p99'))}ms</td>"
             f"<td><span class='pill {'pill-red' if p.get('error_count',0)>0 else 'pill-green'}'>"
             f"{p.get('error_count',0)}/{p.get('total_requests',0)}</span></td>"
             f"</tr>"
@@ -362,7 +362,7 @@ def build_report(args, grpc, sqlite, spike, logs):
     <div class="card">
       <div class="section-title">SQLite Write Contention</div>
       <table>
-        <tr><td>Writers</td><td><b>{safe(sqlite.get("config",{{}}).get("writers")) if sqlite else "—"}</b></td></tr>
+        <tr><td>Writers</td><td><b>{safe(sqlite.get("config",{}).get("writers")) if sqlite else "—"}</b></td></tr>
         <tr><td>Writes/sec</td><td><b>{safe(sqlite_r.get("writes_per_sec"))}</b></td></tr>
         <tr><td>Busy errors</td><td style="color:{status_color(safe(sqlite_r.get('total_busy')),1,5)}"><b>{safe(sqlite_r.get("total_busy"))}</b></td></tr>
         <tr><td>Busy rate</td><td><b>{round(safe(sqlite_r.get("busy_rate"))*100,2)}%</b></td></tr>
