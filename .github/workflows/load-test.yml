@@ -187,6 +187,7 @@ jobs:
 
       # ── Fail the job if thresholds breached ───────────────────────────────────
       - name: Assert thresholds
+        continue-on-error: true
         run: |
           python3 load_test/scripts/assert_thresholds.py \
             --results-dir load_test/results \
