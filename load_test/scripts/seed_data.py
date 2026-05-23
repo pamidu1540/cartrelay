@@ -34,6 +34,7 @@ def main():
                 price=round(10 + i * 0.5, 2),
                 stock=1000,
                 category="load_test",
+                is_available=True,
             ), metadata=meta)
         except grpc.RpcError as e:
             if e.code() != grpc.StatusCode.ALREADY_EXISTS:
@@ -41,6 +42,18 @@ def main():
 
     print(f"✓ Seeded {args.items} items")
 
+    try:
+        stub.AddWarehouse(logistics_pb2.Warehouse(
+            name="Test Warehouse",
+            address="Test Addr",
+            lat=40.7128,
+            lon=-74.0060,
+            is_active=True,
+        ), metadata=meta)
+        print("✓ Seeded test warehouse")
+    except grpc.RpcError as e:
+        if e.code() != grpc.StatusCode.ALREADY_EXISTS:
+            print(f"Error seeding warehouse: {e}")
 
 if __name__ == "__main__":
     main()
