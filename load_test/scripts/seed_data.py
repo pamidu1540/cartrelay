@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""
+seed_data.py
+Seeds catalog items and simulated user carts for load testing.
+Calls the engine gRPC directly via INTERNAL_TOKEN.
+"""
+import argparse, sys
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--token",  required=True)
+    p.add_argument("--host",   default="localhost:50051")
+    p.add_argument("--items",  type=int, default=50)
+    p.add_argument("--users",  type=int, default=500)
+    return p.parse_args()
+
+
+import grpc
+from api import logistics_pb2, logistics_pb2_grpc
+
+def main():
+    args = parse_args()
+    print(f"Seeding {args.items} catalog items for {args.users} test users...")
+
+    channel = grpc.insecure_channel(args.host)
+    stub    = logistics_pb2_grpc.LogisticsEngineStub(channel)
+    meta    = (("authorization", f"Bearer {args.token}"),)
+
+    for i in range(args.items):
+        try:
+            stub.AddItem(logistics_pb2.Item(
+                name=f"test_item_{i}",
+                volume_cubes=1.0,
+                price=round(10 + i * 0.5, 2),
+                stock=1000,
+                category="load_test",
+            ), metadata=meta)
+        except grpc.RpcError as e:
+            if e.code() != grpc.StatusCode.ALREADY_EXISTS:
+                print(f"Error seeding item: {e}")
+
+    print(f"✓ Seeded {args.items} items")
+
+
+if __name__ == "__main__":
+    main()
