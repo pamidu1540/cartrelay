@@ -39,7 +39,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
       .
 
 # ── Stage 3: runtime ──────────────────────────────────────────────────────────
-FROM gcr.io/distroless/static-debian12:latest AS runtime
+FROM alpine:3.20 AS runtime
+
+# ca-certificates is needed for HTTPS calls
+RUN apk add --no-cache ca-certificates
 
 # TLS certificates from host (mounted at runtime via volume or secret)
 COPY --from=builder /engine /engine
