@@ -84,7 +84,13 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install grpcio grpcio-tools aiohttp matplotlib pandas jinja2 --quiet
+          # Pin grpcio + grpcio-tools to the SAME version to avoid
+          # protobuf gencode/runtime major version mismatch (v5 vs v6).
+          pip install \
+            grpcio==1.71.0 \
+            grpcio-tools==1.71.0 \
+            protobuf==5.29.3 \
+            aiohttp matplotlib pandas jinja2 --quiet
 
       # ── Write .env ───────────────────────────────────────────────────────────
       - name: Write deploy/.env
