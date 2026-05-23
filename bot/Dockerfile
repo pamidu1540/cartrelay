@@ -30,8 +30,8 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir \
         "python-telegram-bot[job-queue]==21.10" \
-        "grpcio==1.69.0" \
-        "protobuf==5.29.3" \
+        "grpcio==1.80.0" \
+        "protobuf==6.31.1" \
         "anyio==4.7.0" \
         "structlog==24.4.0"
 
