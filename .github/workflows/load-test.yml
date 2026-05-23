@@ -198,5 +198,3 @@ jobs:
         if: always()
         run: |
           cd deploy && docker compose down -v
-#   T r i g g e r   l o a d   t e s t  
- 
