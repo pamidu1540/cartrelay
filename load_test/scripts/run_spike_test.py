@@ -27,10 +27,10 @@ async def fake_user_call(user_id: int, token: str, host: str, timeline: list):
         async with grpc.aio.insecure_channel(host) as channel:
             stub = logistics_pb2_grpc.LogisticsEngineStub(channel)
             meta = (("authorization", f"Bearer {token}"),)
-            cat_resp = await stub.GetCatalog(logistics_pb2.CatalogRequest(page_size=10, page_token=""), metadata=meta)
+            cat_resp = await stub.GetCatalog(logistics_pb2.CatalogRequest(page_size=10, page=0), metadata=meta)
             if cat_resp.items:
                 await stub.SaveCart(logistics_pb2.SaveCartRequest(
-                    user_id=str(user_id),
+                    user_id=int(user_id),
                     items=[logistics_pb2.CartItem(item_id=cat_resp.items[0].id, quantity=1)]
                 ), metadata=meta)
     except Exception as e:
