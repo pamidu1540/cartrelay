@@ -110,7 +110,8 @@ jobs:
           python3 load_test/scripts/seed_data.py \
             --token "${{ env.INTERNAL_TOKEN }}" \
             --items 50 \
-            --users 500
+            --users 500 \
+            --host "unix://$(pwd)/deploy/sockets/logistics.sock"
 
       # ── Run load tests ────────────────────────────────────────────────────────
       - name: Run gRPC engine load test (ghz)
@@ -121,6 +122,7 @@ jobs:
             --token "${{ env.INTERNAL_TOKEN }}" \
             --max-users "${{ env.MAX_USERS }}" \
             --duration "${{ env.DURATION_SECS }}" \
+            --host "unix://$(pwd)/deploy/sockets/logistics.sock" \
             --output load_test/results/grpc_results.json
 
       - name: Run SQLite contention test
