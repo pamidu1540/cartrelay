@@ -84,6 +84,7 @@ jobs:
           MAPBOX_TOKEN=${{ env.MAPBOX_TOKEN }}
           DEV_BYPASS_SECRET=${{ env.DEV_BYPASS_SECRET }}
           SKIP_LICENSE_CHECK=${{ env.SKIP_LICENSE_CHECK }}
+          DEPLOY_ENV=ci
           POSTGRES_USER=logistics
           POSTGRES_PASSWORD=logistics
           POSTGRES_DB=logistics
