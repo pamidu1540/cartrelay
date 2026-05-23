@@ -1,6 +1,10 @@
 name: Extreme Load Test & Report
 
 on:
+  push:
+    paths:
+      - 'load_test/**'
+      - '.github/workflows/load-test.yml'
   workflow_dispatch:
     inputs:
       scenario:
