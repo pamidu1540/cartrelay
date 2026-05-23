@@ -39,7 +39,7 @@ def call_engine(stub, token: str, user_id: int) -> dict:
     try:
         # Step 1: List catalog
         t = time.perf_counter()
-        cat_resp = stub.GetCatalog(logistics_pb2.CatalogRequest(page_size=10, page_token=""), metadata=meta)
+        cat_resp = stub.GetCatalog(logistics_pb2.CatalogRequest(page_size=10, page=0), metadata=meta)
         result["steps"]["list_catalog_ms"] = round((time.perf_counter() - t) * 1000, 2)
 
         if not cat_resp.items:
