@@ -140,6 +140,8 @@ jobs:
             --grpc_python_out=load_test/scripts/api \
             engine/api/logistics.proto
           touch load_test/scripts/api/__init__.py
+          sed -i 's/^import logistics_pb2/from . import logistics_pb2/' \
+            load_test/scripts/api/logistics_pb2_grpc.py
 
       # ── Seed test data ────────────────────────────────────────────────────────
       - name: Seed test data (items + warehouse)
