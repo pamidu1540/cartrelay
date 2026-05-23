@@ -43,6 +43,18 @@ CREATE TABLE IF NOT EXISTS warehouses (
     capacity_units  INTEGER     NOT NULL DEFAULT 0
 );
 
+-- ── Drivers ──────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS drivers (
+    id            TEXT        PRIMARY KEY DEFAULT ('DRV-' || gen_random_uuid()::text),
+    name          TEXT        NOT NULL,
+    phone         TEXT        NOT NULL DEFAULT '',
+    telegram_id   BIGINT      UNIQUE,
+    vehicle_type  TEXT        NOT NULL DEFAULT '',
+    zone          TEXT        NOT NULL DEFAULT '',
+    is_available  BOOLEAN     NOT NULL DEFAULT FALSE,
+    is_active     BOOLEAN     NOT NULL DEFAULT TRUE
+);
+
 -- ── Orders ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS orders (
     order_id          TEXT        PRIMARY KEY DEFAULT ('ORD-' || gen_random_uuid()::text),
@@ -110,18 +122,6 @@ CREATE TABLE IF NOT EXISTS carts (
     user_id      BIGINT      PRIMARY KEY,
     items_json   TEXT        NOT NULL DEFAULT '[]',
     last_updated BIGINT      NOT NULL DEFAULT EXTRACT(EPOCH FROM now())::BIGINT
-);
-
--- ── Drivers ──────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS drivers (
-    id            TEXT        PRIMARY KEY DEFAULT ('DRV-' || gen_random_uuid()::text),
-    name          TEXT        NOT NULL,
-    phone         TEXT        NOT NULL DEFAULT '',
-    telegram_id   BIGINT      UNIQUE,
-    vehicle_type  TEXT        NOT NULL DEFAULT '',
-    zone          TEXT        NOT NULL DEFAULT '',
-    is_available  BOOLEAN     NOT NULL DEFAULT FALSE,
-    is_active     BOOLEAN     NOT NULL DEFAULT TRUE
 );
 
 -- ── Promotions ───────────────────────────────────────────────────────────────
