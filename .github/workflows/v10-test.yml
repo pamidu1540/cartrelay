@@ -84,13 +84,12 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          # Pin grpcio + grpcio-tools to the SAME version to avoid
-          # protobuf gencode/runtime major version mismatch (v5 vs v6).
-          pip install \
-            grpcio==1.71.0 \
-            grpcio-tools==1.71.0 \
-            protobuf==5.29.3 \
-            aiohttp matplotlib pandas jinja2 --quiet
+          # Install together so pip resolves a mutually compatible version set.
+          # grpcio-tools pulls in the correct protobuf for the gencode it uses;
+          # grpcio must match that same protobuf major version.
+          pip install --upgrade pip
+          pip install grpcio grpcio-tools protobuf \
+              aiohttp matplotlib pandas jinja2
 
       # ── Write .env ───────────────────────────────────────────────────────────
       - name: Write deploy/.env
