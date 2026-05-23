@@ -105,6 +105,10 @@ jobs:
           done
 
 
+      - name: Fix socket permissions
+        run: |
+          sudo chmod 777 deploy/sockets/logistics.sock || true
+
       - name: Seed test data
         run: |
           python3 load_test/scripts/seed_data.py \
