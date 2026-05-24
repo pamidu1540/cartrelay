@@ -3,7 +3,7 @@
 run_spike_test.py
 Ramps from 0 to peak users in ramp_seconds, measures graceful shedding.
 """
-import argparse, asyncio, json, time
+import argparse, asyncio, json, time, hmac, hashlib
 from pathlib import Path
 import grpc
 from api import logistics_pb2, logistics_pb2_grpc
@@ -19,6 +19,13 @@ def parse_args():
     return p.parse_args()
 
 
+def make_meta(token: str, method: str) -> tuple:
+    minute = int(time.time()) // 60
+    msg = f"{method}:{minute}".encode()
+    auth_token = hmac.HMAC(token.encode(), msg, hashlib.sha256).hexdigest()
+    return (("x-auth-token", auth_token),)
+
+
 async def fake_user_call(user_id: int, token: str, host: str, timeline: list):
     """Simulate a single user call; records start/end/status in timeline."""
     t_start = time.perf_counter()
@@ -26,13 +33,14 @@ async def fake_user_call(user_id: int, token: str, host: str, timeline: list):
     try:
         async with grpc.aio.insecure_channel(host) as channel:
             stub = logistics_pb2_grpc.LogisticsEngineStub(channel)
-            meta = (("authorization", f"Bearer {token}"),)
-            cat_resp = await stub.GetCatalog(logistics_pb2.CatalogRequest(page_size=10, page=0), metadata=meta)
+            meta_catalog = make_meta(token, "/logistics.LogisticsEngine/GetCatalog")
+            cat_resp = await stub.GetCatalog(logistics_pb2.CatalogRequest(page_size=10, page=0), metadata=meta_catalog)
             if cat_resp.items:
+                meta_savecart = make_meta(token, "/logistics.LogisticsEngine/SaveCart")
                 await stub.SaveCart(logistics_pb2.SaveCartRequest(
                     user_id=int(user_id),
                     items=[logistics_pb2.CartItem(item_id=cat_resp.items[0].id, quantity=1)]
-                ), metadata=meta)
+                ), metadata=meta_savecart)
     except Exception as e:
         status = "error"
 
