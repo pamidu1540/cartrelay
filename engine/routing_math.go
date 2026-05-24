@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"sync"
 	"time"
 
 	pb "logistics-engine/api"
@@ -15,33 +14,6 @@ import (
 // mapboxClient uses a 5s timeout to prevent gRPC handlers from blocking forever.
 // The default http.Client has no timeout and can block indefinitely.
 var mapboxClient = &http.Client{Timeout: 5 * time.Second}
-
-// distCache stores quantized-key → km values.
-// Evicted every hour to prevent unbounded growth.
-var distCache sync.Map
-
-type distEntry struct {
-	dist     float64
-	cachedAt time.Time
-}
-
-func init() {
-	go func() {
-		for range time.Tick(time.Hour) {
-			now := time.Now()
-			distCache.Range(func(k, v any) bool {
-				if entry, ok := v.(distEntry); ok && now.Sub(entry.cachedAt) >= time.Hour {
-					distCache.Delete(k)
-				}
-				return true
-			})
-		}
-	}()
-}
-
-// quantize rounds a coordinate to ~1.1 km precision for cache bucketing.
-// Two locations within the same ~1 km cell share a cached distance.
-func quantize(c float64) float64 { return math.Round(c*100) / 100 }
 
 // GetDistance evaluates all active warehouses and calculates the driving
 // distance to the nearest valid depot.
@@ -69,13 +41,9 @@ func GetDistance(userLat, userLon float64, cartItems []*pb.CartItem) (float64, s
 		}
 	}
 
-	// Step 2: Check the Cache using quantized grid cell keys.
-	cacheKey := fmt.Sprintf("%.2f,%.2f→%.2f,%.2f",
-		quantize(best.Lat), quantize(best.Lon),
-		quantize(userLat), quantize(userLon))
-
-	if v, ok := distCache.Load(cacheKey); ok {
-		return v.(distEntry).dist, best.Name, nil
+	// Step 2: Check the LRU Cache using quantized grid cell keys.
+	if v, ok := getMapboxCached(best.Lat, best.Lon, userLat, userLon); ok {
+		return v, best.Name, nil
 	}
 
 	// Step 3: Fetch real road distance from Mapbox.
@@ -84,9 +52,11 @@ func GetDistance(userLat, userLon float64, cartItems []*pb.CartItem) (float64, s
 		// [FIX]: Mapbox failures fall back to Haversine × 1.3 (road approximation).
 		slog.Warn("Mapbox unavailable — Haversine fallback", "warehouse", best.Name, "err", err)
 		dist = bestH * 1.3
+	} else {
+		// Set in cache only if we got a valid response from the API
+		setMapboxCached(best.Lat, best.Lon, userLat, userLon, dist)
 	}
 
-	distCache.Store(cacheKey, distEntry{dist: dist, cachedAt: time.Now()})
 	return dist, best.Name, nil
 }
 
