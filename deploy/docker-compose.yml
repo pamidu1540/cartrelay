@@ -14,6 +14,8 @@ services:
       - MAPBOX_TOKEN=${MAPBOX_TOKEN}
       - DEV_BYPASS_SECRET=${DEV_BYPASS_SECRET:-}
       - SKIP_LICENSE_CHECK=${SKIP_LICENSE_CHECK:-}
+      - GOMEMLIMIT=48MiB
+      - GOGC=50
     volumes:
       - engine_data:/app/data        # SQLite DB + license.key
       - sockets:/app/sockets         # FIX: Named volume — host-path independent
@@ -27,11 +29,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.5"
-          memory: 512M
+          cpus: "0.50"
+          memory: 96M
         reservations:
-          cpus: "0.25"
-          memory: 128M
+          cpus: "0.10"
+          memory: 32M
     logging:
       driver: "json-file"
       options:
@@ -49,6 +51,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - INTERNAL_TOKEN=${INTERNAL_TOKEN}
       - ADMIN_USER_IDS=${ADMIN_USER_IDS:-}
+      - PYTHONMALLOC=malloc
     volumes:
       - sockets:/app/sockets         # Shared with engine
     depends_on:
@@ -64,11 +67,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.75"
-          memory: 256M
+          cpus: "0.25"
+          memory: 128M
         reservations:
-          cpus: "0.1"
-          memory: 64M
+          cpus: "0.05"
+          memory: 32M
     logging:
       driver: "json-file"
       options:

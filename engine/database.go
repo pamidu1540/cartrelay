@@ -43,9 +43,9 @@ func InitDatabase(path string) error {
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL;",
 		"PRAGMA synchronous=NORMAL;",
-		"PRAGMA cache_size=-65536;",    // 64 MB page cache
+		"PRAGMA cache_size=-4096;",     // Squeezed: 4 MB page cache (down from 64 MB)
 		"PRAGMA temp_store=MEMORY;",
-		"PRAGMA mmap_size=268435456;",  // 256 MB memory-mapped I/O
+		"PRAGMA mmap_size=8388608;",    // Squeezed: 8 MB memory-mapped I/O (down from 256 MB)
 		"PRAGMA busy_timeout=5000;",    // 5 s wait on locked DB before error
 		"PRAGMA foreign_keys=ON;",
 	}
