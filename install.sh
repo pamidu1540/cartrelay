@@ -204,14 +204,20 @@ collect_config() {
   prompt_optional MAPBOX_TOKEN "Mapbox Public Token"
   INTERNAL_TOKEN=$(openssl rand -hex 32)
   ok "Internal service token auto-generated"
+  
+  # Auto-generate secure Postgres credentials
+  POSTGRES_USER="logistics"
+  POSTGRES_PASSWORD=$(openssl rand -hex 16)
+  POSTGRES_DB="logistics"
+  ok "Database credentials auto-generated"
 }
 
 select_version() {
   step "Fetching latest release"
   SELECTED_VERSION=$(curl -fsSL \
-    "https://api.github.com/repos/${GHCR_OWNER}/${GHCR_REPO}/releases/latest" \
-    2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tag_name','latest'))" \
-    2>/dev/null || echo "latest")
+    "https://api.github.com/repos/${GHCR_OWNER}/${GHCR_REPO}/releases" \
+    2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); v10=[r.get('tag_name') for r in d if r.get('tag_name','').startswith('v10')]; print(v10[0] if v10 else 'v10-latest')" \
+    2>/dev/null || echo "v10-latest")
   [[ -z "$SELECTED_VERSION" ]] && SELECTED_VERSION="v10-latest"
   ok "Version: ${SELECTED_VERSION}"
 }
@@ -233,6 +239,9 @@ INTERNAL_TOKEN=${INTERNAL_TOKEN}
 MAPBOX_TOKEN=${MAPBOX_TOKEN:-}
 ADMIN_USER_IDS=${ADMIN_USER_IDS}
 LICENSE_KEY=${LICENSE_KEY}
+POSTGRES_USER=${POSTGRES_USER}
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_DB=${POSTGRES_DB}
 BUILD_VERSION=${SELECTED_VERSION}
 ENGINE_IMAGE=${IMAGE_ENGINE}:${SELECTED_VERSION}
 BOT_IMAGE=${IMAGE_BOT}:${SELECTED_VERSION}
@@ -246,33 +255,73 @@ write_compose() {
   step "Writing docker-compose.yml"
   cat > "${INSTALL_DIR}/deploy/docker-compose.yml" << 'COMPOSE'
 services:
+  postgres:
+    init: true
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=8MB", "-c", "effective_cache_size=64MB"]
+    env_file: .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
+        reservations:
+          cpus: "0.10"
+          memory: 32M
+    networks: [backend]
+
   engine:
+    init: true
     image: ${ENGINE_IMAGE}
     container_name: logistics_engine
     restart: unless-stopped
     env_file: .env
     environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       - INTERNAL_TOKEN=${INTERNAL_TOKEN}
       - MAPBOX_TOKEN=${MAPBOX_TOKEN}
-      - LICENSE_KEY=${LICENSE_KEY}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+      - LICENSE_PUBLIC_KEY=${LICENSE_KEY:-}
       - BUILD_VERSION=${BUILD_VERSION}
+      - GOMEMLIMIT=48MiB
+      - GOGC=50
     volumes:
-      - engine_data:/app/data
       - sockets:/app/sockets
+      - backups:/app/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "test", "-S", "/app/sockets/logistics.sock"]
+      test: ["CMD-SHELL", "test -S /app/sockets/logistics.sock"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 20s
     deploy:
       resources:
-        limits:   {cpus: "1.5",  memory: 512M}
-        reservations: {cpus: "0.25", memory: 128M}
-    logging:
-      driver: json-file
-      options: {max-size: 20m, max-file: "5"}
+        limits:
+          cpus: "0.50"
+          memory: 96M
+        reservations:
+          cpus: "0.10"
+          memory: 32M
+    networks: [backend]
+
   bot:
+    init: true
     image: ${BOT_IMAGE}
     container_name: logistics_bot
     restart: unless-stopped
@@ -280,22 +329,31 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - INTERNAL_TOKEN=${INTERNAL_TOKEN}
-      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+      - ENGINE_SOCKET=/app/sockets/logistics.sock
+      - PYTHONMALLOC=malloc
     volumes:
-      - sockets:/app/sockets
+      - sockets:/app/sockets:ro
     depends_on:
       engine:
         condition: service_healthy
     deploy:
       resources:
-        limits:   {cpus: "0.75", memory: 256M}
-        reservations: {cpus: "0.10", memory: 64M}
-    logging:
-      driver: json-file
-      options: {max-size: 20m, max-file: "5"}
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+    networks: [backend]
+
 volumes:
-  engine_data: {driver: local}
-  sockets:     {driver: local}
+  postgres_data: {driver: local}
+  sockets:       {driver: local}
+  backups:       {driver: local}
+
+networks:
+  backend:
+    driver: bridge
 COMPOSE
   ok "Wrote docker-compose.yml"
 }
