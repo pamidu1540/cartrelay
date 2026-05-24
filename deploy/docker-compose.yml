@@ -39,6 +39,7 @@ services:
       TLS_KEY_FILE:       ${TLS_KEY_FILE:-}
       DEPLOY_ENV:         ${DEPLOY_ENV:-production}
       LOG_LEVEL:          ${LOG_LEVEL:-info}
+      DB_MAX_CONNS:       100
     volumes:
       - ./sockets:/app/sockets
       - backups:/app/backups
