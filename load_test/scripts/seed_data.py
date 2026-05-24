@@ -4,7 +4,7 @@ seed_data.py
 Seeds catalog items and simulated user carts for load testing.
 Calls the engine gRPC directly via INTERNAL_TOKEN.
 """
-import argparse, sys
+import argparse, sys, hmac, hashlib, time
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -18,16 +18,22 @@ def parse_args():
 import grpc
 from api import logistics_pb2, logistics_pb2_grpc
 
+def make_meta(token: str, method: str) -> tuple:
+    minute = int(time.time()) // 60
+    msg = f"{method}:{minute}".encode()
+    auth_token = hmac.HMAC(token.encode(), msg, hashlib.sha256).hexdigest()
+    return (("x-auth-token", auth_token),)
+
 def main():
     args = parse_args()
     print(f"Seeding {args.items} catalog items for {args.users} test users...")
 
     channel = grpc.insecure_channel(args.host)
     stub    = logistics_pb2_grpc.LogisticsEngineStub(channel)
-    meta    = (("authorization", f"Bearer {args.token}"),)
 
     for i in range(args.items):
         try:
+            meta = make_meta(args.token, "/logistics.LogisticsEngine/AddItem")
             stub.AddItem(logistics_pb2.Item(
                 name=f"test_item_{i}",
                 description="test",
@@ -43,6 +49,7 @@ def main():
     print(f"✓ Seeded {args.items} items")
 
     try:
+        meta = make_meta(args.token, "/logistics.LogisticsEngine/AddWarehouse")
         stub.AddWarehouse(logistics_pb2.Warehouse(
             name="Test Warehouse",
             address="Test Addr",

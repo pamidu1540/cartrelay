@@ -4,7 +4,7 @@ run_grpc_load.py
 Runs phased gRPC load test against the engine and writes JSON results.
 Phases: baseline(10) → ramp(50→256) → sustained → recovery
 """
-import argparse, asyncio, json, time, sys, statistics
+import argparse, asyncio, json, time, sys, statistics, hmac, hashlib
 from pathlib import Path
 
 try:
@@ -26,19 +26,22 @@ def parse_args():
     return p.parse_args()
 
 
-def make_metadata(token: str):
-    return [("authorization", f"Bearer {token}")]
+def make_meta(token: str, method: str) -> tuple:
+    minute = int(time.time()) // 60
+    msg = f"{method}:{minute}".encode()
+    auth_token = hmac.HMAC(token.encode(), msg, hashlib.sha256).hexdigest()
+    return (("x-auth-token", auth_token),)
 
 
 def call_engine(stub, token: str, user_id: int) -> dict:
     """Simulate one user's full order flow. Returns timing + error info."""
-    meta = (("authorization", f"Bearer {token}"),)
     result = {"user_id": user_id, "steps": {}, "error": None}
     t0 = time.perf_counter()
 
     try:
         # Step 1: List catalog
         t = time.perf_counter()
+        meta = make_meta(token, "/logistics.LogisticsEngine/GetCatalog")
         cat_resp = stub.GetCatalog(logistics_pb2.CatalogRequest(page_size=10, page=0), metadata=meta)
         result["steps"]["list_catalog_ms"] = round((time.perf_counter() - t) * 1000, 2)
 
@@ -49,6 +52,7 @@ def call_engine(stub, token: str, user_id: int) -> dict:
 
         # Step 2: Add to cart
         t = time.perf_counter()
+        meta = make_meta(token, "/logistics.LogisticsEngine/SaveCart")
         stub.SaveCart(logistics_pb2.SaveCartRequest(
             user_id=int(user_id),
             items=[logistics_pb2.CartItem(item_id=item_id, quantity=1)]
@@ -57,6 +61,7 @@ def call_engine(stub, token: str, user_id: int) -> dict:
 
         # Step 3: Generate quote
         t = time.perf_counter()
+        meta = make_meta(token, "/logistics.LogisticsEngine/CalculateQuote")
         stub.CalculateQuote(logistics_pb2.QuoteRequest(
             user_id=int(user_id),
             user_lat=40.7128,
