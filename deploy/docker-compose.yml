@@ -8,6 +8,7 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=8MB", "-c", "effective_cache_size=64MB"]
     environment:
       POSTGRES_USER:     ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -20,6 +21,14 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
+        reservations:
+          cpus: "0.10"
+          memory: 32M
     networks: [backend]
 
   engine:
@@ -40,6 +49,8 @@ services:
       DEPLOY_ENV:         ${DEPLOY_ENV:-production}
       LOG_LEVEL:          ${LOG_LEVEL:-info}
       DB_MAX_CONNS:       100
+      GOMEMLIMIT:         48MiB
+      GOGC:               50
     volumes:
       - ./sockets:/app/sockets
       - backups:/app/backups
@@ -52,6 +63,14 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 96M
+        reservations:
+          cpus: "0.10"
+          memory: 32M
     networks: [backend]
 
   bot:
@@ -69,11 +88,20 @@ services:
       LOG_LEVEL:          ${LOG_LEVEL:-info}
       DEFAULT_LAT:        ${DEFAULT_LAT:-6.9271}
       DEFAULT_LON:        ${DEFAULT_LON:-79.8612}
+      PYTHONMALLOC:       malloc
     volumes:
       - ./sockets:/app/sockets:ro
     depends_on:
       engine:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
     networks: [backend]
 
 volumes:
