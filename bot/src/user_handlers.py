@@ -1,40 +1,5 @@
 """
-user_handlers.py — all customer-facing Telegram handlers (v5)
-
-Phase 2 features implemented:
-  U-001: /orders — paginated order history
-  U-002: Reorder button on each past order
-  U-003: Itemised cart summary before checkout
-  U-005: Per-line item notes
-  U-006: Order notes / special instructions
-  U-007: Cancel order within window
-  U-009: Human-readable order number (ORD-YYYYMMDD-NNNN)
-  U-011: Category browsing with pagination
-  U-013: Item detail view with photo + stock status
-  U-014: Out-of-stock "Notify me" button
-  U-016: Quantity +/− inline keyboard
-  U-020: Delivery time-slot picker
-  U-021: Scheduled future delivery
-  U-025: Contactless / leave-at-door option
-  U-026: Delivery OTP shown on confirmation
-  U-029: Profile name & phone (/profile)
-  U-030: Saved addresses with labels
-  U-031: Default address pre-selection
-  U-032: Spending summary (/spending)
-  U-033: Post-delivery rating prompt
-  U-034: /report issue flow
-  U-036: /deleteaccount GDPR flow
-  U-037: Promo code entry
-  U-039: Loyalty points balance (/points)
-  U-040: Loyalty points redemption at checkout
-  U-041: Referral code (/refer)
-  U-042: Free delivery threshold indicator
-  U-044: Birthday reward (background, see engine)
-  U-045: /help FAQ
-  U-048: /notifications preference toggle
-  U-049: /language selection
-  U-050: Broadcast opt-in for new products
-  U-052: Estimated delivery shown before checkout
+user_handlers.py — all customer-facing Telegram handlers
 """
 
 from __future__ import annotations

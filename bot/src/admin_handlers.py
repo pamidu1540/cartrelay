@@ -1,27 +1,5 @@
 """
-admin_handlers.py — all admin-facing Telegram handlers (v5)
-
-Phase 1 admin features implemented:
-  A-001: Warehouse CRUD (/warehouses, /addwh, /removewh)
-  A-007: Bulk item import via CSV (/bulkimport)
-  A-016: Order management dashboard (/allorders, /ordersearch)
-  A-017: Order timeline view (status history in order detail)
-  A-018: Manual order status override with mandatory reason
-  A-019: Assign / reassign driver from order
-  A-020: Internal order notes (/addnote)
-  A-026: Driver profile management (/drivers, /adddriver, /removedriver)
-  A-030: Driver broadcast (/broadcast)
-  A-034: Promo code creator (/addpromo, /removepromo)
-  A-035: Active promotion manager (/promos)
-  A-039: Loyalty points adjustment (/adjustloyalty)
-  A-041: Low-stock dashboard (/lowstock)
-  A-047: Revenue dashboard (/revenue)
-  A-048: Order volume trend (/ordertrend)
-  A-049: Top-selling items (/topitems)
-  A-055: Admin user management (/admins, /addadmin, /removeadmin)
-  A-056: Audit log viewer (/audit)
-  A-057: System settings panel (/settings)
-  A-059: Maintenance mode scheduler (/maint)
+admin_handlers.py — all admin-facing Telegram handlers
 """
 
 from __future__ import annotations
@@ -118,7 +96,7 @@ async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await cmd_admin(update, context)
     elif section == "catalog":
         kb = [
-            [InlineKeyboardButton("➕ Add Item",    callback_data="admin_menu:additem")],
+            [InlineKeyboardButton("➕ Add Item",    callback_data="item_add:start")],
             [InlineKeyboardButton("📥 Bulk Import", callback_data="admin_menu:bulkimport")],
             [InlineKeyboardButton("📉 Low Stock",   callback_data="admin_menu:lowstock")],
             [InlineKeyboardButton("⬅ Back to Menu", callback_data="admin_menu:main")],
@@ -146,16 +124,38 @@ async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 # ── Catalog management ────────────────────────────────────────────────────────
 
+async def cb_item_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query:
+        await query.answer()
+        await query.edit_message_text("❌ Operation cancelled.")
+    else:
+        await _reply(update, "❌ Operation cancelled.")
+    context.user_data.pop("new_item", None)
+    return ConversationHandler.END
+
+
 @admin_only
 async def cmd_add_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["new_item"] = {}
-    await _reply(update, "➕ *Add New Item*\n\nStep 1/6 — Enter the item *name*:")
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+    await _reply(update, "➕ *Add New Item Wizard*\n\nStep 1/6 — Enter the item *name*:", reply_markup=InlineKeyboardMarkup(kb))
+    return STATE_ITEM_NAME
+
+
+async def cb_item_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    context.user_data["new_item"] = {}
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+    await query.edit_message_text("➕ *Add New Item Wizard*\n\nStep 1/6 — Enter the item *name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_NAME
 
 
 async def msg_item_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.setdefault("new_item", {})["name"] = update.effective_message.text.strip()
-    await _reply(update, "Step 2/6 — Enter the *price* (LKR, numbers only):")
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+    await _reply(update, "Step 2/6 — Enter the *price* (LKR, numbers only):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_PRICE
 
 
@@ -165,10 +165,12 @@ async def msg_item_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if price < 0:
             raise ValueError("negative price")
     except ValueError:
-        await _reply(update, "❌ Enter a valid positive number:")
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+        await _reply(update, "❌ Please enter a valid positive number for price:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_ITEM_PRICE
     context.user_data["new_item"]["price"] = price
-    await _reply(update, "Step 3/6 — Enter initial *stock* quantity:")
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+    await _reply(update, "Step 3/6 — Enter initial *stock* quantity:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_STOCK
 
 
@@ -178,31 +180,130 @@ async def msg_item_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if stock < 0:
             raise ValueError("negative stock")
     except ValueError:
-        await _reply(update, "❌ Enter a non-negative integer:")
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+        await _reply(update, "❌ Please enter a valid non-negative integer for stock:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_ITEM_STOCK
     context.user_data["new_item"]["stock"] = stock
-    await _reply(update, "Step 4/6 — Enter the *category* (e.g. Beverages, Snacks):")
+    
+    # Fetch existing categories from catalog
+    try:
+        resp = await pool.call(
+            "/logistics.LogisticsEngine/GetCatalog",
+            lambda stub, meta: stub.GetCatalog(
+                pb.CatalogRequest(page=0, page_size=200), metadata=meta
+            ),
+        )
+        categories = sorted({it.category for it in resp.items if it.category})
+    except Exception:
+        categories = []
+
+    kb = []
+    for cat in categories[:6]:
+        kb.append([InlineKeyboardButton(cat, callback_data=f"item_cat_select:{cat}")])
+    kb.append([InlineKeyboardButton("➕ Type New Category", callback_data="item_cat_select:type_new")])
+    kb.append([InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")])
+    
+    await _reply(update, "Step 4/6 — Choose a category below or type a new one:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_CATEGORY
 
 
-async def msg_item_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["new_item"]["category"] = update.effective_message.text.strip()
-    await _reply(update, "Step 5/6 — Send the item *photo* (or type `skip`):")
+async def cb_item_category_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    cat = query.data.split(":", 1)[1]
+    
+    if cat == "type_new":
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+        await query.edit_message_text("✏️ Please type the new category name:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_ITEM_CATEGORY
+
+    if len(cat) > 50:
+        cat = cat[:50]
+
+    context.user_data.setdefault("new_item", {})["category"] = cat
+    await query.edit_message_text(f"✅ Category set to: *{cat}*")
+    
+    kb = [
+        [InlineKeyboardButton("⏩ Skip Photo", callback_data="item_photo_skip")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
+    ]
+    await query.message.reply_text("Step 5/6 — Send the item *photo* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_PHOTO
+
+
+async def msg_item_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    cat = update.effective_message.text.strip()
+    if len(cat) > 50:
+        cat = cat[:50]
+    context.user_data.setdefault("new_item", {})["category"] = cat
+    kb = [
+        [InlineKeyboardButton("⏩ Skip Photo", callback_data="item_photo_skip")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
+    ]
+    await _reply(update, "Step 5/6 — Send the item *photo* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
+    return STATE_ITEM_PHOTO
+
+
+async def cb_item_photo_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("⏩ Photo skipped.")
+    
+    kb = [
+        [InlineKeyboardButton("⏩ Skip Description", callback_data="item_desc_skip")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
+    ]
+    await query.message.reply_text("Step 6/6 — Enter the item *description* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
+    return STATE_ITEM_DESC
 
 
 async def msg_item_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     msg = update.effective_message
     if msg.photo:
-        context.user_data["new_item"]["photo_file_id"] = msg.photo[-1].file_id
-    await _reply(update, "Step 6/6 — Enter the item *description* (or type `skip`):")
+        context.user_data.setdefault("new_item", {})["photo_file_id"] = msg.photo[-1].file_id
+    elif msg.text and msg.text.lower() != "skip":
+        pass
+
+    kb = [
+        [InlineKeyboardButton("⏩ Skip Description", callback_data="item_desc_skip")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
+    ]
+    await _reply(update, "Step 6/6 — Enter the item *description* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_DESC
+
+
+async def cb_item_desc_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("⏩ Description skipped.")
+
+    d = context.user_data.pop("new_item", {})
+    item = pb.Item(
+        name=d.get("name", ""),
+        price=d.get("price", 0.0),
+        stock=d.get("stock", 0),
+        category=d.get("category", "Uncategorized"),
+        photo_file_id=d.get("photo_file_id", ""),
+        description="",
+        is_available=True,
+        tax_rate=-1,
+    )
+    try:
+        resp = await pool.call(
+            "/logistics.LogisticsEngine/AddItem",
+            lambda stub, meta: stub.AddItem(item, metadata=meta),
+            user_id=update.effective_user.id,
+        )
+        await query.message.reply_text(f"✅ *{item.name}* added successfully! ID: `{resp.entity_id}`", parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        await query.message.reply_text(f"❌ Failed to add item: {e}")
+    return ConversationHandler.END
 
 
 async def msg_item_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.effective_message.text.strip()
     if text.lower() != "skip":
-        context.user_data["new_item"]["description"] = text
+        context.user_data.setdefault("new_item", {})["description"] = text
 
     d = context.user_data.pop("new_item", {})
     item = pb.Item(
@@ -222,8 +323,8 @@ async def msg_item_description(update: Update, context: ContextTypes.DEFAULT_TYP
             user_id=update.effective_user.id,
         )
         await _reply(update, f"✅ *{item.name}* added! ID: `{resp.entity_id}`")
-    except grpc.RpcError as e:
-        await _rpc_error(update, e)
+    except Exception as e:
+        await _reply(update, f"❌ Failed to add item: {e}")
     return ConversationHandler.END
 
 
@@ -681,18 +782,32 @@ async def cb_wh_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await cmd_warehouses(update, context)
 
 
+async def cb_wh_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query:
+        await query.answer()
+        await query.edit_message_text("❌ Operation cancelled.")
+    else:
+        await _reply(update, "❌ Operation cancelled.")
+    context.user_data.pop("new_wh_flow", None)
+    context.user_data.pop("new_wh", None)
+    return ConversationHandler.END
+
+
 async def cb_wh_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     context.user_data["new_wh_flow"] = {}
-    await query.edit_message_text("🏭 *Add Warehouse Wizard*\n\nStep 1/3 — Enter the warehouse *name*:")
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
+    await query.edit_message_text("🏭 *Add Warehouse Wizard*\n\nStep 1/3 — Enter the warehouse *name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_WH_NAME
 
 
 @admin_only
 async def cmd_add_warehouse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["new_wh_flow"] = {}
-    await _reply(update, "🏭 *Add Warehouse Wizard*\n\nStep 1/3 — Enter the warehouse *name*:")
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
+    await _reply(update, "🏭 *Add Warehouse Wizard*\n\nStep 1/3 — Enter the warehouse *name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_WH_NAME
 
 
@@ -704,20 +819,22 @@ async def msg_warehouse_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if "|" in text:
             name, addr = text.split("|", 1)
             context.user_data["new_wh"] = {"name": name.strip(), "address": addr.strip()}
-            await _reply(update, "Step 2/2 — Enter `latitude,longitude`:")
+            kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
+            await _reply(update, "Step 2/2 — Enter `latitude,longitude`:", reply_markup=InlineKeyboardMarkup(kb))
             return STATE_WH_COORDS
         flow = {}
         context.user_data["new_wh_flow"] = flow
 
     text = update.effective_message.text.strip()
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
     if "name" not in flow:
         flow["name"] = text
-        await _reply(update, "Step 2/3 — Enter the *full street address* of the warehouse:")
+        await _reply(update, "Step 2/3 — Enter the *full street address* of the warehouse:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_WH_NAME
     
     if "address" not in flow:
         flow["address"] = text
-        await _reply(update, "Step 3/3 — 📍 Please share the warehouse *location* (tap the 📎 attachment icon and select Location, or share a live/static location, or type `latitude,longitude`):")
+        await _reply(update, "Step 3/3 — 📍 Please share the warehouse *location* (tap the 📎 attachment icon and select Location, or share a live/static location, or type `latitude,longitude`):", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_WH_COORDS
     return STATE_WH_COORDS
 
@@ -740,7 +857,8 @@ async def msg_warehouse_coords(update: Update, context: ContextTypes.DEFAULT_TYP
         except (ValueError, TypeError):
             # Put flow back
             context.user_data["new_wh_flow"] = flow
-            await _reply(update, "❌ Please send a location attachment or enter in `lat,lon` format:")
+            kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
+            await _reply(update, "❌ Please send a location attachment or enter in `lat,lon` format:", reply_markup=InlineKeyboardMarkup(kb))
             return STATE_WH_COORDS
 
     try:
@@ -844,30 +962,45 @@ async def cb_driver_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await cmd_drivers(update, context)
 
 
+async def cb_driver_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query:
+        await query.answer()
+        await query.edit_message_text("❌ Operation cancelled.")
+    else:
+        await _reply(update, "❌ Operation cancelled.")
+    context.user_data.pop("new_driver_flow", None)
+    context.user_data.pop("new_driver", None)
+    return ConversationHandler.END
+
+
 async def cb_driver_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     context.user_data["new_driver_flow"] = {}
-    await query.edit_message_text("🚗 *Add Driver Wizard*\n\nStep 1/3 — Enter driver's *full name*:")
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")]]
+    await query.edit_message_text("🚗 *Add Driver Wizard*\n\nStep 1/3 — Enter driver's *full name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_DRV_NAME
 
 
 @admin_only
 async def cmd_add_driver(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["new_driver_flow"] = {}
-    await _reply(update, "🚗 *Add Driver Wizard*\n\nStep 1/3 — Enter driver's *full name*:")
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")]]
+    await _reply(update, "🚗 *Add Driver Wizard*\n\nStep 1/3 — Enter driver's *full name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_DRV_NAME
 
 
 async def msg_driver_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     flow = context.user_data.get("new_driver_flow")
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")]]
     if flow is None:
         context.user_data.setdefault("new_driver", {})["name"] = update.effective_message.text.strip()
-        await _reply(update, "Enter driver's *phone number*:")
+        await _reply(update, "Enter driver's *phone number*:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_DRV_PHONE
 
     flow["name"] = update.effective_message.text.strip()
-    await _reply(update, "Step 2/3 — Enter driver's *phone number*:")
+    await _reply(update, "Step 2/3 — Enter driver's *phone number*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_DRV_PHONE
 
 
@@ -888,7 +1021,7 @@ async def msg_driver_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         ],
         [
             InlineKeyboardButton("🚲 Bicycle", callback_data=f"driver_veh:{flow['name']}:{flow['phone']}:Bicycle"),
-            InlineKeyboardButton("❌ Cancel", callback_data="admin_menu:drivers")
+            InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")
         ]
     ]
     await _reply(update, "Step 3/3 — Choose driver's *vehicle type*:", reply_markup=InlineKeyboardMarkup(kb))
@@ -1031,18 +1164,36 @@ async def cb_promo_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await cmd_promos(update, context)
 
 
+async def cb_promo_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    if query:
+        await query.answer()
+    context.user_data.pop("new_promo_flow", None)
+    await cmd_promos(update, context)
+    return ConversationHandler.END
+
+
 async def cb_promo_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     context.user_data["new_promo_flow"] = {}
-    await query.edit_message_text("🏷 *Create Promo Code Wizard*\n\nStep 1/4 — Enter the *Promo Code* (e.g. SAVE10):")
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
+    await query.edit_message_text(
+        "🏷 *Create Promo Code Wizard*\n\nStep 1/4 — Enter the *Promo Code* (e.g. SAVE10):",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
     return STATE_PROMO_DEF
 
 
 @admin_only
 async def cmd_add_promo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["new_promo_flow"] = {}
-    await _reply(update, "🏷 *Create Promo Code Wizard*\n\nStep 1/4 — Enter the *Promo Code* (e.g. SAVE10):")
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
+    await _reply(
+        update, 
+        "🏷 *Create Promo Code Wizard*\n\nStep 1/4 — Enter the *Promo Code* (e.g. SAVE10):",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
     return STATE_PROMO_DEF
 
 
@@ -1057,8 +1208,12 @@ async def cb_promo_flow_type(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
 
     flow["discount_type"] = dtype
-    friendly = "percentage value (e.g. 10 for 10%)" if dtype == "percent" else "LKR discount amount (e.g. 200)"
-    await query.edit_message_text(f"Step 3/4 — Enter the *{friendly}*:")
+    friendly = "percentage value (e.g. 10 for 10% off, must be 1-100)" if dtype == "percent" else "LKR discount amount (e.g. 200, must be positive)"
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
+    await query.edit_message_text(
+        f"Step 3/4 — Enter the *{friendly}*:",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
     return STATE_PROMO_DEF
 
 
@@ -1071,9 +1226,19 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             if len(parts) >= 3:
                 try:
                     code = parts[0].upper()
+                    if not code.isalnum():
+                        raise ValueError("Promo code must be alphanumeric.")
                     dtype = parts[1].lower()
+                    if dtype not in ("percent", "fixed"):
+                        raise ValueError("Discount type must be 'percent' or 'fixed'.")
                     val = float(parts[2])
+                    if val <= 0:
+                        raise ValueError("Discount value must be positive.")
+                    if dtype == "percent" and val > 100:
+                        raise ValueError("Percentage discount cannot exceed 100%.")
                     min_order = float(parts[3]) if len(parts) > 3 else 0.0
+                    if min_order < 0:
+                        raise ValueError("Minimum order value cannot be negative.")
                     await pool.call(
                         "/logistics.LogisticsEngine/AddPromo",
                         lambda stub, meta: stub.AddPromo(
@@ -1095,31 +1260,48 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     text = update.effective_message.text.strip()
     if "code" not in flow:
-        flow["code"] = text.upper()
+        code = text.upper()
+        if not code.isalnum():
+            kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
+            await _reply(update, "❌ Promo code must be alphanumeric (letters and numbers only). Please enter again:", reply_markup=InlineKeyboardMarkup(kb))
+            return STATE_PROMO_DEF
+        flow["code"] = code
         kb = [
             [
                 InlineKeyboardButton("Percentage (%)", callback_data="promo_flow_type:percent"),
                 InlineKeyboardButton("Fixed Amount (LKR)", callback_data="promo_flow_type:fixed"),
             ],
-            [InlineKeyboardButton("❌ Cancel", callback_data="admin_menu:promos")]
+            [InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]
         ]
         await _reply(update, f"Step 2/4 — Choose discount type for *{flow['code']}*:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROMO_DEF
 
     if "discount_type" not in flow:
-        await _reply(update, "❌ Please choose a discount type using the buttons above.")
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
+        await _reply(update, "❌ Please choose a discount type using the buttons above.", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROMO_DEF
 
     if "value" not in flow:
         try:
             val = float(text)
-            if val < 0:
-                raise ValueError("cannot be negative")
+            if val <= 0:
+                raise ValueError("must be positive")
+            
+            if flow.get("discount_type") == "percent" and val > 100:
+                kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
+                await _reply(update, "❌ Percentage discount cannot exceed 100%. Please enter a valid percentage (1-100):", reply_markup=InlineKeyboardMarkup(kb))
+                return STATE_PROMO_DEF
+                
             flow["value"] = val
-            await _reply(update, "Step 4/4 — Enter the *minimum order value* required to apply this promo (LKR, or 0 for none):")
+            kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
+            await _reply(update, "Step 4/4 — Enter the *minimum order value* required to apply this promo (LKR, or 0 for none):", reply_markup=InlineKeyboardMarkup(kb))
             return STATE_PROMO_DEF
         except ValueError:
-            await _reply(update, "❌ Please enter a valid positive number for discount value:")
+            kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
+            if flow.get("discount_type") == "percent":
+                await _reply(update, "❌ Please enter a valid percentage (1-100):", reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await _reply(update, "❌ Please enter a valid positive number for LKR discount amount:", reply_markup=InlineKeyboardMarkup(kb))
             return STATE_PROMO_DEF
 
     try:
@@ -1145,7 +1327,8 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
         await _reply(update, f"✅ Promo *{code}* created successfully!\nID: `{resp.entity_id}`")
     except ValueError:
-        await _reply(update, "❌ Please enter a valid positive number for minimum order value:")
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
+        await _reply(update, "❌ Please enter a valid non-negative number for minimum order value:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROMO_DEF
     except Exception as e:
         await _reply(update, f"❌ Failed to create promo: {e}")
