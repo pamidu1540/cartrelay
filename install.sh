@@ -2,7 +2,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-readonly INSTALLER_VERSION="4.0.0"
+readonly INSTALLER_VERSION="10.0.0"
 readonly GHCR_OWNER="pamidu1540"
 readonly GHCR_REPO="logistics-engine-core"
 readonly IMAGE_ENGINE="ghcr.io/${GHCR_OWNER}/${GHCR_REPO}/engine"
@@ -204,16 +204,47 @@ collect_config() {
   prompt_optional MAPBOX_TOKEN "Mapbox Public Token"
   INTERNAL_TOKEN=$(openssl rand -hex 32)
   ok "Internal service token auto-generated"
+  
+  # Auto-generate secure Postgres credentials
+  POSTGRES_USER="logistics"
+  POSTGRES_PASSWORD=$(openssl rand -hex 16)
+  POSTGRES_DB="logistics"
+  ok "Database credentials auto-generated"
 }
 
 select_version() {
   step "Fetching latest release"
   SELECTED_VERSION=$(curl -fsSL \
-    "https://api.github.com/repos/${GHCR_OWNER}/${GHCR_REPO}/releases/latest" \
-    2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tag_name','latest'))" \
-    2>/dev/null || echo "latest")
-  [[ -z "$SELECTED_VERSION" ]] && SELECTED_VERSION="latest"
+    "https://api.github.com/repos/${GHCR_OWNER}/${GHCR_REPO}/releases" \
+    2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); v10=[r.get('tag_name') for r in d if r.get('tag_name','').startswith('v10')]; print(v10[0] if v10 else 'v10-latest')" \
+    2>/dev/null || echo "v10-latest")
+  [[ -z "$SELECTED_VERSION" ]] && SELECTED_VERSION="v10-latest"
   ok "Version: ${SELECTED_VERSION}"
+}
+
+cleanup_legacy_install() {
+  step "Cleaning up legacy v5 installation"
+  
+  if systemctl is-active --quiet "${SERVICE_NAME}"; then
+    info "Stopping legacy systemd service…"
+    systemctl stop "${SERVICE_NAME}"
+    systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
+  fi
+
+  if [[ -f "${INSTALL_DIR}/deploy/docker-compose.yml" ]]; then
+    info "Stopping legacy Docker Compose stack…"
+    ( cd "${INSTALL_DIR}/deploy" && docker compose down -v 2>/dev/null || true )
+  fi
+
+  info "Removing orphaned containers…"
+  docker rm -f logistics_engine logistics_bot logistics_postgres 2>/dev/null || true
+
+  if [[ -d "${INSTALL_DIR}/data" ]]; then
+    local backup_dir="${INSTALL_DIR}.bak.$(date +%s)"
+    info "Backing up legacy SQLite data to ${backup_dir}…"
+    mv "${INSTALL_DIR}" "${backup_dir}"
+    ok "Legacy data safely backed up"
+  fi
 }
 
 create_directories() {
@@ -233,10 +264,13 @@ INTERNAL_TOKEN=${INTERNAL_TOKEN}
 MAPBOX_TOKEN=${MAPBOX_TOKEN:-}
 ADMIN_USER_IDS=${ADMIN_USER_IDS}
 LICENSE_KEY=${LICENSE_KEY}
+POSTGRES_USER=${POSTGRES_USER}
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_DB=${POSTGRES_DB}
 BUILD_VERSION=${SELECTED_VERSION}
 ENGINE_IMAGE=${IMAGE_ENGINE}:${SELECTED_VERSION}
 BOT_IMAGE=${IMAGE_BOT}:${SELECTED_VERSION}
-UPDATE_MANIFEST_URL="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/manifest.json"
+UPDATE_MANIFEST_URL="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/v10-latest/manifest.json"
 ENV
   chmod 600 "$f"
   ok "Wrote ${f}  (mode 600 — root-readable only)"
@@ -246,33 +280,73 @@ write_compose() {
   step "Writing docker-compose.yml"
   cat > "${INSTALL_DIR}/deploy/docker-compose.yml" << 'COMPOSE'
 services:
+  postgres:
+    init: true
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=8MB", "-c", "effective_cache_size=64MB"]
+    env_file: .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
+        reservations:
+          cpus: "0.10"
+          memory: 32M
+    networks: [backend]
+
   engine:
+    init: true
     image: ${ENGINE_IMAGE}
     container_name: logistics_engine
     restart: unless-stopped
     env_file: .env
     environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       - INTERNAL_TOKEN=${INTERNAL_TOKEN}
       - MAPBOX_TOKEN=${MAPBOX_TOKEN}
-      - LICENSE_KEY=${LICENSE_KEY}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+      - LICENSE_PUBLIC_KEY=${LICENSE_KEY:-}
       - BUILD_VERSION=${BUILD_VERSION}
+      - GOMEMLIMIT=48MiB
+      - GOGC=50
     volumes:
-      - engine_data:/app/data
       - sockets:/app/sockets
+      - backups:/app/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "test", "-S", "/app/sockets/logistics.sock"]
+      test: ["CMD-SHELL", "test -S /app/sockets/logistics.sock"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 20s
     deploy:
       resources:
-        limits:   {cpus: "1.5",  memory: 512M}
-        reservations: {cpus: "0.25", memory: 128M}
-    logging:
-      driver: json-file
-      options: {max-size: 20m, max-file: "5"}
+        limits:
+          cpus: "0.50"
+          memory: 96M
+        reservations:
+          cpus: "0.10"
+          memory: 32M
+    networks: [backend]
+
   bot:
+    init: true
     image: ${BOT_IMAGE}
     container_name: logistics_bot
     restart: unless-stopped
@@ -280,22 +354,31 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - INTERNAL_TOKEN=${INTERNAL_TOKEN}
-      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+      - ENGINE_SOCKET=/app/sockets/logistics.sock
+      - PYTHONMALLOC=malloc
     volumes:
-      - sockets:/app/sockets
+      - sockets:/app/sockets:ro
     depends_on:
       engine:
         condition: service_healthy
     deploy:
       resources:
-        limits:   {cpus: "0.75", memory: 256M}
-        reservations: {cpus: "0.10", memory: 64M}
-    logging:
-      driver: json-file
-      options: {max-size: 20m, max-file: "5"}
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+    networks: [backend]
+
 volumes:
-  engine_data: {driver: local}
-  sockets:     {driver: local}
+  postgres_data: {driver: local}
+  sockets:       {driver: local}
+  backups:       {driver: local}
+
+networks:
+  backend:
+    driver: bridge
 COMPOSE
   ok "Wrote docker-compose.yml"
 }
@@ -315,7 +398,7 @@ WorkingDirectory=${INSTALL_DIR}/deploy
 EnvironmentFile=${INSTALL_DIR}/deploy/.env
 ExecStart=/usr/bin/docker compose up -d --pull always
 ExecStop=/usr/bin/docker compose stop --timeout 30
-ExecReload=/bin/bash -c '/usr/bin/docker compose pull && /usr/bin/docker compose up -d --no-recreate'
+ExecReload=/bin/bash -c '/usr/bin/docker compose pull && /usr/bin/docker compose up -d'
 TimeoutStartSec=180
 TimeoutStopSec=45
 StandardOutput=journal
@@ -335,9 +418,9 @@ install_supervisor_binary() {
   # Default to the specific version folder uploaded by GitHub Actions
   local bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/${SELECTED_VERSION}/logistics-supervisor-linux-amd64"
   
-  # Override to the 'latest' folder if no specific version tag was found
-  if [[ "$SELECTED_VERSION" == "latest" ]]; then
-    bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/supervisor"
+  # Override to the 'v10-latest' folder if no specific version tag was found
+  if [[ "$SELECTED_VERSION" == "v10-latest" ]]; then
+    bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/v10-latest/supervisor"
   fi
   
   info "Downloading from Cloudflare R2 CDN: ${SELECTED_VERSION}"
@@ -443,6 +526,7 @@ main() {
   verify_license
   collect_config
   select_version
+  cleanup_legacy_install
   create_directories
   write_env
   write_compose

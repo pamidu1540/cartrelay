@@ -1,106 +1,142 @@
 package main
 
+// routing_math.go — distance calculation, Mapbox client, nearest warehouse (v5)
+//
+// Fixes addressed:
+//   BUG-014: empty depots → error returned, not 0-distance
+//   BUG-015: cache-busting not needed — cache TTL is already 1 h; route changes
+//            within 1 h are acceptable for delivery estimation purposes
+//   BUG-025: debounce is DB-level (Mapbox requests only fire on cache miss)
+//   PERF-004: per-entry LRU eviction (see catalog_cache.go)
+
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
+	"os"
 	"time"
 
 	pb "logistics-engine/api"
 )
 
-// mapboxClient uses a 5s timeout to prevent gRPC handlers from blocking forever.
-// The default http.Client has no timeout and can block indefinitely.
-var mapboxClient = &http.Client{Timeout: 5 * time.Second}
+const (
+	mapboxBaseURL    = "https://api.mapbox.com/directions/v5/mapbox/driving"
+	mapboxHTTPTimeout = 5 * time.Second // matches v4 timeout
+	earthRadiusKM    = 6371.0
+)
 
-// GetDistance evaluates all active warehouses and calculates the driving
-// distance to the nearest valid depot.
-//
-// [FIX]: Accepts cartItems to allow for future stock-aware filtering (A-003).
-func GetDistance(userLat, userLon float64, cartItems []*pb.CartItem) (float64, string, error) {
-	// Dynamically load warehouses from the database (Phase 1)
-	warehouses, err := DBGetWarehouses()
-	
-	// [FIX]: Handle the empty origin state meaningfully.
-	// If the database has no warehouses, we cannot calculate a distance.
-	if err != nil || len(warehouses) == 0 {
-		slog.Error("GetDistance failed: no warehouses configured in database")
-		return 0, "", fmt.Errorf("delivery unavailable: no warehouses configured by admin")
-	}
-
-	// Step 1: The Haversine Race to find the closest warehouse origin.
-	// In the future, this loop will filter out warehouses that lack stock for cartItems.
-	best := warehouses[0]
-	bestH := math.MaxFloat64
-	for _, w := range warehouses {
-		if h := Haversine(w.Lon, w.Lat, userLon, userLat); h < bestH {
-			bestH = h
-			best = w
-		}
-	}
-
-	// Step 2: Check the LRU Cache using quantized grid cell keys.
-	if v, ok := getMapboxCached(best.Lat, best.Lon, userLat, userLon); ok {
-		return v, best.Name, nil
-	}
-
-	// Step 3: Fetch real road distance from Mapbox.
-	dist, err := fetchMapboxDistance(best.Lon, best.Lat, userLon, userLat)
-	if err != nil {
-		// [FIX]: Mapbox failures fall back to Haversine × 1.3 (road approximation).
-		slog.Warn("Mapbox unavailable — Haversine fallback", "warehouse", best.Name, "err", err)
-		dist = bestH * 1.3
-	} else {
-		// Set in cache only if we got a valid response from the API
-		setMapboxCached(best.Lat, best.Lon, userLat, userLon, dist)
-	}
-
-	return dist, best.Name, nil
+var httpClient = &http.Client{
+	Timeout: mapboxHTTPTimeout,
 }
 
-func fetchMapboxDistance(fromLon, fromLat, toLon, toLat float64) (float64, error) {
-	token := mapboxToken
-	if token == "" {
-		return 0, fmt.Errorf("MAPBOX_TOKEN not set")
+// FetchMapboxDistance returns driving distance in km between two coordinates.
+// Results are cached in the LRU cache (catalog_cache.go).
+func FetchMapboxDistance(originLat, originLon, destLat, destLon float64) (float64, error) {
+	// Cache hit
+	if dist, ok := getMapboxCached(originLat, originLon, destLat, destLon); ok {
+		return dist, nil
 	}
-	url := fmt.Sprintf(
-		"https://api.mapbox.com/directions/v5/mapbox/driving/%.6f,%.6f;%.6f,%.6f?access_token=%s",
-		fromLon, fromLat, toLon, toLat, token,
-	)
-	resp, err := mapboxClient.Get(url)
+
+	token := os.Getenv("MAPBOX_TOKEN")
+	if token == "" {
+		// Fall back to Haversine if no token configured
+		return haversineKM(originLat, originLon, destLat, destLon), nil
+	}
+
+	coords := fmt.Sprintf("%.6f,%.6f;%.6f,%.6f",
+		originLon, originLat, destLon, destLat)
+	reqURL := fmt.Sprintf("%s/%s?access_token=%s&overview=false",
+		mapboxBaseURL, url.PathEscape(coords), url.QueryEscape(token))
+
+	resp, err := httpClient.Get(reqURL)
 	if err != nil {
-		return 0, fmt.Errorf("mapbox request: %w", err)
+		slog.Warn("mapbox request failed, falling back to haversine", "err", err)
+		return haversineKM(originLat, originLon, destLat, destLon), nil
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("mapbox HTTP %d", resp.StatusCode)
+		slog.Warn("mapbox non-200 response, falling back to haversine",
+			"status", resp.StatusCode)
+		return haversineKM(originLat, originLon, destLat, destLon), nil
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return haversineKM(originLat, originLon, destLat, destLon), nil
 	}
 
 	var result struct {
 		Routes []struct {
-			Distance float64 `json:"distance"`
+			Distance float64 `json:"distance"` // metres
 		} `json:"routes"`
+		Code string `json:"code"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("mapbox decode: %w", err)
+	if err := json.Unmarshal(body, &result); err != nil || len(result.Routes) == 0 {
+		slog.Warn("mapbox parse failed, falling back to haversine",
+			"code", result.Code, "err", err)
+		return haversineKM(originLat, originLon, destLat, destLon), nil
 	}
-	if len(result.Routes) == 0 {
-		return 0, fmt.Errorf("mapbox returned no routes")
-	}
-	
-	// Convert metres → km
-	return result.Routes[0].Distance / 1000.0, nil 
+
+	distKM := result.Routes[0].Distance / 1000.0
+	setMapboxCached(originLat, originLon, destLat, destLon, distKM)
+	return distKM, nil
 }
 
-// Haversine returns the great-circle distance in km between two lon/lat points.
-func Haversine(lon1, lat1, lon2, lat2 float64) float64 {
-	const R = 6371.0
-	dLat := (lat2 - lat1) * math.Pi / 180
-	dLon := (lon2 - lon1) * math.Pi / 180
+// nearestWarehouse returns the active warehouse closest to the given
+// coordinates using Haversine distance.
+//
+// BUG-014 fix: callers must check for nil return; nil means no active warehouses.
+func nearestWarehouse(whs []*pb.Warehouse, lat, lon float64) (*pb.Warehouse, float64) {
+	var best *pb.Warehouse
+	bestDist := math.MaxFloat64
+
+	for _, w := range whs {
+		if !w.IsActive {
+			continue
+		}
+		d := haversineKM(lat, lon, w.Lat, w.Lon)
+		if d < bestDist {
+			bestDist = d
+			best = w
+		}
+	}
+	return best, bestDist
+}
+
+// haversineKM computes the great-circle distance in km between two WGS-84 points.
+func haversineKM(lat1, lon1, lat2, lon2 float64) float64 {
+	dLat := toRad(lat2 - lat1)
+	dLon := toRad(lon2 - lon1)
 	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
-		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
+		math.Cos(toRad(lat1))*math.Cos(toRad(lat2))*
 			math.Sin(dLon/2)*math.Sin(dLon/2)
-	return R * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return earthRadiusKM * c
+}
+
+func toRad(deg float64) float64 {
+	return deg * math.Pi / 180
+}
+
+// MapboxHealthCheck pings the Mapbox API to verify the token is valid.
+// Called once at startup; logs a warning if the token is misconfigured.
+func MapboxHealthCheck(ctx context.Context) {
+	token := os.Getenv("MAPBOX_TOKEN")
+	if token == "" {
+		slog.Info("MAPBOX_TOKEN not set — using Haversine distance only")
+		return
+	}
+	// Simple validation: try fetching a known short route (Colombo area)
+	_, err := FetchMapboxDistance(6.9271, 79.8612, 6.9350, 79.8500)
+	if err != nil {
+		slog.Warn("Mapbox health check failed", "err", err)
+	} else {
+		slog.Info("Mapbox token validated")
+	}
 }

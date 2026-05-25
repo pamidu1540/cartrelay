@@ -1,31 +1,70 @@
+# deploy/docker-compose.yml — v5
+# BUG-021: healthchecks on every service; bot depends_on engine healthy
+# SEC-013: DEV_BYPASS_SECRET / SKIP_LICENSE_CHECK absent from this file
+# PERF-011: build context is the repo root; .dockerignore trims it
+
 services:
 
-  engine:
-    build:
-      context: ../engine
-      dockerfile: Dockerfile
-      args:
-        BUILD_VERSION: "${BUILD_VERSION:-dev}"
-    container_name: logistics_engine
+  postgres:
+    init: true
+    image: postgres:16-alpine
     restart: unless-stopped
-    env_file: .env
+    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=8MB", "-c", "effective_cache_size=64MB"]
     environment:
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN}
-      - MAPBOX_TOKEN=${MAPBOX_TOKEN}
-      - DEV_BYPASS_SECRET=${DEV_BYPASS_SECRET:-}
-      - SKIP_LICENSE_CHECK=${SKIP_LICENSE_CHECK:-}
-      - GOMEMLIMIT=48MiB
-      - GOGC=50
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${POSTGRES_DB}
     volumes:
-      - engine_data:/app/data        # SQLite DB + license.key
-      - sockets:/app/sockets         # FIX: Named volume — host-path independent
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "test", "-S", "/app/sockets/logistics.sock"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
+        reservations:
+          cpus: "0.10"
+          memory: 32M
+    networks: [backend]
+
+  engine:
+    init: true
+    build:
+      context: ..
+      dockerfile: engine/Dockerfile
+      args:
+        VERSION: ${APP_VERSION:-dev}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:       postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      INTERNAL_TOKEN:     ${INTERNAL_TOKEN}
+      MAPBOX_TOKEN:       ${MAPBOX_TOKEN}
+      ADMIN_USER_IDS:     ${ADMIN_USER_IDS}
+      LICENSE_PUBLIC_KEY: ${LICENSE_PUBLIC_KEY:-}
+      TLS_CERT_FILE:      ${TLS_CERT_FILE:-}
+      TLS_KEY_FILE:       ${TLS_KEY_FILE:-}
+      DEPLOY_ENV:         ${DEPLOY_ENV:-production}
+      LOG_LEVEL:          ${LOG_LEVEL:-info}
+      DB_MAX_CONNS:       100
+      GOMEMLIMIT:         48MiB
+      GOGC:               50
+    volumes:
+      - ./sockets:/app/sockets
+      - backups:/app/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /app/sockets/logistics.sock"]
       interval: 10s
       timeout: 5s
       retries: 6
-      start_period: 15s
-    # FIX: Resource limits prevent a runaway engine from starving the bot.
+      start_period: 20s
     deploy:
       resources:
         limits:
@@ -34,36 +73,30 @@ services:
         reservations:
           cpus: "0.10"
           memory: 32M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "20m"
-        max-file: "5"
+    networks: [backend]
 
   bot:
+    init: true
     build:
       context: ..
       dockerfile: bot/Dockerfile
-    container_name: logistics_bot
+      args:
+        VERSION: ${APP_VERSION:-dev}
     restart: unless-stopped
-    env_file: .env
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN}
-      - ADMIN_USER_IDS=${ADMIN_USER_IDS:-}
-      - PYTHONMALLOC=malloc
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      INTERNAL_TOKEN:     ${INTERNAL_TOKEN}
+      ENGINE_SOCKET:      /app/sockets/logistics.sock
+      TLS_CERT_FILE:      ${TLS_CERT_FILE:-}
+      LOG_LEVEL:          ${LOG_LEVEL:-info}
+      DEFAULT_LAT:        ${DEFAULT_LAT:-6.9271}
+      DEFAULT_LON:        ${DEFAULT_LON:-79.8612}
+      PYTHONMALLOC:       malloc
     volumes:
-      - sockets:/app/sockets         # Shared with engine
+      - ./sockets:/app/sockets:ro
     depends_on:
       engine:
-        condition: service_healthy   # Wait for the engine socket to exist
-    healthcheck:
-      test: ["CMD", "python", "-c",
-             "import grpc; ch=grpc.insecure_channel('unix:///app/sockets/logistics.sock'); ch.close()"]
-      interval: 15s
-      timeout: 5s
-      retries: 4
-      start_period: 20s
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -72,14 +105,12 @@ services:
         reservations:
           cpus: "0.05"
           memory: 32M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "20m"
-        max-file: "5"
+    networks: [backend]
 
 volumes:
-  engine_data:
-    driver: local
-  sockets:
-    driver: local    # tmpfs-style volume — socket only lives while stack is up
+  postgres_data:
+  backups:
+
+networks:
+  backend:
+    driver: bridge

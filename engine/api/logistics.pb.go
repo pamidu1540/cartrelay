@@ -62,6 +62,8 @@ type HealthStatus struct {
 	IsHealthy       bool                   `protobuf:"varint,1,opt,name=is_healthy,json=isHealthy,proto3" json:"is_healthy,omitempty"`
 	MaintenanceMode bool                   `protobuf:"varint,2,opt,name=maintenance_mode,json=maintenanceMode,proto3" json:"maintenance_mode,omitempty"`
 	Version         string                 `protobuf:"bytes,3,opt,name=version,proto3" json:"version,omitempty"`
+	DbStatus        string                 `protobuf:"bytes,4,opt,name=db_status,json=dbStatus,proto3" json:"db_status,omitempty"`
+	UptimeSeconds   int64                  `protobuf:"varint,5,opt,name=uptime_seconds,json=uptimeSeconds,proto3" json:"uptime_seconds,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -117,11 +119,26 @@ func (x *HealthStatus) GetVersion() string {
 	return ""
 }
 
+func (x *HealthStatus) GetDbStatus() string {
+	if x != nil {
+		return x.DbStatus
+	}
+	return ""
+}
+
+func (x *HealthStatus) GetUptimeSeconds() int64 {
+	if x != nil {
+		return x.UptimeSeconds
+	}
+	return 0
+}
+
 type StatusResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	NotifyUserId  int64                  `protobuf:"varint,3,opt,name=notify_user_id,json=notifyUserId,proto3" json:"notify_user_id,omitempty"`
+	NotifyUserId  int64                  `protobuf:"varint,3,opt,name=notify_user_id,json=notifyUserId,proto3" json:"notify_user_id,omitempty"` // set on order status mutations for push notification
+	EntityId      string                 `protobuf:"bytes,4,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`                // newly created entity ID, when applicable
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -177,17 +194,33 @@ func (x *StatusResponse) GetNotifyUserId() int64 {
 	return 0
 }
 
+func (x *StatusResponse) GetEntityId() string {
+	if x != nil {
+		return x.EntityId
+	}
+	return ""
+}
+
 type Item struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Price         float64                `protobuf:"fixed64,3,opt,name=price,proto3" json:"price,omitempty"`
-	VolumeCubes   float64                `protobuf:"fixed64,4,opt,name=volume_cubes,json=volumeCubes,proto3" json:"volume_cubes,omitempty"`
-	Category      string                 `protobuf:"bytes,5,opt,name=category,proto3" json:"category,omitempty"`
-	Stock         int32                  `protobuf:"varint,6,opt,name=stock,proto3" json:"stock,omitempty"`
-	PhotoFileId   string                 `protobuf:"bytes,7,opt,name=photo_file_id,json=photoFileId,proto3" json:"photo_file_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Price          float64                `protobuf:"fixed64,3,opt,name=price,proto3" json:"price,omitempty"`
+	VolumeCubes    float64                `protobuf:"fixed64,4,opt,name=volume_cubes,json=volumeCubes,proto3" json:"volume_cubes,omitempty"`
+	Category       string                 `protobuf:"bytes,5,opt,name=category,proto3" json:"category,omitempty"`
+	Stock          int32                  `protobuf:"varint,6,opt,name=stock,proto3" json:"stock,omitempty"`
+	PhotoFileId    string                 `protobuf:"bytes,7,opt,name=photo_file_id,json=photoFileId,proto3" json:"photo_file_id,omitempty"`
+	Description    string                 `protobuf:"bytes,8,opt,name=description,proto3" json:"description,omitempty"`
+	IsFeatured     bool                   `protobuf:"varint,9,opt,name=is_featured,json=isFeatured,proto3" json:"is_featured,omitempty"`
+	IsAvailable    bool                   `protobuf:"varint,10,opt,name=is_available,json=isAvailable,proto3" json:"is_available,omitempty"`
+	AvailableFrom  int64                  `protobuf:"varint,11,opt,name=available_from,json=availableFrom,proto3" json:"available_from,omitempty"`    // unix epoch; 0 = always
+	AvailableUntil int64                  `protobuf:"varint,12,opt,name=available_until,json=availableUntil,proto3" json:"available_until,omitempty"` // unix epoch; 0 = always
+	TaxRate        float64                `protobuf:"fixed64,13,opt,name=tax_rate,json=taxRate,proto3" json:"tax_rate,omitempty"`                     // per-item override; -1 = use global
+	ReorderLevel   int32                  `protobuf:"varint,14,opt,name=reorder_level,json=reorderLevel,proto3" json:"reorder_level,omitempty"`       // low-stock alert threshold
+	DeletedAt      int64                  `protobuf:"varint,15,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`                // 0 = active
+	CreatedAt      int64                  `protobuf:"varint,16,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Item) Reset() {
@@ -269,16 +302,192 @@ func (x *Item) GetPhotoFileId() string {
 	return ""
 }
 
+func (x *Item) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Item) GetIsFeatured() bool {
+	if x != nil {
+		return x.IsFeatured
+	}
+	return false
+}
+
+func (x *Item) GetIsAvailable() bool {
+	if x != nil {
+		return x.IsAvailable
+	}
+	return false
+}
+
+func (x *Item) GetAvailableFrom() int64 {
+	if x != nil {
+		return x.AvailableFrom
+	}
+	return 0
+}
+
+func (x *Item) GetAvailableUntil() int64 {
+	if x != nil {
+		return x.AvailableUntil
+	}
+	return 0
+}
+
+func (x *Item) GetTaxRate() float64 {
+	if x != nil {
+		return x.TaxRate
+	}
+	return 0
+}
+
+func (x *Item) GetReorderLevel() int32 {
+	if x != nil {
+		return x.ReorderLevel
+	}
+	return 0
+}
+
+func (x *Item) GetDeletedAt() int64 {
+	if x != nil {
+		return x.DeletedAt
+	}
+	return 0
+}
+
+func (x *Item) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+type ItemId struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ItemId) Reset() {
+	*x = ItemId{}
+	mi := &file_logistics_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ItemId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ItemId) ProtoMessage() {}
+
+func (x *ItemId) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ItemId.ProtoReflect.Descriptor instead.
+func (*ItemId) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ItemId) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type CatalogRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CategoryFilter string                 `protobuf:"bytes,1,opt,name=category_filter,json=categoryFilter,proto3" json:"category_filter,omitempty"`
+	SearchQuery    string                 `protobuf:"bytes,2,opt,name=search_query,json=searchQuery,proto3" json:"search_query,omitempty"`
+	Page           int32                  `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize       int32                  `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CatalogRequest) Reset() {
+	*x = CatalogRequest{}
+	mi := &file_logistics_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CatalogRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CatalogRequest) ProtoMessage() {}
+
+func (x *CatalogRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CatalogRequest.ProtoReflect.Descriptor instead.
+func (*CatalogRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CatalogRequest) GetCategoryFilter() string {
+	if x != nil {
+		return x.CategoryFilter
+	}
+	return ""
+}
+
+func (x *CatalogRequest) GetSearchQuery() string {
+	if x != nil {
+		return x.SearchQuery
+	}
+	return ""
+}
+
+func (x *CatalogRequest) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *CatalogRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
 type CatalogResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Items         map[string]*Item       `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Items         []*Item                `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	TotalCount    int32                  `protobuf:"varint,2,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CatalogResponse) Reset() {
 	*x = CatalogResponse{}
-	mi := &file_logistics_proto_msgTypes[4]
+	mi := &file_logistics_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -290,7 +499,7 @@ func (x *CatalogResponse) String() string {
 func (*CatalogResponse) ProtoMessage() {}
 
 func (x *CatalogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[4]
+	mi := &file_logistics_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -303,14 +512,21 @@ func (x *CatalogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CatalogResponse.ProtoReflect.Descriptor instead.
 func (*CatalogResponse) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{4}
+	return file_logistics_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *CatalogResponse) GetItems() map[string]*Item {
+func (x *CatalogResponse) GetItems() []*Item {
 	if x != nil {
 		return x.Items
 	}
 	return nil
+}
+
+func (x *CatalogResponse) GetTotalCount() int32 {
+	if x != nil {
+		return x.TotalCount
+	}
+	return 0
 }
 
 type EditPriceRequest struct {
@@ -323,7 +539,7 @@ type EditPriceRequest struct {
 
 func (x *EditPriceRequest) Reset() {
 	*x = EditPriceRequest{}
-	mi := &file_logistics_proto_msgTypes[5]
+	mi := &file_logistics_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -335,7 +551,7 @@ func (x *EditPriceRequest) String() string {
 func (*EditPriceRequest) ProtoMessage() {}
 
 func (x *EditPriceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[5]
+	mi := &file_logistics_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -348,7 +564,7 @@ func (x *EditPriceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditPriceRequest.ProtoReflect.Descriptor instead.
 func (*EditPriceRequest) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{5}
+	return file_logistics_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *EditPriceRequest) GetItemId() string {
@@ -369,13 +585,14 @@ type EditStockRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
 	Delta         int32                  `protobuf:"varint,2,opt,name=delta,proto3" json:"delta,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EditStockRequest) Reset() {
 	*x = EditStockRequest{}
-	mi := &file_logistics_proto_msgTypes[6]
+	mi := &file_logistics_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -387,7 +604,7 @@ func (x *EditStockRequest) String() string {
 func (*EditStockRequest) ProtoMessage() {}
 
 func (x *EditStockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[6]
+	mi := &file_logistics_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -400,7 +617,7 @@ func (x *EditStockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditStockRequest.ProtoReflect.Descriptor instead.
 func (*EditStockRequest) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{6}
+	return file_logistics_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *EditStockRequest) GetItemId() string {
@@ -417,28 +634,35 @@ func (x *EditStockRequest) GetDelta() int32 {
 	return 0
 }
 
-type ItemId struct {
+func (x *EditStockRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type BulkImportRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Items         []*Item                `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ItemId) Reset() {
-	*x = ItemId{}
-	mi := &file_logistics_proto_msgTypes[7]
+func (x *BulkImportRequest) Reset() {
+	*x = BulkImportRequest{}
+	mi := &file_logistics_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ItemId) String() string {
+func (x *BulkImportRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ItemId) ProtoMessage() {}
+func (*BulkImportRequest) ProtoMessage() {}
 
-func (x *ItemId) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[7]
+func (x *BulkImportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -449,29 +673,90 @@ func (x *ItemId) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ItemId.ProtoReflect.Descriptor instead.
-func (*ItemId) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{7}
+// Deprecated: Use BulkImportRequest.ProtoReflect.Descriptor instead.
+func (*BulkImportRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *ItemId) GetId() string {
+func (x *BulkImportRequest) GetItems() []*Item {
 	if x != nil {
-		return x.Id
+		return x.Items
 	}
-	return ""
+	return nil
+}
+
+type BulkImportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Created       int32                  `protobuf:"varint,1,opt,name=created,proto3" json:"created,omitempty"`
+	Updated       int32                  `protobuf:"varint,2,opt,name=updated,proto3" json:"updated,omitempty"`
+	Errors        []string               `protobuf:"bytes,3,rep,name=errors,proto3" json:"errors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BulkImportResponse) Reset() {
+	*x = BulkImportResponse{}
+	mi := &file_logistics_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BulkImportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BulkImportResponse) ProtoMessage() {}
+
+func (x *BulkImportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BulkImportResponse.ProtoReflect.Descriptor instead.
+func (*BulkImportResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *BulkImportResponse) GetCreated() int32 {
+	if x != nil {
+		return x.Created
+	}
+	return 0
+}
+
+func (x *BulkImportResponse) GetUpdated() int32 {
+	if x != nil {
+		return x.Updated
+	}
+	return 0
+}
+
+func (x *BulkImportResponse) GetErrors() []string {
+	if x != nil {
+		return x.Errors
+	}
+	return nil
 }
 
 type CartItem struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
 	Quantity      int32                  `protobuf:"varint,2,opt,name=quantity,proto3" json:"quantity,omitempty"`
+	Note          string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"` // per-line note (U-005)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CartItem) Reset() {
 	*x = CartItem{}
-	mi := &file_logistics_proto_msgTypes[8]
+	mi := &file_logistics_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -483,7 +768,7 @@ func (x *CartItem) String() string {
 func (*CartItem) ProtoMessage() {}
 
 func (x *CartItem) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[8]
+	mi := &file_logistics_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -496,7 +781,7 @@ func (x *CartItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CartItem.ProtoReflect.Descriptor instead.
 func (*CartItem) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{8}
+	return file_logistics_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CartItem) GetItemId() string {
@@ -513,18 +798,141 @@ func (x *CartItem) GetQuantity() int32 {
 	return 0
 }
 
-type QuoteRequest struct {
+func (x *CartItem) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type SaveCartRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserLat       float64                `protobuf:"fixed64,1,opt,name=user_lat,json=userLat,proto3" json:"user_lat,omitempty"`
-	UserLon       float64                `protobuf:"fixed64,2,opt,name=user_lon,json=userLon,proto3" json:"user_lon,omitempty"`
-	CartItems     []*CartItem            `protobuf:"bytes,3,rep,name=cart_items,json=cartItems,proto3" json:"cart_items,omitempty"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Items         []*CartItem            `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *SaveCartRequest) Reset() {
+	*x = SaveCartRequest{}
+	mi := &file_logistics_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SaveCartRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SaveCartRequest) ProtoMessage() {}
+
+func (x *SaveCartRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SaveCartRequest.ProtoReflect.Descriptor instead.
+func (*SaveCartRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SaveCartRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *SaveCartRequest) GetItems() []*CartItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+type CartResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Items         []*CartItem            `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"`
+	UpdatedAt     int64                  `protobuf:"varint,3,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CartResponse) Reset() {
+	*x = CartResponse{}
+	mi := &file_logistics_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CartResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CartResponse) ProtoMessage() {}
+
+func (x *CartResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CartResponse.ProtoReflect.Descriptor instead.
+func (*CartResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *CartResponse) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *CartResponse) GetItems() []*CartItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *CartResponse) GetUpdatedAt() int64 {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return 0
+}
+
+type QuoteRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	UserLat        float64                `protobuf:"fixed64,1,opt,name=user_lat,json=userLat,proto3" json:"user_lat,omitempty"`
+	UserLon        float64                `protobuf:"fixed64,2,opt,name=user_lon,json=userLon,proto3" json:"user_lon,omitempty"`
+	CartItems      []*CartItem            `protobuf:"bytes,3,rep,name=cart_items,json=cartItems,proto3" json:"cart_items,omitempty"`
+	UserId         int64                  `protobuf:"varint,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                           // for ownership check (BUG-017)
+	PromoCode      string                 `protobuf:"bytes,5,opt,name=promo_code,json=promoCode,proto3" json:"promo_code,omitempty"`                   // optional (U-037)
+	LoyaltyRedeem  int32                  `protobuf:"varint,6,opt,name=loyalty_redeem,json=loyaltyRedeem,proto3" json:"loyalty_redeem,omitempty"`      // points to redeem (U-040)
+	DeliverySlotId int64                  `protobuf:"varint,7,opt,name=delivery_slot_id,json=deliverySlotId,proto3" json:"delivery_slot_id,omitempty"` // preferred time slot (U-020)
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
 func (x *QuoteRequest) Reset() {
 	*x = QuoteRequest{}
-	mi := &file_logistics_proto_msgTypes[9]
+	mi := &file_logistics_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -536,7 +944,7 @@ func (x *QuoteRequest) String() string {
 func (*QuoteRequest) ProtoMessage() {}
 
 func (x *QuoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[9]
+	mi := &file_logistics_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -549,7 +957,7 @@ func (x *QuoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuoteRequest.ProtoReflect.Descriptor instead.
 func (*QuoteRequest) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{9}
+	return file_logistics_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *QuoteRequest) GetUserLat() float64 {
@@ -573,22 +981,58 @@ func (x *QuoteRequest) GetCartItems() []*CartItem {
 	return nil
 }
 
+func (x *QuoteRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *QuoteRequest) GetPromoCode() string {
+	if x != nil {
+		return x.PromoCode
+	}
+	return ""
+}
+
+func (x *QuoteRequest) GetLoyaltyRedeem() int32 {
+	if x != nil {
+		return x.LoyaltyRedeem
+	}
+	return 0
+}
+
+func (x *QuoteRequest) GetDeliverySlotId() int64 {
+	if x != nil {
+		return x.DeliverySlotId
+	}
+	return 0
+}
+
 type QuoteResponse struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Success          bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	ErrorMessage     string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	GrandTotal       float64                `protobuf:"fixed64,3,opt,name=grand_total,json=grandTotal,proto3" json:"grand_total,omitempty"`
-	FormattedReceipt string                 `protobuf:"bytes,4,opt,name=formatted_receipt,json=formattedReceipt,proto3" json:"formatted_receipt,omitempty"`
-	DistanceKm       float64                `protobuf:"fixed64,5,opt,name=distance_km,json=distanceKm,proto3" json:"distance_km,omitempty"`
-	NearestBranch    string                 `protobuf:"bytes,6,opt,name=nearest_branch,json=nearestBranch,proto3" json:"nearest_branch,omitempty"`
-	CartItems        []*CartItem            `protobuf:"bytes,7,rep,name=cart_items,json=cartItems,proto3" json:"cart_items,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Success             bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage        string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	Subtotal            float64                `protobuf:"fixed64,3,opt,name=subtotal,proto3" json:"subtotal,omitempty"`
+	DeliveryFee         float64                `protobuf:"fixed64,4,opt,name=delivery_fee,json=deliveryFee,proto3" json:"delivery_fee,omitempty"`
+	HeavySurcharge      float64                `protobuf:"fixed64,5,opt,name=heavy_surcharge,json=heavySurcharge,proto3" json:"heavy_surcharge,omitempty"`
+	Tax                 float64                `protobuf:"fixed64,6,opt,name=tax,proto3" json:"tax,omitempty"`
+	PromoDiscount       float64                `protobuf:"fixed64,7,opt,name=promo_discount,json=promoDiscount,proto3" json:"promo_discount,omitempty"`
+	LoyaltyDiscount     float64                `protobuf:"fixed64,8,opt,name=loyalty_discount,json=loyaltyDiscount,proto3" json:"loyalty_discount,omitempty"`
+	GrandTotal          float64                `protobuf:"fixed64,9,opt,name=grand_total,json=grandTotal,proto3" json:"grand_total,omitempty"`
+	FormattedReceipt    string                 `protobuf:"bytes,10,opt,name=formatted_receipt,json=formattedReceipt,proto3" json:"formatted_receipt,omitempty"`
+	DistanceKm          float64                `protobuf:"fixed64,11,opt,name=distance_km,json=distanceKm,proto3" json:"distance_km,omitempty"`
+	NearestBranch       string                 `protobuf:"bytes,12,opt,name=nearest_branch,json=nearestBranch,proto3" json:"nearest_branch,omitempty"`
+	PromoApplied        string                 `protobuf:"bytes,13,opt,name=promo_applied,json=promoApplied,proto3" json:"promo_applied,omitempty"`
+	LoyaltyPointsEarned int32                  `protobuf:"varint,14,opt,name=loyalty_points_earned,json=loyaltyPointsEarned,proto3" json:"loyalty_points_earned,omitempty"`
+	QuoteData           []byte                 `protobuf:"bytes,15,opt,name=quote_data,json=quoteData,proto3" json:"quote_data,omitempty"` // serialised for tamper-proof PlaceOrder
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *QuoteResponse) Reset() {
 	*x = QuoteResponse{}
-	mi := &file_logistics_proto_msgTypes[10]
+	mi := &file_logistics_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -600,7 +1044,7 @@ func (x *QuoteResponse) String() string {
 func (*QuoteResponse) ProtoMessage() {}
 
 func (x *QuoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[10]
+	mi := &file_logistics_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -613,7 +1057,7 @@ func (x *QuoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuoteResponse.ProtoReflect.Descriptor instead.
 func (*QuoteResponse) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{10}
+	return file_logistics_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *QuoteResponse) GetSuccess() bool {
@@ -628,6 +1072,48 @@ func (x *QuoteResponse) GetErrorMessage() string {
 		return x.ErrorMessage
 	}
 	return ""
+}
+
+func (x *QuoteResponse) GetSubtotal() float64 {
+	if x != nil {
+		return x.Subtotal
+	}
+	return 0
+}
+
+func (x *QuoteResponse) GetDeliveryFee() float64 {
+	if x != nil {
+		return x.DeliveryFee
+	}
+	return 0
+}
+
+func (x *QuoteResponse) GetHeavySurcharge() float64 {
+	if x != nil {
+		return x.HeavySurcharge
+	}
+	return 0
+}
+
+func (x *QuoteResponse) GetTax() float64 {
+	if x != nil {
+		return x.Tax
+	}
+	return 0
+}
+
+func (x *QuoteResponse) GetPromoDiscount() float64 {
+	if x != nil {
+		return x.PromoDiscount
+	}
+	return 0
+}
+
+func (x *QuoteResponse) GetLoyaltyDiscount() float64 {
+	if x != nil {
+		return x.LoyaltyDiscount
+	}
+	return 0
 }
 
 func (x *QuoteResponse) GetGrandTotal() float64 {
@@ -658,27 +1144,49 @@ func (x *QuoteResponse) GetNearestBranch() string {
 	return ""
 }
 
-func (x *QuoteResponse) GetCartItems() []*CartItem {
+func (x *QuoteResponse) GetPromoApplied() string {
 	if x != nil {
-		return x.CartItems
+		return x.PromoApplied
+	}
+	return ""
+}
+
+func (x *QuoteResponse) GetLoyaltyPointsEarned() int32 {
+	if x != nil {
+		return x.LoyaltyPointsEarned
+	}
+	return 0
+}
+
+func (x *QuoteResponse) GetQuoteData() []byte {
+	if x != nil {
+		return x.QuoteData
 	}
 	return nil
 }
 
 type OrderRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
-	QuoteData     []byte                 `protobuf:"bytes,3,opt,name=quote_data,json=quoteData,proto3" json:"quote_data,omitempty"`
-	ExpectedTotal float64                `protobuf:"fixed64,4,opt,name=expected_total,json=expectedTotal,proto3" json:"expected_total,omitempty"`
-	ReceiptText   string                 `protobuf:"bytes,5,opt,name=receipt_text,json=receiptText,proto3" json:"receipt_text,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	UserId          int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Username        string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	QuoteData       []byte                 `protobuf:"bytes,3,opt,name=quote_data,json=quoteData,proto3" json:"quote_data,omitempty"`
+	ExpectedTotal   float64                `protobuf:"fixed64,4,opt,name=expected_total,json=expectedTotal,proto3" json:"expected_total,omitempty"`
+	ReceiptText     string                 `protobuf:"bytes,5,opt,name=receipt_text,json=receiptText,proto3" json:"receipt_text,omitempty"`
+	IdempotencyKey  string                 `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"` // BUG-012: duplicate order guard
+	OrderNotes      string                 `protobuf:"bytes,7,opt,name=order_notes,json=orderNotes,proto3" json:"order_notes,omitempty"`             // U-006: special instructions
+	DeliveryAddress string                 `protobuf:"bytes,8,opt,name=delivery_address,json=deliveryAddress,proto3" json:"delivery_address,omitempty"`
+	DeliverySlotId  int64                  `protobuf:"varint,9,opt,name=delivery_slot_id,json=deliverySlotId,proto3" json:"delivery_slot_id,omitempty"`
+	ScheduledFor    int64                  `protobuf:"varint,10,opt,name=scheduled_for,json=scheduledFor,proto3" json:"scheduled_for,omitempty"`         // U-021: future delivery unix epoch; 0 = ASAP
+	Contactless     bool                   `protobuf:"varint,11,opt,name=contactless,proto3" json:"contactless,omitempty"`                               // U-025: leave at door
+	RecipientName   string                 `protobuf:"bytes,12,opt,name=recipient_name,json=recipientName,proto3" json:"recipient_name,omitempty"`       // U-028: gift orders
+	SavedAddressId  int64                  `protobuf:"varint,13,opt,name=saved_address_id,json=savedAddressId,proto3" json:"saved_address_id,omitempty"` // from saved addresses
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *OrderRequest) Reset() {
 	*x = OrderRequest{}
-	mi := &file_logistics_proto_msgTypes[11]
+	mi := &file_logistics_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -690,7 +1198,7 @@ func (x *OrderRequest) String() string {
 func (*OrderRequest) ProtoMessage() {}
 
 func (x *OrderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[11]
+	mi := &file_logistics_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -703,7 +1211,7 @@ func (x *OrderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OrderRequest.ProtoReflect.Descriptor instead.
 func (*OrderRequest) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{11}
+	return file_logistics_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *OrderRequest) GetUserId() int64 {
@@ -741,18 +1249,75 @@ func (x *OrderRequest) GetReceiptText() string {
 	return ""
 }
 
+func (x *OrderRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *OrderRequest) GetOrderNotes() string {
+	if x != nil {
+		return x.OrderNotes
+	}
+	return ""
+}
+
+func (x *OrderRequest) GetDeliveryAddress() string {
+	if x != nil {
+		return x.DeliveryAddress
+	}
+	return ""
+}
+
+func (x *OrderRequest) GetDeliverySlotId() int64 {
+	if x != nil {
+		return x.DeliverySlotId
+	}
+	return 0
+}
+
+func (x *OrderRequest) GetScheduledFor() int64 {
+	if x != nil {
+		return x.ScheduledFor
+	}
+	return 0
+}
+
+func (x *OrderRequest) GetContactless() bool {
+	if x != nil {
+		return x.Contactless
+	}
+	return false
+}
+
+func (x *OrderRequest) GetRecipientName() string {
+	if x != nil {
+		return x.RecipientName
+	}
+	return ""
+}
+
+func (x *OrderRequest) GetSavedAddressId() int64 {
+	if x != nil {
+		return x.SavedAddressId
+	}
+	return 0
+}
+
 type OrderResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
 	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	HumanRef      string                 `protobuf:"bytes,4,opt,name=human_ref,json=humanRef,proto3" json:"human_ref,omitempty"` // U-009: e.g. ORD-20260513-0047
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *OrderResponse) Reset() {
 	*x = OrderResponse{}
-	mi := &file_logistics_proto_msgTypes[12]
+	mi := &file_logistics_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -764,7 +1329,7 @@ func (x *OrderResponse) String() string {
 func (*OrderResponse) ProtoMessage() {}
 
 func (x *OrderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[12]
+	mi := &file_logistics_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -777,7 +1342,7 @@ func (x *OrderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OrderResponse.ProtoReflect.Descriptor instead.
 func (*OrderResponse) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{12}
+	return file_logistics_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *OrderResponse) GetSuccess() bool {
@@ -801,21 +1366,85 @@ func (x *OrderResponse) GetMessage() string {
 	return ""
 }
 
-type Order struct {
+func (x *OrderResponse) GetHumanRef() string {
+	if x != nil {
+		return x.HumanRef
+	}
+	return ""
+}
+
+type OrderId struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	Total         float64                `protobuf:"fixed64,3,opt,name=total,proto3" json:"total,omitempty"`
-	Timestamp     int64                  `protobuf:"varint,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Receipt       string                 `protobuf:"bytes,5,opt,name=receipt,proto3" json:"receipt,omitempty"`
-	UserId        int64                  `protobuf:"varint,6,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *OrderId) Reset() {
+	*x = OrderId{}
+	mi := &file_logistics_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrderId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrderId) ProtoMessage() {}
+
+func (x *OrderId) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrderId.ProtoReflect.Descriptor instead.
+func (*OrderId) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *OrderId) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+type Order struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	OrderId         string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	HumanRef        string                 `protobuf:"bytes,2,opt,name=human_ref,json=humanRef,proto3" json:"human_ref,omitempty"`
+	Status          string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Total           float64                `protobuf:"fixed64,4,opt,name=total,proto3" json:"total,omitempty"`
+	Timestamp       int64                  `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Receipt         string                 `protobuf:"bytes,6,opt,name=receipt,proto3" json:"receipt,omitempty"`
+	UserId          int64                  `protobuf:"varint,7,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Username        string                 `protobuf:"bytes,8,opt,name=username,proto3" json:"username,omitempty"`
+	DriverId        string                 `protobuf:"bytes,9,opt,name=driver_id,json=driverId,proto3" json:"driver_id,omitempty"`
+	DriverName      string                 `protobuf:"bytes,10,opt,name=driver_name,json=driverName,proto3" json:"driver_name,omitempty"`
+	OrderNotes      string                 `protobuf:"bytes,11,opt,name=order_notes,json=orderNotes,proto3" json:"order_notes,omitempty"`
+	DeliveryAddress string                 `protobuf:"bytes,12,opt,name=delivery_address,json=deliveryAddress,proto3" json:"delivery_address,omitempty"`
+	ScheduledFor    int64                  `protobuf:"varint,13,opt,name=scheduled_for,json=scheduledFor,proto3" json:"scheduled_for,omitempty"`
+	Contactless     bool                   `protobuf:"varint,14,opt,name=contactless,proto3" json:"contactless,omitempty"`
+	RecipientName   string                 `protobuf:"bytes,15,opt,name=recipient_name,json=recipientName,proto3" json:"recipient_name,omitempty"`
+	DeliveryOtp     string                 `protobuf:"bytes,16,opt,name=delivery_otp,json=deliveryOtp,proto3" json:"delivery_otp,omitempty"` // U-026
+	IssueStatus     string                 `protobuf:"bytes,17,opt,name=issue_status,json=issueStatus,proto3" json:"issue_status,omitempty"` // "none" | "open" | "resolved"
+	History         []*OrderStatusEvent    `protobuf:"bytes,18,rep,name=history,proto3" json:"history,omitempty"`
+	Notes           []*OrderNote           `protobuf:"bytes,19,rep,name=notes,proto3" json:"notes,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
 func (x *Order) Reset() {
 	*x = Order{}
-	mi := &file_logistics_proto_msgTypes[13]
+	mi := &file_logistics_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -827,7 +1456,7 @@ func (x *Order) String() string {
 func (*Order) ProtoMessage() {}
 
 func (x *Order) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[13]
+	mi := &file_logistics_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -840,12 +1469,19 @@ func (x *Order) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Order.ProtoReflect.Descriptor instead.
 func (*Order) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{13}
+	return file_logistics_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *Order) GetOrderId() string {
 	if x != nil {
 		return x.OrderId
+	}
+	return ""
+}
+
+func (x *Order) GetHumanRef() string {
+	if x != nil {
+		return x.HumanRef
 	}
 	return ""
 }
@@ -885,6 +1521,218 @@ func (x *Order) GetUserId() int64 {
 	return 0
 }
 
+func (x *Order) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *Order) GetDriverId() string {
+	if x != nil {
+		return x.DriverId
+	}
+	return ""
+}
+
+func (x *Order) GetDriverName() string {
+	if x != nil {
+		return x.DriverName
+	}
+	return ""
+}
+
+func (x *Order) GetOrderNotes() string {
+	if x != nil {
+		return x.OrderNotes
+	}
+	return ""
+}
+
+func (x *Order) GetDeliveryAddress() string {
+	if x != nil {
+		return x.DeliveryAddress
+	}
+	return ""
+}
+
+func (x *Order) GetScheduledFor() int64 {
+	if x != nil {
+		return x.ScheduledFor
+	}
+	return 0
+}
+
+func (x *Order) GetContactless() bool {
+	if x != nil {
+		return x.Contactless
+	}
+	return false
+}
+
+func (x *Order) GetRecipientName() string {
+	if x != nil {
+		return x.RecipientName
+	}
+	return ""
+}
+
+func (x *Order) GetDeliveryOtp() string {
+	if x != nil {
+		return x.DeliveryOtp
+	}
+	return ""
+}
+
+func (x *Order) GetIssueStatus() string {
+	if x != nil {
+		return x.IssueStatus
+	}
+	return ""
+}
+
+func (x *Order) GetHistory() []*OrderStatusEvent {
+	if x != nil {
+		return x.History
+	}
+	return nil
+}
+
+func (x *Order) GetNotes() []*OrderNote {
+	if x != nil {
+		return x.Notes
+	}
+	return nil
+}
+
+type OrderStatusEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	Ts            int64                  `protobuf:"varint,2,opt,name=ts,proto3" json:"ts,omitempty"`
+	ActorId       int64                  `protobuf:"varint,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Note          string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OrderStatusEvent) Reset() {
+	*x = OrderStatusEvent{}
+	mi := &file_logistics_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrderStatusEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrderStatusEvent) ProtoMessage() {}
+
+func (x *OrderStatusEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrderStatusEvent.ProtoReflect.Descriptor instead.
+func (*OrderStatusEvent) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *OrderStatusEvent) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *OrderStatusEvent) GetTs() int64 {
+	if x != nil {
+		return x.Ts
+	}
+	return 0
+}
+
+func (x *OrderStatusEvent) GetActorId() int64 {
+	if x != nil {
+		return x.ActorId
+	}
+	return 0
+}
+
+func (x *OrderStatusEvent) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type OrderNote struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ts            int64                  `protobuf:"varint,1,opt,name=ts,proto3" json:"ts,omitempty"`
+	ActorId       int64                  `protobuf:"varint,2,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OrderNote) Reset() {
+	*x = OrderNote{}
+	mi := &file_logistics_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrderNote) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrderNote) ProtoMessage() {}
+
+func (x *OrderNote) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrderNote.ProtoReflect.Descriptor instead.
+func (*OrderNote) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *OrderNote) GetTs() int64 {
+	if x != nil {
+		return x.Ts
+	}
+	return 0
+}
+
+func (x *OrderNote) GetActorId() int64 {
+	if x != nil {
+		return x.ActorId
+	}
+	return 0
+}
+
+func (x *OrderNote) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
 type OrderListResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Orders        []*Order               `protobuf:"bytes,1,rep,name=orders,proto3" json:"orders,omitempty"`
@@ -895,7 +1743,7 @@ type OrderListResponse struct {
 
 func (x *OrderListResponse) Reset() {
 	*x = OrderListResponse{}
-	mi := &file_logistics_proto_msgTypes[14]
+	mi := &file_logistics_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -907,7 +1755,7 @@ func (x *OrderListResponse) String() string {
 func (*OrderListResponse) ProtoMessage() {}
 
 func (x *OrderListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[14]
+	mi := &file_logistics_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -920,7 +1768,7 @@ func (x *OrderListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OrderListResponse.ProtoReflect.Descriptor instead.
 func (*OrderListResponse) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{14}
+	return file_logistics_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *OrderListResponse) GetOrders() []*Order {
@@ -937,114 +1785,81 @@ func (x *OrderListResponse) GetTotalCount() int32 {
 	return 0
 }
 
-type UserId struct {
+type GetUserOrdersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UserId) Reset() {
-	*x = UserId{}
-	mi := &file_logistics_proto_msgTypes[15]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UserId) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UserId) ProtoMessage() {}
-
-func (x *UserId) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[15]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UserId.ProtoReflect.Descriptor instead.
-func (*UserId) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *UserId) GetUserId() int64 {
-	if x != nil {
-		return x.UserId
-	}
-	return 0
-}
-
-type UpdateStatusRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	NewStatus     string                 `protobuf:"bytes,2,opt,name=new_status,json=newStatus,proto3" json:"new_status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *UpdateStatusRequest) Reset() {
-	*x = UpdateStatusRequest{}
-	mi := &file_logistics_proto_msgTypes[16]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *UpdateStatusRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*UpdateStatusRequest) ProtoMessage() {}
-
-func (x *UpdateStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[16]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use UpdateStatusRequest.ProtoReflect.Descriptor instead.
-func (*UpdateStatusRequest) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *UpdateStatusRequest) GetOrderId() string {
-	if x != nil {
-		return x.OrderId
-	}
-	return ""
-}
-
-func (x *UpdateStatusRequest) GetNewStatus() string {
-	if x != nil {
-		return x.NewStatus
-	}
-	return ""
-}
-
-type GetAllOrdersRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	StatusFilter  string                 `protobuf:"bytes,1,opt,name=status_filter,json=statusFilter,proto3" json:"status_filter,omitempty"`
 	Page          int32                  `protobuf:"varint,2,opt,name=page,proto3" json:"page,omitempty"`
 	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *GetUserOrdersRequest) Reset() {
+	*x = GetUserOrdersRequest{}
+	mi := &file_logistics_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUserOrdersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUserOrdersRequest) ProtoMessage() {}
+
+func (x *GetUserOrdersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUserOrdersRequest.ProtoReflect.Descriptor instead.
+func (*GetUserOrdersRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *GetUserOrdersRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *GetUserOrdersRequest) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *GetUserOrdersRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type GetAllOrdersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StatusFilter  string                 `protobuf:"bytes,1,opt,name=status_filter,json=statusFilter,proto3" json:"status_filter,omitempty"`
+	DriverFilter  string                 `protobuf:"bytes,2,opt,name=driver_filter,json=driverFilter,proto3" json:"driver_filter,omitempty"`
+	FromTs        int64                  `protobuf:"varint,3,opt,name=from_ts,json=fromTs,proto3" json:"from_ts,omitempty"`
+	ToTs          int64                  `protobuf:"varint,4,opt,name=to_ts,json=toTs,proto3" json:"to_ts,omitempty"`
+	Page          int32                  `protobuf:"varint,5,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize      int32                  `protobuf:"varint,6,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
 func (x *GetAllOrdersRequest) Reset() {
 	*x = GetAllOrdersRequest{}
-	mi := &file_logistics_proto_msgTypes[17]
+	mi := &file_logistics_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1056,7 +1871,7 @@ func (x *GetAllOrdersRequest) String() string {
 func (*GetAllOrdersRequest) ProtoMessage() {}
 
 func (x *GetAllOrdersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[17]
+	mi := &file_logistics_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1069,7 +1884,7 @@ func (x *GetAllOrdersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAllOrdersRequest.ProtoReflect.Descriptor instead.
 func (*GetAllOrdersRequest) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{17}
+	return file_logistics_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetAllOrdersRequest) GetStatusFilter() string {
@@ -1077,6 +1892,27 @@ func (x *GetAllOrdersRequest) GetStatusFilter() string {
 		return x.StatusFilter
 	}
 	return ""
+}
+
+func (x *GetAllOrdersRequest) GetDriverFilter() string {
+	if x != nil {
+		return x.DriverFilter
+	}
+	return ""
+}
+
+func (x *GetAllOrdersRequest) GetFromTs() int64 {
+	if x != nil {
+		return x.FromTs
+	}
+	return 0
+}
+
+func (x *GetAllOrdersRequest) GetToTs() int64 {
+	if x != nil {
+		return x.ToTs
+	}
+	return 0
 }
 
 func (x *GetAllOrdersRequest) GetPage() int32 {
@@ -1093,20 +1929,416 @@ func (x *GetAllOrdersRequest) GetPageSize() int32 {
 	return 0
 }
 
+type UpdateStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	NewStatus     string                 `protobuf:"bytes,2,opt,name=new_status,json=newStatus,proto3" json:"new_status,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"` // mandatory for manual overrides
+	ActorId       int64                  `protobuf:"varint,4,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateStatusRequest) Reset() {
+	*x = UpdateStatusRequest{}
+	mi := &file_logistics_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateStatusRequest) ProtoMessage() {}
+
+func (x *UpdateStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateStatusRequest.ProtoReflect.Descriptor instead.
+func (*UpdateStatusRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *UpdateStatusRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *UpdateStatusRequest) GetNewStatus() string {
+	if x != nil {
+		return x.NewStatus
+	}
+	return ""
+}
+
+func (x *UpdateStatusRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *UpdateStatusRequest) GetActorId() int64 {
+	if x != nil {
+		return x.ActorId
+	}
+	return 0
+}
+
+type CancelOrderRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	UserId        int64                  `protobuf:"varint,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelOrderRequest) Reset() {
+	*x = CancelOrderRequest{}
+	mi := &file_logistics_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelOrderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelOrderRequest) ProtoMessage() {}
+
+func (x *CancelOrderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelOrderRequest.ProtoReflect.Descriptor instead.
+func (*CancelOrderRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *CancelOrderRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *CancelOrderRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *CancelOrderRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type IssueReport struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	UserId        int64                  `protobuf:"varint,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	IssueType     string                 `protobuf:"bytes,3,opt,name=issue_type,json=issueType,proto3" json:"issue_type,omitempty"` // "wrong_item"|"damaged"|"missing"|"other"
+	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	PhotoId       string                 `protobuf:"bytes,5,opt,name=photo_id,json=photoId,proto3" json:"photo_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueReport) Reset() {
+	*x = IssueReport{}
+	mi := &file_logistics_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueReport) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueReport) ProtoMessage() {}
+
+func (x *IssueReport) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueReport.ProtoReflect.Descriptor instead.
+func (*IssueReport) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *IssueReport) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *IssueReport) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *IssueReport) GetIssueType() string {
+	if x != nil {
+		return x.IssueType
+	}
+	return ""
+}
+
+func (x *IssueReport) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *IssueReport) GetPhotoId() string {
+	if x != nil {
+		return x.PhotoId
+	}
+	return ""
+}
+
+type ResolveIssueRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	AdminId       int64                  `protobuf:"varint,2,opt,name=admin_id,json=adminId,proto3" json:"admin_id,omitempty"`
+	Resolution    string                 `protobuf:"bytes,3,opt,name=resolution,proto3" json:"resolution,omitempty"` // "refunded"|"replacement"|"rejected"
+	Note          string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveIssueRequest) Reset() {
+	*x = ResolveIssueRequest{}
+	mi := &file_logistics_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveIssueRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveIssueRequest) ProtoMessage() {}
+
+func (x *ResolveIssueRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveIssueRequest.ProtoReflect.Descriptor instead.
+func (*ResolveIssueRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ResolveIssueRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *ResolveIssueRequest) GetAdminId() int64 {
+	if x != nil {
+		return x.AdminId
+	}
+	return 0
+}
+
+func (x *ResolveIssueRequest) GetResolution() string {
+	if x != nil {
+		return x.Resolution
+	}
+	return ""
+}
+
+func (x *ResolveIssueRequest) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type AssignDriverRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	DriverId      string                 `protobuf:"bytes,2,opt,name=driver_id,json=driverId,proto3" json:"driver_id,omitempty"`
+	AdminId       int64                  `protobuf:"varint,3,opt,name=admin_id,json=adminId,proto3" json:"admin_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AssignDriverRequest) Reset() {
+	*x = AssignDriverRequest{}
+	mi := &file_logistics_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssignDriverRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssignDriverRequest) ProtoMessage() {}
+
+func (x *AssignDriverRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssignDriverRequest.ProtoReflect.Descriptor instead.
+func (*AssignDriverRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *AssignDriverRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *AssignDriverRequest) GetDriverId() string {
+	if x != nil {
+		return x.DriverId
+	}
+	return ""
+}
+
+func (x *AssignDriverRequest) GetAdminId() int64 {
+	if x != nil {
+		return x.AdminId
+	}
+	return 0
+}
+
+type OrderNoteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	AdminId       int64                  `protobuf:"varint,2,opt,name=admin_id,json=adminId,proto3" json:"admin_id,omitempty"`
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OrderNoteRequest) Reset() {
+	*x = OrderNoteRequest{}
+	mi := &file_logistics_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrderNoteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrderNoteRequest) ProtoMessage() {}
+
+func (x *OrderNoteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrderNoteRequest.ProtoReflect.Descriptor instead.
+func (*OrderNoteRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *OrderNoteRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *OrderNoteRequest) GetAdminId() int64 {
+	if x != nil {
+		return x.AdminId
+	}
+	return 0
+}
+
+func (x *OrderNoteRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
 type Warehouse struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Lat             float64                `protobuf:"fixed64,3,opt,name=lat,proto3" json:"lat,omitempty"`
-	Lon             float64                `protobuf:"fixed64,4,opt,name=lon,proto3" json:"lon,omitempty"`
-	AdminTelegramId int64                  `protobuf:"varint,5,opt,name=admin_telegram_id,json=adminTelegramId,proto3" json:"admin_telegram_id,omitempty"` // Telegram user ID of the assigned warehouse admin (0 = unassigned)
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Address       string                 `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
+	Lat           float64                `protobuf:"fixed64,4,opt,name=lat,proto3" json:"lat,omitempty"`
+	Lon           float64                `protobuf:"fixed64,5,opt,name=lon,proto3" json:"lon,omitempty"`
+	OpenTime      string                 `protobuf:"bytes,6,opt,name=open_time,json=openTime,proto3" json:"open_time,omitempty"` // "HH:MM"
+	CloseTime     string                 `protobuf:"bytes,7,opt,name=close_time,json=closeTime,proto3" json:"close_time,omitempty"`
+	IsActive      bool                   `protobuf:"varint,8,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`
+	CapacityUnits int32                  `protobuf:"varint,9,opt,name=capacity_units,json=capacityUnits,proto3" json:"capacity_units,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Warehouse) Reset() {
 	*x = Warehouse{}
-	mi := &file_logistics_proto_msgTypes[18]
+	mi := &file_logistics_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1118,7 +2350,7 @@ func (x *Warehouse) String() string {
 func (*Warehouse) ProtoMessage() {}
 
 func (x *Warehouse) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[18]
+	mi := &file_logistics_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1131,7 +2363,7 @@ func (x *Warehouse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Warehouse.ProtoReflect.Descriptor instead.
 func (*Warehouse) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{18}
+	return file_logistics_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *Warehouse) GetId() string {
@@ -1144,6 +2376,13 @@ func (x *Warehouse) GetId() string {
 func (x *Warehouse) GetName() string {
 	if x != nil {
 		return x.Name
+	}
+	return ""
+}
+
+func (x *Warehouse) GetAddress() string {
+	if x != nil {
+		return x.Address
 	}
 	return ""
 }
@@ -1162,38 +2401,56 @@ func (x *Warehouse) GetLon() float64 {
 	return 0
 }
 
-func (x *Warehouse) GetAdminTelegramId() int64 {
+func (x *Warehouse) GetOpenTime() string {
 	if x != nil {
-		return x.AdminTelegramId
+		return x.OpenTime
+	}
+	return ""
+}
+
+func (x *Warehouse) GetCloseTime() string {
+	if x != nil {
+		return x.CloseTime
+	}
+	return ""
+}
+
+func (x *Warehouse) GetIsActive() bool {
+	if x != nil {
+		return x.IsActive
+	}
+	return false
+}
+
+func (x *Warehouse) GetCapacityUnits() int32 {
+	if x != nil {
+		return x.CapacityUnits
 	}
 	return 0
 }
 
-type AddWarehouseRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Lat             float64                `protobuf:"fixed64,2,opt,name=lat,proto3" json:"lat,omitempty"`
-	Lon             float64                `protobuf:"fixed64,3,opt,name=lon,proto3" json:"lon,omitempty"`
-	AdminTelegramId int64                  `protobuf:"varint,4,opt,name=admin_telegram_id,json=adminTelegramId,proto3" json:"admin_telegram_id,omitempty"` // Telegram user ID of the assigned warehouse admin
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+type WarehouseId struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AddWarehouseRequest) Reset() {
-	*x = AddWarehouseRequest{}
-	mi := &file_logistics_proto_msgTypes[19]
+func (x *WarehouseId) Reset() {
+	*x = WarehouseId{}
+	mi := &file_logistics_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AddWarehouseRequest) String() string {
+func (x *WarehouseId) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AddWarehouseRequest) ProtoMessage() {}
+func (*WarehouseId) ProtoMessage() {}
 
-func (x *AddWarehouseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[19]
+func (x *WarehouseId) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1204,61 +2461,40 @@ func (x *AddWarehouseRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AddWarehouseRequest.ProtoReflect.Descriptor instead.
-func (*AddWarehouseRequest) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{19}
+// Deprecated: Use WarehouseId.ProtoReflect.Descriptor instead.
+func (*WarehouseId) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{32}
 }
 
-func (x *AddWarehouseRequest) GetName() string {
+func (x *WarehouseId) GetId() string {
 	if x != nil {
-		return x.Name
+		return x.Id
 	}
 	return ""
 }
 
-func (x *AddWarehouseRequest) GetLat() float64 {
-	if x != nil {
-		return x.Lat
-	}
-	return 0
-}
-
-func (x *AddWarehouseRequest) GetLon() float64 {
-	if x != nil {
-		return x.Lon
-	}
-	return 0
-}
-
-func (x *AddWarehouseRequest) GetAdminTelegramId() int64 {
-	if x != nil {
-		return x.AdminTelegramId
-	}
-	return 0
-}
-
-type ListWarehouseResponse struct {
+type WarehouseListResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Warehouses    []*Warehouse           `protobuf:"bytes,1,rep,name=warehouses,proto3" json:"warehouses,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ListWarehouseResponse) Reset() {
-	*x = ListWarehouseResponse{}
-	mi := &file_logistics_proto_msgTypes[20]
+func (x *WarehouseListResponse) Reset() {
+	*x = WarehouseListResponse{}
+	mi := &file_logistics_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListWarehouseResponse) String() string {
+func (x *WarehouseListResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListWarehouseResponse) ProtoMessage() {}
+func (*WarehouseListResponse) ProtoMessage() {}
 
-func (x *ListWarehouseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[20]
+func (x *WarehouseListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1269,41 +2505,47 @@ func (x *ListWarehouseResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListWarehouseResponse.ProtoReflect.Descriptor instead.
-func (*ListWarehouseResponse) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{20}
+// Deprecated: Use WarehouseListResponse.ProtoReflect.Descriptor instead.
+func (*WarehouseListResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{33}
 }
 
-func (x *ListWarehouseResponse) GetWarehouses() []*Warehouse {
+func (x *WarehouseListResponse) GetWarehouses() []*Warehouse {
 	if x != nil {
 		return x.Warehouses
 	}
 	return nil
 }
 
-type SaveCartRequest struct {
+type Driver struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	CartJson      string                 `protobuf:"bytes,2,opt,name=cart_json,json=cartJson,proto3" json:"cart_json,omitempty"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Phone         string                 `protobuf:"bytes,3,opt,name=phone,proto3" json:"phone,omitempty"`
+	TelegramId    int64                  `protobuf:"varint,4,opt,name=telegram_id,json=telegramId,proto3" json:"telegram_id,omitempty"`
+	VehicleType   string                 `protobuf:"bytes,5,opt,name=vehicle_type,json=vehicleType,proto3" json:"vehicle_type,omitempty"`
+	Zone          string                 `protobuf:"bytes,6,opt,name=zone,proto3" json:"zone,omitempty"`
+	IsAvailable   bool                   `protobuf:"varint,7,opt,name=is_available,json=isAvailable,proto3" json:"is_available,omitempty"`
+	IsActive      bool                   `protobuf:"varint,8,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SaveCartRequest) Reset() {
-	*x = SaveCartRequest{}
-	mi := &file_logistics_proto_msgTypes[21]
+func (x *Driver) Reset() {
+	*x = Driver{}
+	mi := &file_logistics_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SaveCartRequest) String() string {
+func (x *Driver) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SaveCartRequest) ProtoMessage() {}
+func (*Driver) ProtoMessage() {}
 
-func (x *SaveCartRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_logistics_proto_msgTypes[21]
+func (x *Driver) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1314,21 +2556,2443 @@ func (x *SaveCartRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SaveCartRequest.ProtoReflect.Descriptor instead.
-func (*SaveCartRequest) Descriptor() ([]byte, []int) {
-	return file_logistics_proto_rawDescGZIP(), []int{21}
+// Deprecated: Use Driver.ProtoReflect.Descriptor instead.
+func (*Driver) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{34}
 }
 
-func (x *SaveCartRequest) GetUserId() int64 {
+func (x *Driver) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Driver) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Driver) GetPhone() string {
+	if x != nil {
+		return x.Phone
+	}
+	return ""
+}
+
+func (x *Driver) GetTelegramId() int64 {
+	if x != nil {
+		return x.TelegramId
+	}
+	return 0
+}
+
+func (x *Driver) GetVehicleType() string {
+	if x != nil {
+		return x.VehicleType
+	}
+	return ""
+}
+
+func (x *Driver) GetZone() string {
+	if x != nil {
+		return x.Zone
+	}
+	return ""
+}
+
+func (x *Driver) GetIsAvailable() bool {
+	if x != nil {
+		return x.IsAvailable
+	}
+	return false
+}
+
+func (x *Driver) GetIsActive() bool {
+	if x != nil {
+		return x.IsActive
+	}
+	return false
+}
+
+type DriverId struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DriverId) Reset() {
+	*x = DriverId{}
+	mi := &file_logistics_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DriverId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DriverId) ProtoMessage() {}
+
+func (x *DriverId) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DriverId.ProtoReflect.Descriptor instead.
+func (*DriverId) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *DriverId) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type ListDriversRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AvailableOnly bool                   `protobuf:"varint,1,opt,name=available_only,json=availableOnly,proto3" json:"available_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDriversRequest) Reset() {
+	*x = ListDriversRequest{}
+	mi := &file_logistics_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDriversRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDriversRequest) ProtoMessage() {}
+
+func (x *ListDriversRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDriversRequest.ProtoReflect.Descriptor instead.
+func (*ListDriversRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *ListDriversRequest) GetAvailableOnly() bool {
+	if x != nil {
+		return x.AvailableOnly
+	}
+	return false
+}
+
+type DriverListResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Drivers       []*Driver              `protobuf:"bytes,1,rep,name=drivers,proto3" json:"drivers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DriverListResponse) Reset() {
+	*x = DriverListResponse{}
+	mi := &file_logistics_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DriverListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DriverListResponse) ProtoMessage() {}
+
+func (x *DriverListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DriverListResponse.ProtoReflect.Descriptor instead.
+func (*DriverListResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *DriverListResponse) GetDrivers() []*Driver {
+	if x != nil {
+		return x.Drivers
+	}
+	return nil
+}
+
+type DriverAvailability struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DriverId      string                 `protobuf:"bytes,1,opt,name=driver_id,json=driverId,proto3" json:"driver_id,omitempty"`
+	IsAvailable   bool                   `protobuf:"varint,2,opt,name=is_available,json=isAvailable,proto3" json:"is_available,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DriverAvailability) Reset() {
+	*x = DriverAvailability{}
+	mi := &file_logistics_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DriverAvailability) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DriverAvailability) ProtoMessage() {}
+
+func (x *DriverAvailability) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DriverAvailability.ProtoReflect.Descriptor instead.
+func (*DriverAvailability) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *DriverAvailability) GetDriverId() string {
+	if x != nil {
+		return x.DriverId
+	}
+	return ""
+}
+
+func (x *DriverAvailability) GetIsAvailable() bool {
+	if x != nil {
+		return x.IsAvailable
+	}
+	return false
+}
+
+type BroadcastRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	ActiveOnly    bool                   `protobuf:"varint,2,opt,name=active_only,json=activeOnly,proto3" json:"active_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BroadcastRequest) Reset() {
+	*x = BroadcastRequest{}
+	mi := &file_logistics_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BroadcastRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BroadcastRequest) ProtoMessage() {}
+
+func (x *BroadcastRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BroadcastRequest.ProtoReflect.Descriptor instead.
+func (*BroadcastRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *BroadcastRequest) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *BroadcastRequest) GetActiveOnly() bool {
+	if x != nil {
+		return x.ActiveOnly
+	}
+	return false
+}
+
+type Promo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Code          string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	DiscountType  string                 `protobuf:"bytes,4,opt,name=discount_type,json=discountType,proto3" json:"discount_type,omitempty"` // "percent" | "fixed"
+	DiscountValue float64                `protobuf:"fixed64,5,opt,name=discount_value,json=discountValue,proto3" json:"discount_value,omitempty"`
+	MinOrderValue float64                `protobuf:"fixed64,6,opt,name=min_order_value,json=minOrderValue,proto3" json:"min_order_value,omitempty"`
+	MaxUses       int32                  `protobuf:"varint,7,opt,name=max_uses,json=maxUses,proto3" json:"max_uses,omitempty"`                  // 0 = unlimited
+	PerUserLimit  int32                  `protobuf:"varint,8,opt,name=per_user_limit,json=perUserLimit,proto3" json:"per_user_limit,omitempty"` // 0 = unlimited
+	ValidFrom     int64                  `protobuf:"varint,9,opt,name=valid_from,json=validFrom,proto3" json:"valid_from,omitempty"`
+	ValidUntil    int64                  `protobuf:"varint,10,opt,name=valid_until,json=validUntil,proto3" json:"valid_until,omitempty"`
+	IsActive      bool                   `protobuf:"varint,11,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`
+	UsesCount     int32                  `protobuf:"varint,12,opt,name=uses_count,json=usesCount,proto3" json:"uses_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Promo) Reset() {
+	*x = Promo{}
+	mi := &file_logistics_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Promo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Promo) ProtoMessage() {}
+
+func (x *Promo) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Promo.ProtoReflect.Descriptor instead.
+func (*Promo) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *Promo) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Promo) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *Promo) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Promo) GetDiscountType() string {
+	if x != nil {
+		return x.DiscountType
+	}
+	return ""
+}
+
+func (x *Promo) GetDiscountValue() float64 {
+	if x != nil {
+		return x.DiscountValue
+	}
+	return 0
+}
+
+func (x *Promo) GetMinOrderValue() float64 {
+	if x != nil {
+		return x.MinOrderValue
+	}
+	return 0
+}
+
+func (x *Promo) GetMaxUses() int32 {
+	if x != nil {
+		return x.MaxUses
+	}
+	return 0
+}
+
+func (x *Promo) GetPerUserLimit() int32 {
+	if x != nil {
+		return x.PerUserLimit
+	}
+	return 0
+}
+
+func (x *Promo) GetValidFrom() int64 {
+	if x != nil {
+		return x.ValidFrom
+	}
+	return 0
+}
+
+func (x *Promo) GetValidUntil() int64 {
+	if x != nil {
+		return x.ValidUntil
+	}
+	return 0
+}
+
+func (x *Promo) GetIsActive() bool {
+	if x != nil {
+		return x.IsActive
+	}
+	return false
+}
+
+func (x *Promo) GetUsesCount() int32 {
+	if x != nil {
+		return x.UsesCount
+	}
+	return 0
+}
+
+type PromoId struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromoId) Reset() {
+	*x = PromoId{}
+	mi := &file_logistics_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromoId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromoId) ProtoMessage() {}
+
+func (x *PromoId) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromoId.ProtoReflect.Descriptor instead.
+func (*PromoId) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *PromoId) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type PromoListResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Promos        []*Promo               `protobuf:"bytes,1,rep,name=promos,proto3" json:"promos,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromoListResponse) Reset() {
+	*x = PromoListResponse{}
+	mi := &file_logistics_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromoListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromoListResponse) ProtoMessage() {}
+
+func (x *PromoListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromoListResponse.ProtoReflect.Descriptor instead.
+func (*PromoListResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *PromoListResponse) GetPromos() []*Promo {
+	if x != nil {
+		return x.Promos
+	}
+	return nil
+}
+
+type ApplyPromoRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PromoCode     string                 `protobuf:"bytes,1,opt,name=promo_code,json=promoCode,proto3" json:"promo_code,omitempty"`
+	UserId        int64                  `protobuf:"varint,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	CartTotal     float64                `protobuf:"fixed64,3,opt,name=cart_total,json=cartTotal,proto3" json:"cart_total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyPromoRequest) Reset() {
+	*x = ApplyPromoRequest{}
+	mi := &file_logistics_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyPromoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyPromoRequest) ProtoMessage() {}
+
+func (x *ApplyPromoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyPromoRequest.ProtoReflect.Descriptor instead.
+func (*ApplyPromoRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *ApplyPromoRequest) GetPromoCode() string {
+	if x != nil {
+		return x.PromoCode
+	}
+	return ""
+}
+
+func (x *ApplyPromoRequest) GetUserId() int64 {
 	if x != nil {
 		return x.UserId
 	}
 	return 0
 }
 
-func (x *SaveCartRequest) GetCartJson() string {
+func (x *ApplyPromoRequest) GetCartTotal() float64 {
 	if x != nil {
-		return x.CartJson
+		return x.CartTotal
+	}
+	return 0
+}
+
+type PromoEffect struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Valid         bool                   `protobuf:"varint,1,opt,name=valid,proto3" json:"valid,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	Discount      float64                `protobuf:"fixed64,3,opt,name=discount,proto3" json:"discount,omitempty"`
+	PromoId       string                 `protobuf:"bytes,4,opt,name=promo_id,json=promoId,proto3" json:"promo_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromoEffect) Reset() {
+	*x = PromoEffect{}
+	mi := &file_logistics_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromoEffect) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromoEffect) ProtoMessage() {}
+
+func (x *PromoEffect) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromoEffect.ProtoReflect.Descriptor instead.
+func (*PromoEffect) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *PromoEffect) GetValid() bool {
+	if x != nil {
+		return x.Valid
+	}
+	return false
+}
+
+func (x *PromoEffect) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *PromoEffect) GetDiscount() float64 {
+	if x != nil {
+		return x.Discount
+	}
+	return 0
+}
+
+func (x *PromoEffect) GetPromoId() string {
+	if x != nil {
+		return x.PromoId
+	}
+	return ""
+}
+
+type LoyaltyBalance struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Points        int32                  `protobuf:"varint,2,opt,name=points,proto3" json:"points,omitempty"`
+	Tier          string                 `protobuf:"bytes,3,opt,name=tier,proto3" json:"tier,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoyaltyBalance) Reset() {
+	*x = LoyaltyBalance{}
+	mi := &file_logistics_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoyaltyBalance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoyaltyBalance) ProtoMessage() {}
+
+func (x *LoyaltyBalance) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoyaltyBalance.ProtoReflect.Descriptor instead.
+func (*LoyaltyBalance) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *LoyaltyBalance) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *LoyaltyBalance) GetPoints() int32 {
+	if x != nil {
+		return x.Points
+	}
+	return 0
+}
+
+func (x *LoyaltyBalance) GetTier() string {
+	if x != nil {
+		return x.Tier
+	}
+	return ""
+}
+
+type LoyaltyAdjustment struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Delta         int32                  `protobuf:"varint,2,opt,name=delta,proto3" json:"delta,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	ActorId       int64                  `protobuf:"varint,4,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoyaltyAdjustment) Reset() {
+	*x = LoyaltyAdjustment{}
+	mi := &file_logistics_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoyaltyAdjustment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoyaltyAdjustment) ProtoMessage() {}
+
+func (x *LoyaltyAdjustment) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoyaltyAdjustment.ProtoReflect.Descriptor instead.
+func (*LoyaltyAdjustment) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *LoyaltyAdjustment) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *LoyaltyAdjustment) GetDelta() int32 {
+	if x != nil {
+		return x.Delta
+	}
+	return 0
+}
+
+func (x *LoyaltyAdjustment) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *LoyaltyAdjustment) GetActorId() int64 {
+	if x != nil {
+		return x.ActorId
+	}
+	return 0
+}
+
+type CustomerProfile struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Phone         string                 `protobuf:"bytes,3,opt,name=phone,proto3" json:"phone,omitempty"`
+	Language      string                 `protobuf:"bytes,4,opt,name=language,proto3" json:"language,omitempty"`
+	Birthday      int64                  `protobuf:"varint,5,opt,name=birthday,proto3" json:"birthday,omitempty"` // unix epoch date; 0 = unset
+	CreatedAt     int64                  `protobuf:"varint,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CustomerProfile) Reset() {
+	*x = CustomerProfile{}
+	mi := &file_logistics_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CustomerProfile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CustomerProfile) ProtoMessage() {}
+
+func (x *CustomerProfile) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CustomerProfile.ProtoReflect.Descriptor instead.
+func (*CustomerProfile) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *CustomerProfile) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *CustomerProfile) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *CustomerProfile) GetPhone() string {
+	if x != nil {
+		return x.Phone
+	}
+	return ""
+}
+
+func (x *CustomerProfile) GetLanguage() string {
+	if x != nil {
+		return x.Language
+	}
+	return ""
+}
+
+func (x *CustomerProfile) GetBirthday() int64 {
+	if x != nil {
+		return x.Birthday
+	}
+	return 0
+}
+
+func (x *CustomerProfile) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+type UserId struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UserId) Reset() {
+	*x = UserId{}
+	mi := &file_logistics_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserId) ProtoMessage() {}
+
+func (x *UserId) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserId.ProtoReflect.Descriptor instead.
+func (*UserId) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *UserId) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+type SavedAddress struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	UserId        int64                  `protobuf:"varint,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Label         string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"` // "Home" | "Work" | custom
+	Address       string                 `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
+	Lat           float64                `protobuf:"fixed64,5,opt,name=lat,proto3" json:"lat,omitempty"`
+	Lon           float64                `protobuf:"fixed64,6,opt,name=lon,proto3" json:"lon,omitempty"`
+	IsDefault     bool                   `protobuf:"varint,7,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SavedAddress) Reset() {
+	*x = SavedAddress{}
+	mi := &file_logistics_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SavedAddress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SavedAddress) ProtoMessage() {}
+
+func (x *SavedAddress) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SavedAddress.ProtoReflect.Descriptor instead.
+func (*SavedAddress) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *SavedAddress) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *SavedAddress) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *SavedAddress) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *SavedAddress) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *SavedAddress) GetLat() float64 {
+	if x != nil {
+		return x.Lat
+	}
+	return 0
+}
+
+func (x *SavedAddress) GetLon() float64 {
+	if x != nil {
+		return x.Lon
+	}
+	return 0
+}
+
+func (x *SavedAddress) GetIsDefault() bool {
+	if x != nil {
+		return x.IsDefault
+	}
+	return false
+}
+
+type AddressId struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddressId) Reset() {
+	*x = AddressId{}
+	mi := &file_logistics_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddressId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddressId) ProtoMessage() {}
+
+func (x *AddressId) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddressId.ProtoReflect.Descriptor instead.
+func (*AddressId) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *AddressId) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+type AddressListResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Addresses     []*SavedAddress        `protobuf:"bytes,1,rep,name=addresses,proto3" json:"addresses,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddressListResponse) Reset() {
+	*x = AddressListResponse{}
+	mi := &file_logistics_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddressListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddressListResponse) ProtoMessage() {}
+
+func (x *AddressListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddressListResponse.ProtoReflect.Descriptor instead.
+func (*AddressListResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *AddressListResponse) GetAddresses() []*SavedAddress {
+	if x != nil {
+		return x.Addresses
+	}
+	return nil
+}
+
+type NotifPrefs struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	OrderUpdates  bool                   `protobuf:"varint,2,opt,name=order_updates,json=orderUpdates,proto3" json:"order_updates,omitempty"`
+	Promotions    bool                   `protobuf:"varint,3,opt,name=promotions,proto3" json:"promotions,omitempty"`
+	NewProducts   bool                   `protobuf:"varint,4,opt,name=new_products,json=newProducts,proto3" json:"new_products,omitempty"`
+	SystemAlerts  bool                   `protobuf:"varint,5,opt,name=system_alerts,json=systemAlerts,proto3" json:"system_alerts,omitempty"`
+	FlashDeals    bool                   `protobuf:"varint,6,opt,name=flash_deals,json=flashDeals,proto3" json:"flash_deals,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NotifPrefs) Reset() {
+	*x = NotifPrefs{}
+	mi := &file_logistics_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NotifPrefs) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NotifPrefs) ProtoMessage() {}
+
+func (x *NotifPrefs) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NotifPrefs.ProtoReflect.Descriptor instead.
+func (*NotifPrefs) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *NotifPrefs) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *NotifPrefs) GetOrderUpdates() bool {
+	if x != nil {
+		return x.OrderUpdates
+	}
+	return false
+}
+
+func (x *NotifPrefs) GetPromotions() bool {
+	if x != nil {
+		return x.Promotions
+	}
+	return false
+}
+
+func (x *NotifPrefs) GetNewProducts() bool {
+	if x != nil {
+		return x.NewProducts
+	}
+	return false
+}
+
+func (x *NotifPrefs) GetSystemAlerts() bool {
+	if x != nil {
+		return x.SystemAlerts
+	}
+	return false
+}
+
+func (x *NotifPrefs) GetFlashDeals() bool {
+	if x != nil {
+		return x.FlashDeals
+	}
+	return false
+}
+
+type Notif struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	UserId        int64                  `protobuf:"varint,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Type          string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
+	Text          string                 `protobuf:"bytes,4,opt,name=text,proto3" json:"text,omitempty"`
+	Sent          bool                   `protobuf:"varint,5,opt,name=sent,proto3" json:"sent,omitempty"`
+	CreatedAt     int64                  `protobuf:"varint,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Notif) Reset() {
+	*x = Notif{}
+	mi := &file_logistics_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Notif) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Notif) ProtoMessage() {}
+
+func (x *Notif) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Notif.ProtoReflect.Descriptor instead.
+func (*Notif) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *Notif) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *Notif) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *Notif) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *Notif) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *Notif) GetSent() bool {
+	if x != nil {
+		return x.Sent
+	}
+	return false
+}
+
+func (x *Notif) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+type NotifListResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Notifs        []*Notif               `protobuf:"bytes,1,rep,name=notifs,proto3" json:"notifs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NotifListResponse) Reset() {
+	*x = NotifListResponse{}
+	mi := &file_logistics_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NotifListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NotifListResponse) ProtoMessage() {}
+
+func (x *NotifListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NotifListResponse.ProtoReflect.Descriptor instead.
+func (*NotifListResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *NotifListResponse) GetNotifs() []*Notif {
+	if x != nil {
+		return x.Notifs
+	}
+	return nil
+}
+
+type StockSubRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int64                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	ItemId        string                 `protobuf:"bytes,2,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StockSubRequest) Reset() {
+	*x = StockSubRequest{}
+	mi := &file_logistics_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StockSubRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StockSubRequest) ProtoMessage() {}
+
+func (x *StockSubRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StockSubRequest.ProtoReflect.Descriptor instead.
+func (*StockSubRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *StockSubRequest) GetUserId() int64 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *StockSubRequest) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+type AdminUser struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TelegramId    int64                  `protobuf:"varint,1,opt,name=telegram_id,json=telegramId,proto3" json:"telegram_id,omitempty"`
+	Username      string                 `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	Role          string                 `protobuf:"bytes,3,opt,name=role,proto3" json:"role,omitempty"` // "super_admin"|"dispatcher"|"catalog_manager"|"support"
+	AddedBy       int64                  `protobuf:"varint,4,opt,name=added_by,json=addedBy,proto3" json:"added_by,omitempty"`
+	AddedAt       int64                  `protobuf:"varint,5,opt,name=added_at,json=addedAt,proto3" json:"added_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminUser) Reset() {
+	*x = AdminUser{}
+	mi := &file_logistics_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminUser) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminUser) ProtoMessage() {}
+
+func (x *AdminUser) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminUser.ProtoReflect.Descriptor instead.
+func (*AdminUser) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *AdminUser) GetTelegramId() int64 {
+	if x != nil {
+		return x.TelegramId
+	}
+	return 0
+}
+
+func (x *AdminUser) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *AdminUser) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *AdminUser) GetAddedBy() int64 {
+	if x != nil {
+		return x.AddedBy
+	}
+	return 0
+}
+
+func (x *AdminUser) GetAddedAt() int64 {
+	if x != nil {
+		return x.AddedAt
+	}
+	return 0
+}
+
+type AdminUserId struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TelegramId    int64                  `protobuf:"varint,1,opt,name=telegram_id,json=telegramId,proto3" json:"telegram_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminUserId) Reset() {
+	*x = AdminUserId{}
+	mi := &file_logistics_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminUserId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminUserId) ProtoMessage() {}
+
+func (x *AdminUserId) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminUserId.ProtoReflect.Descriptor instead.
+func (*AdminUserId) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *AdminUserId) GetTelegramId() int64 {
+	if x != nil {
+		return x.TelegramId
+	}
+	return 0
+}
+
+type AdminListResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Admins        []*AdminUser           `protobuf:"bytes,1,rep,name=admins,proto3" json:"admins,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminListResponse) Reset() {
+	*x = AdminListResponse{}
+	mi := &file_logistics_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminListResponse) ProtoMessage() {}
+
+func (x *AdminListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminListResponse.ProtoReflect.Descriptor instead.
+func (*AdminListResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *AdminListResponse) GetAdmins() []*AdminUser {
+	if x != nil {
+		return x.Admins
+	}
+	return nil
+}
+
+type AuditLogRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorFilter   int64                  `protobuf:"varint,1,opt,name=actor_filter,json=actorFilter,proto3" json:"actor_filter,omitempty"`
+	ActionFilter  string                 `protobuf:"bytes,2,opt,name=action_filter,json=actionFilter,proto3" json:"action_filter,omitempty"`
+	FromTs        int64                  `protobuf:"varint,3,opt,name=from_ts,json=fromTs,proto3" json:"from_ts,omitempty"`
+	ToTs          int64                  `protobuf:"varint,4,opt,name=to_ts,json=toTs,proto3" json:"to_ts,omitempty"`
+	Page          int32                  `protobuf:"varint,5,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize      int32                  `protobuf:"varint,6,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuditLogRequest) Reset() {
+	*x = AuditLogRequest{}
+	mi := &file_logistics_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuditLogRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuditLogRequest) ProtoMessage() {}
+
+func (x *AuditLogRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuditLogRequest.ProtoReflect.Descriptor instead.
+func (*AuditLogRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *AuditLogRequest) GetActorFilter() int64 {
+	if x != nil {
+		return x.ActorFilter
+	}
+	return 0
+}
+
+func (x *AuditLogRequest) GetActionFilter() string {
+	if x != nil {
+		return x.ActionFilter
+	}
+	return ""
+}
+
+func (x *AuditLogRequest) GetFromTs() int64 {
+	if x != nil {
+		return x.FromTs
+	}
+	return 0
+}
+
+func (x *AuditLogRequest) GetToTs() int64 {
+	if x != nil {
+		return x.ToTs
+	}
+	return 0
+}
+
+func (x *AuditLogRequest) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *AuditLogRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type AuditEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Ts            int64                  `protobuf:"varint,2,opt,name=ts,proto3" json:"ts,omitempty"`
+	ActorId       int64                  `protobuf:"varint,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Action        string                 `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
+	TargetId      string                 `protobuf:"bytes,5,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	Detail        string                 `protobuf:"bytes,6,opt,name=detail,proto3" json:"detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuditEntry) Reset() {
+	*x = AuditEntry{}
+	mi := &file_logistics_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuditEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuditEntry) ProtoMessage() {}
+
+func (x *AuditEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuditEntry.ProtoReflect.Descriptor instead.
+func (*AuditEntry) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *AuditEntry) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *AuditEntry) GetTs() int64 {
+	if x != nil {
+		return x.Ts
+	}
+	return 0
+}
+
+func (x *AuditEntry) GetActorId() int64 {
+	if x != nil {
+		return x.ActorId
+	}
+	return 0
+}
+
+func (x *AuditEntry) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetTargetId() string {
+	if x != nil {
+		return x.TargetId
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+type AuditLogResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*AuditEntry          `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	TotalCount    int32                  `protobuf:"varint,2,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuditLogResponse) Reset() {
+	*x = AuditLogResponse{}
+	mi := &file_logistics_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuditLogResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuditLogResponse) ProtoMessage() {}
+
+func (x *AuditLogResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuditLogResponse.ProtoReflect.Descriptor instead.
+func (*AuditLogResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *AuditLogResponse) GetEntries() []*AuditEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *AuditLogResponse) GetTotalCount() int32 {
+	if x != nil {
+		return x.TotalCount
+	}
+	return 0
+}
+
+type SystemSettings struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	DeliveryBaseFare      float64                `protobuf:"fixed64,1,opt,name=delivery_base_fare,json=deliveryBaseFare,proto3" json:"delivery_base_fare,omitempty"`
+	DeliveryRatePerKm     float64                `protobuf:"fixed64,2,opt,name=delivery_rate_per_km,json=deliveryRatePerKm,proto3" json:"delivery_rate_per_km,omitempty"`
+	TaxRate               float64                `protobuf:"fixed64,3,opt,name=tax_rate,json=taxRate,proto3" json:"tax_rate,omitempty"`
+	FreeDeliveryThreshold float64                `protobuf:"fixed64,4,opt,name=free_delivery_threshold,json=freeDeliveryThreshold,proto3" json:"free_delivery_threshold,omitempty"`
+	CancelWindowMinutes   int32                  `protobuf:"varint,5,opt,name=cancel_window_minutes,json=cancelWindowMinutes,proto3" json:"cancel_window_minutes,omitempty"`
+	LoyaltyEarnRate       int32                  `protobuf:"varint,6,opt,name=loyalty_earn_rate,json=loyaltyEarnRate,proto3" json:"loyalty_earn_rate,omitempty"`       // points per 100 LKR
+	LoyaltyRedeemRate     int32                  `protobuf:"varint,7,opt,name=loyalty_redeem_rate,json=loyaltyRedeemRate,proto3" json:"loyalty_redeem_rate,omitempty"` // points per 1 LKR discount
+	MaxOrderValue         int32                  `protobuf:"varint,8,opt,name=max_order_value,json=maxOrderValue,proto3" json:"max_order_value,omitempty"`             // 0 = unlimited
+	MinOrderValue         int32                  `protobuf:"varint,9,opt,name=min_order_value,json=minOrderValue,proto3" json:"min_order_value,omitempty"`
+	OrderCutoffTime       string                 `protobuf:"bytes,10,opt,name=order_cutoff_time,json=orderCutoffTime,proto3" json:"order_cutoff_time,omitempty"` // "HH:MM"
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *SystemSettings) Reset() {
+	*x = SystemSettings{}
+	mi := &file_logistics_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SystemSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SystemSettings) ProtoMessage() {}
+
+func (x *SystemSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SystemSettings.ProtoReflect.Descriptor instead.
+func (*SystemSettings) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *SystemSettings) GetDeliveryBaseFare() float64 {
+	if x != nil {
+		return x.DeliveryBaseFare
+	}
+	return 0
+}
+
+func (x *SystemSettings) GetDeliveryRatePerKm() float64 {
+	if x != nil {
+		return x.DeliveryRatePerKm
+	}
+	return 0
+}
+
+func (x *SystemSettings) GetTaxRate() float64 {
+	if x != nil {
+		return x.TaxRate
+	}
+	return 0
+}
+
+func (x *SystemSettings) GetFreeDeliveryThreshold() float64 {
+	if x != nil {
+		return x.FreeDeliveryThreshold
+	}
+	return 0
+}
+
+func (x *SystemSettings) GetCancelWindowMinutes() int32 {
+	if x != nil {
+		return x.CancelWindowMinutes
+	}
+	return 0
+}
+
+func (x *SystemSettings) GetLoyaltyEarnRate() int32 {
+	if x != nil {
+		return x.LoyaltyEarnRate
+	}
+	return 0
+}
+
+func (x *SystemSettings) GetLoyaltyRedeemRate() int32 {
+	if x != nil {
+		return x.LoyaltyRedeemRate
+	}
+	return 0
+}
+
+func (x *SystemSettings) GetMaxOrderValue() int32 {
+	if x != nil {
+		return x.MaxOrderValue
+	}
+	return 0
+}
+
+func (x *SystemSettings) GetMinOrderValue() int32 {
+	if x != nil {
+		return x.MinOrderValue
+	}
+	return 0
+}
+
+func (x *SystemSettings) GetOrderCutoffTime() string {
+	if x != nil {
+		return x.OrderCutoffTime
+	}
+	return ""
+}
+
+type DateRangeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FromTs        int64                  `protobuf:"varint,1,opt,name=from_ts,json=fromTs,proto3" json:"from_ts,omitempty"`
+	ToTs          int64                  `protobuf:"varint,2,opt,name=to_ts,json=toTs,proto3" json:"to_ts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DateRangeRequest) Reset() {
+	*x = DateRangeRequest{}
+	mi := &file_logistics_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DateRangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DateRangeRequest) ProtoMessage() {}
+
+func (x *DateRangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DateRangeRequest.ProtoReflect.Descriptor instead.
+func (*DateRangeRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *DateRangeRequest) GetFromTs() int64 {
+	if x != nil {
+		return x.FromTs
+	}
+	return 0
+}
+
+func (x *DateRangeRequest) GetToTs() int64 {
+	if x != nil {
+		return x.ToTs
+	}
+	return 0
+}
+
+type RevenueSummary struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TotalRevenue  float64                `protobuf:"fixed64,1,opt,name=total_revenue,json=totalRevenue,proto3" json:"total_revenue,omitempty"`
+	OrderCount    int32                  `protobuf:"varint,2,opt,name=order_count,json=orderCount,proto3" json:"order_count,omitempty"`
+	AvgOrderValue float64                `protobuf:"fixed64,3,opt,name=avg_order_value,json=avgOrderValue,proto3" json:"avg_order_value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevenueSummary) Reset() {
+	*x = RevenueSummary{}
+	mi := &file_logistics_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevenueSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevenueSummary) ProtoMessage() {}
+
+func (x *RevenueSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevenueSummary.ProtoReflect.Descriptor instead.
+func (*RevenueSummary) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *RevenueSummary) GetTotalRevenue() float64 {
+	if x != nil {
+		return x.TotalRevenue
+	}
+	return 0
+}
+
+func (x *RevenueSummary) GetOrderCount() int32 {
+	if x != nil {
+		return x.OrderCount
+	}
+	return 0
+}
+
+func (x *RevenueSummary) GetAvgOrderValue() float64 {
+	if x != nil {
+		return x.AvgOrderValue
+	}
+	return 0
+}
+
+type TopItemsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FromTs        int64                  `protobuf:"varint,1,opt,name=from_ts,json=fromTs,proto3" json:"from_ts,omitempty"`
+	ToTs          int64                  `protobuf:"varint,2,opt,name=to_ts,json=toTs,proto3" json:"to_ts,omitempty"`
+	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TopItemsRequest) Reset() {
+	*x = TopItemsRequest{}
+	mi := &file_logistics_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TopItemsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TopItemsRequest) ProtoMessage() {}
+
+func (x *TopItemsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TopItemsRequest.ProtoReflect.Descriptor instead.
+func (*TopItemsRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *TopItemsRequest) GetFromTs() int64 {
+	if x != nil {
+		return x.FromTs
+	}
+	return 0
+}
+
+func (x *TopItemsRequest) GetToTs() int64 {
+	if x != nil {
+		return x.ToTs
+	}
+	return 0
+}
+
+func (x *TopItemsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type TopItemEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	UnitsSold     int32                  `protobuf:"varint,3,opt,name=units_sold,json=unitsSold,proto3" json:"units_sold,omitempty"`
+	Revenue       float64                `protobuf:"fixed64,4,opt,name=revenue,proto3" json:"revenue,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TopItemEntry) Reset() {
+	*x = TopItemEntry{}
+	mi := &file_logistics_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TopItemEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TopItemEntry) ProtoMessage() {}
+
+func (x *TopItemEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TopItemEntry.ProtoReflect.Descriptor instead.
+func (*TopItemEntry) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *TopItemEntry) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *TopItemEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *TopItemEntry) GetUnitsSold() int32 {
+	if x != nil {
+		return x.UnitsSold
+	}
+	return 0
+}
+
+func (x *TopItemEntry) GetRevenue() float64 {
+	if x != nil {
+		return x.Revenue
+	}
+	return 0
+}
+
+type TopItemsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*TopItemEntry        `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TopItemsResponse) Reset() {
+	*x = TopItemsResponse{}
+	mi := &file_logistics_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TopItemsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TopItemsResponse) ProtoMessage() {}
+
+func (x *TopItemsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TopItemsResponse.ProtoReflect.Descriptor instead.
+func (*TopItemsResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *TopItemsResponse) GetItems() []*TopItemEntry {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+type OrderVolumePoint struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DateTs        int64                  `protobuf:"varint,1,opt,name=date_ts,json=dateTs,proto3" json:"date_ts,omitempty"`
+	Count         int32                  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OrderVolumePoint) Reset() {
+	*x = OrderVolumePoint{}
+	mi := &file_logistics_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrderVolumePoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrderVolumePoint) ProtoMessage() {}
+
+func (x *OrderVolumePoint) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrderVolumePoint.ProtoReflect.Descriptor instead.
+func (*OrderVolumePoint) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *OrderVolumePoint) GetDateTs() int64 {
+	if x != nil {
+		return x.DateTs
+	}
+	return 0
+}
+
+func (x *OrderVolumePoint) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+type OrderVolumeTrend struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Points        []*OrderVolumePoint    `protobuf:"bytes,1,rep,name=points,proto3" json:"points,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OrderVolumeTrend) Reset() {
+	*x = OrderVolumeTrend{}
+	mi := &file_logistics_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrderVolumeTrend) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrderVolumeTrend) ProtoMessage() {}
+
+func (x *OrderVolumeTrend) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrderVolumeTrend.ProtoReflect.Descriptor instead.
+func (*OrderVolumeTrend) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *OrderVolumeTrend) GetPoints() []*OrderVolumePoint {
+	if x != nil {
+		return x.Points
+	}
+	return nil
+}
+
+type LowStockRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Threshold     int32                  `protobuf:"varint,1,opt,name=threshold,proto3" json:"threshold,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LowStockRequest) Reset() {
+	*x = LowStockRequest{}
+	mi := &file_logistics_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LowStockRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LowStockRequest) ProtoMessage() {}
+
+func (x *LowStockRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LowStockRequest.ProtoReflect.Descriptor instead.
+func (*LowStockRequest) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *LowStockRequest) GetThreshold() int32 {
+	if x != nil {
+		return x.Threshold
+	}
+	return 0
+}
+
+type LowStockEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ItemId        string                 `protobuf:"bytes,1,opt,name=item_id,json=itemId,proto3" json:"item_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Stock         int32                  `protobuf:"varint,3,opt,name=stock,proto3" json:"stock,omitempty"`
+	Threshold     int32                  `protobuf:"varint,4,opt,name=threshold,proto3" json:"threshold,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LowStockEntry) Reset() {
+	*x = LowStockEntry{}
+	mi := &file_logistics_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LowStockEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LowStockEntry) ProtoMessage() {}
+
+func (x *LowStockEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LowStockEntry.ProtoReflect.Descriptor instead.
+func (*LowStockEntry) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *LowStockEntry) GetItemId() string {
+	if x != nil {
+		return x.ItemId
+	}
+	return ""
+}
+
+func (x *LowStockEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *LowStockEntry) GetStock() int32 {
+	if x != nil {
+		return x.Stock
+	}
+	return 0
+}
+
+func (x *LowStockEntry) GetThreshold() int32 {
+	if x != nil {
+		return x.Threshold
+	}
+	return 0
+}
+
+type LowStockResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*LowStockEntry       `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LowStockResponse) Reset() {
+	*x = LowStockResponse{}
+	mi := &file_logistics_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LowStockResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LowStockResponse) ProtoMessage() {}
+
+func (x *LowStockResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LowStockResponse.ProtoReflect.Descriptor instead.
+func (*LowStockResponse) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *LowStockResponse) GetItems() []*LowStockEntry {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+type MaintenanceWindow struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StartTs       int64                  `protobuf:"varint,1,opt,name=start_ts,json=startTs,proto3" json:"start_ts,omitempty"`
+	EndTs         int64                  `protobuf:"varint,2,opt,name=end_ts,json=endTs,proto3" json:"end_ts,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MaintenanceWindow) Reset() {
+	*x = MaintenanceWindow{}
+	mi := &file_logistics_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MaintenanceWindow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MaintenanceWindow) ProtoMessage() {}
+
+func (x *MaintenanceWindow) ProtoReflect() protoreflect.Message {
+	mi := &file_logistics_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MaintenanceWindow.ProtoReflect.Descriptor instead.
+func (*MaintenanceWindow) Descriptor() ([]byte, []int) {
+	return file_logistics_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *MaintenanceWindow) GetStartTs() int64 {
+	if x != nil {
+		return x.StartTs
+	}
+	return 0
+}
+
+func (x *MaintenanceWindow) GetEndTs() int64 {
+	if x != nil {
+		return x.EndTs
+	}
+	return 0
+}
+
+func (x *MaintenanceWindow) GetReason() string {
+	if x != nil {
+		return x.Reason
 	}
 	return ""
 }
@@ -1338,16 +5002,19 @@ var File_logistics_proto protoreflect.FileDescriptor
 const file_logistics_proto_rawDesc = "" +
 	"\n" +
 	"\x0flogistics.proto\x12\tlogistics\"\a\n" +
-	"\x05Empty\"r\n" +
+	"\x05Empty\"\xb6\x01\n" +
 	"\fHealthStatus\x12\x1d\n" +
 	"\n" +
 	"is_healthy\x18\x01 \x01(\bR\tisHealthy\x12)\n" +
 	"\x10maintenance_mode\x18\x02 \x01(\bR\x0fmaintenanceMode\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion\"j\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\x12\x1b\n" +
+	"\tdb_status\x18\x04 \x01(\tR\bdbStatus\x12%\n" +
+	"\x0euptime_seconds\x18\x05 \x01(\x03R\ruptimeSeconds\"\x87\x01\n" +
 	"\x0eStatusResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12$\n" +
-	"\x0enotify_user_id\x18\x03 \x01(\x03R\fnotifyUserId\"\xb9\x01\n" +
+	"\x0enotify_user_id\x18\x03 \x01(\x03R\fnotifyUserId\x12\x1b\n" +
+	"\tentity_id\x18\x04 \x01(\tR\bentityId\"\xed\x03\n" +
 	"\x04Item\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -1355,109 +5022,468 @@ const file_logistics_proto_rawDesc = "" +
 	"\fvolume_cubes\x18\x04 \x01(\x01R\vvolumeCubes\x12\x1a\n" +
 	"\bcategory\x18\x05 \x01(\tR\bcategory\x12\x14\n" +
 	"\x05stock\x18\x06 \x01(\x05R\x05stock\x12\"\n" +
-	"\rphoto_file_id\x18\a \x01(\tR\vphotoFileId\"\x99\x01\n" +
-	"\x0fCatalogResponse\x12;\n" +
-	"\x05items\x18\x01 \x03(\v2%.logistics.CatalogResponse.ItemsEntryR\x05items\x1aI\n" +
+	"\rphoto_file_id\x18\a \x01(\tR\vphotoFileId\x12 \n" +
+	"\vdescription\x18\b \x01(\tR\vdescription\x12\x1f\n" +
+	"\vis_featured\x18\t \x01(\bR\n" +
+	"isFeatured\x12!\n" +
+	"\fis_available\x18\n" +
+	" \x01(\bR\visAvailable\x12%\n" +
+	"\x0eavailable_from\x18\v \x01(\x03R\ravailableFrom\x12'\n" +
+	"\x0favailable_until\x18\f \x01(\x03R\x0eavailableUntil\x12\x19\n" +
+	"\btax_rate\x18\r \x01(\x01R\ataxRate\x12#\n" +
+	"\rreorder_level\x18\x0e \x01(\x05R\freorderLevel\x12\x1d\n" +
 	"\n" +
-	"ItemsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +
-	"\x05value\x18\x02 \x01(\v2\x0f.logistics.ItemR\x05value:\x028\x01\"H\n" +
+	"deleted_at\x18\x0f \x01(\x03R\tdeletedAt\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x10 \x01(\x03R\tcreatedAt\"\x18\n" +
+	"\x06ItemId\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x8d\x01\n" +
+	"\x0eCatalogRequest\x12'\n" +
+	"\x0fcategory_filter\x18\x01 \x01(\tR\x0ecategoryFilter\x12!\n" +
+	"\fsearch_query\x18\x02 \x01(\tR\vsearchQuery\x12\x12\n" +
+	"\x04page\x18\x03 \x01(\x05R\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\"Y\n" +
+	"\x0fCatalogResponse\x12%\n" +
+	"\x05items\x18\x01 \x03(\v2\x0f.logistics.ItemR\x05items\x12\x1f\n" +
+	"\vtotal_count\x18\x02 \x01(\x05R\n" +
+	"totalCount\"H\n" +
 	"\x10EditPriceRequest\x12\x17\n" +
 	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1b\n" +
-	"\tnew_price\x18\x02 \x01(\x01R\bnewPrice\"A\n" +
+	"\tnew_price\x18\x02 \x01(\x01R\bnewPrice\"Y\n" +
 	"\x10EditStockRequest\x12\x17\n" +
 	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x14\n" +
-	"\x05delta\x18\x02 \x01(\x05R\x05delta\"\x18\n" +
-	"\x06ItemId\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"?\n" +
+	"\x05delta\x18\x02 \x01(\x05R\x05delta\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\":\n" +
+	"\x11BulkImportRequest\x12%\n" +
+	"\x05items\x18\x01 \x03(\v2\x0f.logistics.ItemR\x05items\"`\n" +
+	"\x12BulkImportResponse\x12\x18\n" +
+	"\acreated\x18\x01 \x01(\x05R\acreated\x12\x18\n" +
+	"\aupdated\x18\x02 \x01(\x05R\aupdated\x12\x16\n" +
+	"\x06errors\x18\x03 \x03(\tR\x06errors\"S\n" +
 	"\bCartItem\x12\x17\n" +
 	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x1a\n" +
-	"\bquantity\x18\x02 \x01(\x05R\bquantity\"x\n" +
+	"\bquantity\x18\x02 \x01(\x05R\bquantity\x12\x12\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"U\n" +
+	"\x0fSaveCartRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12)\n" +
+	"\x05items\x18\x02 \x03(\v2\x13.logistics.CartItemR\x05items\"q\n" +
+	"\fCartResponse\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12)\n" +
+	"\x05items\x18\x02 \x03(\v2\x13.logistics.CartItemR\x05items\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x03 \x01(\x03R\tupdatedAt\"\x81\x02\n" +
 	"\fQuoteRequest\x12\x19\n" +
 	"\buser_lat\x18\x01 \x01(\x01R\auserLat\x12\x19\n" +
 	"\buser_lon\x18\x02 \x01(\x01R\auserLon\x122\n" +
 	"\n" +
-	"cart_items\x18\x03 \x03(\v2\x13.logistics.CartItemR\tcartItems\"\x98\x02\n" +
+	"cart_items\x18\x03 \x03(\v2\x13.logistics.CartItemR\tcartItems\x12\x17\n" +
+	"\auser_id\x18\x04 \x01(\x03R\x06userId\x12\x1d\n" +
+	"\n" +
+	"promo_code\x18\x05 \x01(\tR\tpromoCode\x12%\n" +
+	"\x0eloyalty_redeem\x18\x06 \x01(\x05R\rloyaltyRedeem\x12(\n" +
+	"\x10delivery_slot_id\x18\a \x01(\x03R\x0edeliverySlotId\"\xa8\x04\n" +
 	"\rQuoteResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
-	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1f\n" +
-	"\vgrand_total\x18\x03 \x01(\x01R\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1a\n" +
+	"\bsubtotal\x18\x03 \x01(\x01R\bsubtotal\x12!\n" +
+	"\fdelivery_fee\x18\x04 \x01(\x01R\vdeliveryFee\x12'\n" +
+	"\x0fheavy_surcharge\x18\x05 \x01(\x01R\x0eheavySurcharge\x12\x10\n" +
+	"\x03tax\x18\x06 \x01(\x01R\x03tax\x12%\n" +
+	"\x0epromo_discount\x18\a \x01(\x01R\rpromoDiscount\x12)\n" +
+	"\x10loyalty_discount\x18\b \x01(\x01R\x0floyaltyDiscount\x12\x1f\n" +
+	"\vgrand_total\x18\t \x01(\x01R\n" +
 	"grandTotal\x12+\n" +
-	"\x11formatted_receipt\x18\x04 \x01(\tR\x10formattedReceipt\x12\x1f\n" +
-	"\vdistance_km\x18\x05 \x01(\x01R\n" +
+	"\x11formatted_receipt\x18\n" +
+	" \x01(\tR\x10formattedReceipt\x12\x1f\n" +
+	"\vdistance_km\x18\v \x01(\x01R\n" +
 	"distanceKm\x12%\n" +
-	"\x0enearest_branch\x18\x06 \x01(\tR\rnearestBranch\x122\n" +
+	"\x0enearest_branch\x18\f \x01(\tR\rnearestBranch\x12#\n" +
+	"\rpromo_applied\x18\r \x01(\tR\fpromoApplied\x122\n" +
+	"\x15loyalty_points_earned\x18\x0e \x01(\x05R\x13loyaltyPointsEarned\x12\x1d\n" +
 	"\n" +
-	"cart_items\x18\a \x03(\v2\x13.logistics.CartItemR\tcartItems\"\xac\x01\n" +
+	"quote_data\x18\x0f \x01(\fR\tquoteData\"\xe3\x03\n" +
 	"\fOrderRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1d\n" +
 	"\n" +
 	"quote_data\x18\x03 \x01(\fR\tquoteData\x12%\n" +
 	"\x0eexpected_total\x18\x04 \x01(\x01R\rexpectedTotal\x12!\n" +
-	"\freceipt_text\x18\x05 \x01(\tR\vreceiptText\"^\n" +
+	"\freceipt_text\x18\x05 \x01(\tR\vreceiptText\x12'\n" +
+	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12\x1f\n" +
+	"\vorder_notes\x18\a \x01(\tR\n" +
+	"orderNotes\x12)\n" +
+	"\x10delivery_address\x18\b \x01(\tR\x0fdeliveryAddress\x12(\n" +
+	"\x10delivery_slot_id\x18\t \x01(\x03R\x0edeliverySlotId\x12#\n" +
+	"\rscheduled_for\x18\n" +
+	" \x01(\x03R\fscheduledFor\x12 \n" +
+	"\vcontactless\x18\v \x01(\bR\vcontactless\x12%\n" +
+	"\x0erecipient_name\x18\f \x01(\tR\rrecipientName\x12(\n" +
+	"\x10saved_address_id\x18\r \x01(\x03R\x0esavedAddressId\"{\n" +
 	"\rOrderResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\xa1\x01\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1b\n" +
+	"\thuman_ref\x18\x04 \x01(\tR\bhumanRef\"$\n" +
+	"\aOrderId\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\"\xfb\x04\n" +
 	"\x05Order\x12\x19\n" +
-	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\x12\x14\n" +
-	"\x05total\x18\x03 \x01(\x01R\x05total\x12\x1c\n" +
-	"\ttimestamp\x18\x04 \x01(\x03R\ttimestamp\x12\x18\n" +
-	"\areceipt\x18\x05 \x01(\tR\areceipt\x12\x17\n" +
-	"\auser_id\x18\x06 \x01(\x03R\x06userId\"^\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1b\n" +
+	"\thuman_ref\x18\x02 \x01(\tR\bhumanRef\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x14\n" +
+	"\x05total\x18\x04 \x01(\x01R\x05total\x12\x1c\n" +
+	"\ttimestamp\x18\x05 \x01(\x03R\ttimestamp\x12\x18\n" +
+	"\areceipt\x18\x06 \x01(\tR\areceipt\x12\x17\n" +
+	"\auser_id\x18\a \x01(\x03R\x06userId\x12\x1a\n" +
+	"\busername\x18\b \x01(\tR\busername\x12\x1b\n" +
+	"\tdriver_id\x18\t \x01(\tR\bdriverId\x12\x1f\n" +
+	"\vdriver_name\x18\n" +
+	" \x01(\tR\n" +
+	"driverName\x12\x1f\n" +
+	"\vorder_notes\x18\v \x01(\tR\n" +
+	"orderNotes\x12)\n" +
+	"\x10delivery_address\x18\f \x01(\tR\x0fdeliveryAddress\x12#\n" +
+	"\rscheduled_for\x18\r \x01(\x03R\fscheduledFor\x12 \n" +
+	"\vcontactless\x18\x0e \x01(\bR\vcontactless\x12%\n" +
+	"\x0erecipient_name\x18\x0f \x01(\tR\rrecipientName\x12!\n" +
+	"\fdelivery_otp\x18\x10 \x01(\tR\vdeliveryOtp\x12!\n" +
+	"\fissue_status\x18\x11 \x01(\tR\vissueStatus\x125\n" +
+	"\ahistory\x18\x12 \x03(\v2\x1b.logistics.OrderStatusEventR\ahistory\x12*\n" +
+	"\x05notes\x18\x13 \x03(\v2\x14.logistics.OrderNoteR\x05notes\"i\n" +
+	"\x10OrderStatusEvent\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12\x0e\n" +
+	"\x02ts\x18\x02 \x01(\x03R\x02ts\x12\x19\n" +
+	"\bactor_id\x18\x03 \x01(\x03R\aactorId\x12\x12\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\"J\n" +
+	"\tOrderNote\x12\x0e\n" +
+	"\x02ts\x18\x01 \x01(\x03R\x02ts\x12\x19\n" +
+	"\bactor_id\x18\x02 \x01(\x03R\aactorId\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\"^\n" +
 	"\x11OrderListResponse\x12(\n" +
 	"\x06orders\x18\x01 \x03(\v2\x10.logistics.OrderR\x06orders\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
-	"totalCount\"!\n" +
-	"\x06UserId\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\x03R\x06userId\"O\n" +
+	"totalCount\"`\n" +
+	"\x14GetUserOrdersRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x12\n" +
+	"\x04page\x18\x02 \x01(\x05R\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\"\xbe\x01\n" +
+	"\x13GetAllOrdersRequest\x12#\n" +
+	"\rstatus_filter\x18\x01 \x01(\tR\fstatusFilter\x12#\n" +
+	"\rdriver_filter\x18\x02 \x01(\tR\fdriverFilter\x12\x17\n" +
+	"\afrom_ts\x18\x03 \x01(\x03R\x06fromTs\x12\x13\n" +
+	"\x05to_ts\x18\x04 \x01(\x03R\x04toTs\x12\x12\n" +
+	"\x04page\x18\x05 \x01(\x05R\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x06 \x01(\x05R\bpageSize\"\x82\x01\n" +
 	"\x13UpdateStatusRequest\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1d\n" +
 	"\n" +
-	"new_status\x18\x02 \x01(\tR\tnewStatus\"k\n" +
-	"\x13GetAllOrdersRequest\x12#\n" +
-	"\rstatus_filter\x18\x01 \x01(\tR\fstatusFilter\x12\x12\n" +
-	"\x04page\x18\x02 \x01(\x05R\x04page\x12\x1b\n" +
-	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\"\x7f\n" +
+	"new_status\x18\x02 \x01(\tR\tnewStatus\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\x12\x19\n" +
+	"\bactor_id\x18\x04 \x01(\x03R\aactorId\"`\n" +
+	"\x12CancelOrderRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\x03R\x06userId\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x9d\x01\n" +
+	"\vIssueReport\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\x03R\x06userId\x12\x1d\n" +
+	"\n" +
+	"issue_type\x18\x03 \x01(\tR\tissueType\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x19\n" +
+	"\bphoto_id\x18\x05 \x01(\tR\aphotoId\"\x7f\n" +
+	"\x13ResolveIssueRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x19\n" +
+	"\badmin_id\x18\x02 \x01(\x03R\aadminId\x12\x1e\n" +
+	"\n" +
+	"resolution\x18\x03 \x01(\tR\n" +
+	"resolution\x12\x12\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\"h\n" +
+	"\x13AssignDriverRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x1b\n" +
+	"\tdriver_id\x18\x02 \x01(\tR\bdriverId\x12\x19\n" +
+	"\badmin_id\x18\x03 \x01(\x03R\aadminId\"\\\n" +
+	"\x10OrderNoteRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x19\n" +
+	"\badmin_id\x18\x02 \x01(\x03R\aadminId\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\"\xed\x01\n" +
 	"\tWarehouse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x10\n" +
-	"\x03lat\x18\x03 \x01(\x01R\x03lat\x12\x10\n" +
-	"\x03lon\x18\x04 \x01(\x01R\x03lon\x12*\n" +
-	"\x11admin_telegram_id\x18\x05 \x01(\x03R\x0fadminTelegramId\"y\n" +
-	"\x13AddWarehouseRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
-	"\x03lat\x18\x02 \x01(\x01R\x03lat\x12\x10\n" +
-	"\x03lon\x18\x03 \x01(\x01R\x03lon\x12*\n" +
-	"\x11admin_telegram_id\x18\x04 \x01(\x03R\x0fadminTelegramId\"M\n" +
-	"\x15ListWarehouseResponse\x124\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\aaddress\x18\x03 \x01(\tR\aaddress\x12\x10\n" +
+	"\x03lat\x18\x04 \x01(\x01R\x03lat\x12\x10\n" +
+	"\x03lon\x18\x05 \x01(\x01R\x03lon\x12\x1b\n" +
+	"\topen_time\x18\x06 \x01(\tR\bopenTime\x12\x1d\n" +
+	"\n" +
+	"close_time\x18\a \x01(\tR\tcloseTime\x12\x1b\n" +
+	"\tis_active\x18\b \x01(\bR\bisActive\x12%\n" +
+	"\x0ecapacity_units\x18\t \x01(\x05R\rcapacityUnits\"\x1d\n" +
+	"\vWarehouseId\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"M\n" +
+	"\x15WarehouseListResponse\x124\n" +
 	"\n" +
 	"warehouses\x18\x01 \x03(\v2\x14.logistics.WarehouseR\n" +
-	"warehouses\"G\n" +
-	"\x0fSaveCartRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x1b\n" +
-	"\tcart_json\x18\x02 \x01(\tR\bcartJson2\x8a\b\n" +
+	"warehouses\"\xda\x01\n" +
+	"\x06Driver\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05phone\x18\x03 \x01(\tR\x05phone\x12\x1f\n" +
+	"\vtelegram_id\x18\x04 \x01(\x03R\n" +
+	"telegramId\x12!\n" +
+	"\fvehicle_type\x18\x05 \x01(\tR\vvehicleType\x12\x12\n" +
+	"\x04zone\x18\x06 \x01(\tR\x04zone\x12!\n" +
+	"\fis_available\x18\a \x01(\bR\visAvailable\x12\x1b\n" +
+	"\tis_active\x18\b \x01(\bR\bisActive\"\x1a\n" +
+	"\bDriverId\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\";\n" +
+	"\x12ListDriversRequest\x12%\n" +
+	"\x0eavailable_only\x18\x01 \x01(\bR\ravailableOnly\"A\n" +
+	"\x12DriverListResponse\x12+\n" +
+	"\adrivers\x18\x01 \x03(\v2\x11.logistics.DriverR\adrivers\"T\n" +
+	"\x12DriverAvailability\x12\x1b\n" +
+	"\tdriver_id\x18\x01 \x01(\tR\bdriverId\x12!\n" +
+	"\fis_available\x18\x02 \x01(\bR\visAvailable\"M\n" +
+	"\x10BroadcastRequest\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\x12\x1f\n" +
+	"\vactive_only\x18\x02 \x01(\bR\n" +
+	"activeOnly\"\xfe\x02\n" +
+	"\x05Promo\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12#\n" +
+	"\rdiscount_type\x18\x04 \x01(\tR\fdiscountType\x12%\n" +
+	"\x0ediscount_value\x18\x05 \x01(\x01R\rdiscountValue\x12&\n" +
+	"\x0fmin_order_value\x18\x06 \x01(\x01R\rminOrderValue\x12\x19\n" +
+	"\bmax_uses\x18\a \x01(\x05R\amaxUses\x12$\n" +
+	"\x0eper_user_limit\x18\b \x01(\x05R\fperUserLimit\x12\x1d\n" +
+	"\n" +
+	"valid_from\x18\t \x01(\x03R\tvalidFrom\x12\x1f\n" +
+	"\vvalid_until\x18\n" +
+	" \x01(\x03R\n" +
+	"validUntil\x12\x1b\n" +
+	"\tis_active\x18\v \x01(\bR\bisActive\x12\x1d\n" +
+	"\n" +
+	"uses_count\x18\f \x01(\x05R\tusesCount\"\x19\n" +
+	"\aPromoId\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"=\n" +
+	"\x11PromoListResponse\x12(\n" +
+	"\x06promos\x18\x01 \x03(\v2\x10.logistics.PromoR\x06promos\"j\n" +
+	"\x11ApplyPromoRequest\x12\x1d\n" +
+	"\n" +
+	"promo_code\x18\x01 \x01(\tR\tpromoCode\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\x03R\x06userId\x12\x1d\n" +
+	"\n" +
+	"cart_total\x18\x03 \x01(\x01R\tcartTotal\"\x7f\n" +
+	"\vPromoEffect\x12\x14\n" +
+	"\x05valid\x18\x01 \x01(\bR\x05valid\x12#\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1a\n" +
+	"\bdiscount\x18\x03 \x01(\x01R\bdiscount\x12\x19\n" +
+	"\bpromo_id\x18\x04 \x01(\tR\apromoId\"U\n" +
+	"\x0eLoyaltyBalance\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x16\n" +
+	"\x06points\x18\x02 \x01(\x05R\x06points\x12\x12\n" +
+	"\x04tier\x18\x03 \x01(\tR\x04tier\"u\n" +
+	"\x11LoyaltyAdjustment\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x14\n" +
+	"\x05delta\x18\x02 \x01(\x05R\x05delta\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\x12\x19\n" +
+	"\bactor_id\x18\x04 \x01(\x03R\aactorId\"\xba\x01\n" +
+	"\x0fCustomerProfile\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x14\n" +
+	"\x05phone\x18\x03 \x01(\tR\x05phone\x12\x1a\n" +
+	"\blanguage\x18\x04 \x01(\tR\blanguage\x12\x1a\n" +
+	"\bbirthday\x18\x05 \x01(\x03R\bbirthday\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\x03R\tcreatedAt\"!\n" +
+	"\x06UserId\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\"\xaa\x01\n" +
+	"\fSavedAddress\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\x03R\x06userId\x12\x14\n" +
+	"\x05label\x18\x03 \x01(\tR\x05label\x12\x18\n" +
+	"\aaddress\x18\x04 \x01(\tR\aaddress\x12\x10\n" +
+	"\x03lat\x18\x05 \x01(\x01R\x03lat\x12\x10\n" +
+	"\x03lon\x18\x06 \x01(\x01R\x03lon\x12\x1d\n" +
+	"\n" +
+	"is_default\x18\a \x01(\bR\tisDefault\"\x1b\n" +
+	"\tAddressId\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"L\n" +
+	"\x13AddressListResponse\x125\n" +
+	"\taddresses\x18\x01 \x03(\v2\x17.logistics.SavedAddressR\taddresses\"\xd3\x01\n" +
+	"\n" +
+	"NotifPrefs\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12#\n" +
+	"\rorder_updates\x18\x02 \x01(\bR\forderUpdates\x12\x1e\n" +
+	"\n" +
+	"promotions\x18\x03 \x01(\bR\n" +
+	"promotions\x12!\n" +
+	"\fnew_products\x18\x04 \x01(\bR\vnewProducts\x12#\n" +
+	"\rsystem_alerts\x18\x05 \x01(\bR\fsystemAlerts\x12\x1f\n" +
+	"\vflash_deals\x18\x06 \x01(\bR\n" +
+	"flashDeals\"\x8b\x01\n" +
+	"\x05Notif\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x17\n" +
+	"\auser_id\x18\x02 \x01(\x03R\x06userId\x12\x12\n" +
+	"\x04type\x18\x03 \x01(\tR\x04type\x12\x12\n" +
+	"\x04text\x18\x04 \x01(\tR\x04text\x12\x12\n" +
+	"\x04sent\x18\x05 \x01(\bR\x04sent\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x06 \x01(\x03R\tcreatedAt\"=\n" +
+	"\x11NotifListResponse\x12(\n" +
+	"\x06notifs\x18\x01 \x03(\v2\x10.logistics.NotifR\x06notifs\"C\n" +
+	"\x0fStockSubRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x03R\x06userId\x12\x17\n" +
+	"\aitem_id\x18\x02 \x01(\tR\x06itemId\"\x92\x01\n" +
+	"\tAdminUser\x12\x1f\n" +
+	"\vtelegram_id\x18\x01 \x01(\x03R\n" +
+	"telegramId\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername\x12\x12\n" +
+	"\x04role\x18\x03 \x01(\tR\x04role\x12\x19\n" +
+	"\badded_by\x18\x04 \x01(\x03R\aaddedBy\x12\x19\n" +
+	"\badded_at\x18\x05 \x01(\x03R\aaddedAt\".\n" +
+	"\vAdminUserId\x12\x1f\n" +
+	"\vtelegram_id\x18\x01 \x01(\x03R\n" +
+	"telegramId\"A\n" +
+	"\x11AdminListResponse\x12,\n" +
+	"\x06admins\x18\x01 \x03(\v2\x14.logistics.AdminUserR\x06admins\"\xb8\x01\n" +
+	"\x0fAuditLogRequest\x12!\n" +
+	"\factor_filter\x18\x01 \x01(\x03R\vactorFilter\x12#\n" +
+	"\raction_filter\x18\x02 \x01(\tR\factionFilter\x12\x17\n" +
+	"\afrom_ts\x18\x03 \x01(\x03R\x06fromTs\x12\x13\n" +
+	"\x05to_ts\x18\x04 \x01(\x03R\x04toTs\x12\x12\n" +
+	"\x04page\x18\x05 \x01(\x05R\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x06 \x01(\x05R\bpageSize\"\x94\x01\n" +
+	"\n" +
+	"AuditEntry\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x0e\n" +
+	"\x02ts\x18\x02 \x01(\x03R\x02ts\x12\x19\n" +
+	"\bactor_id\x18\x03 \x01(\x03R\aactorId\x12\x16\n" +
+	"\x06action\x18\x04 \x01(\tR\x06action\x12\x1b\n" +
+	"\ttarget_id\x18\x05 \x01(\tR\btargetId\x12\x16\n" +
+	"\x06detail\x18\x06 \x01(\tR\x06detail\"d\n" +
+	"\x10AuditLogResponse\x12/\n" +
+	"\aentries\x18\x01 \x03(\v2\x15.logistics.AuditEntryR\aentries\x12\x1f\n" +
+	"\vtotal_count\x18\x02 \x01(\x05R\n" +
+	"totalCount\"\xce\x03\n" +
+	"\x0eSystemSettings\x12,\n" +
+	"\x12delivery_base_fare\x18\x01 \x01(\x01R\x10deliveryBaseFare\x12/\n" +
+	"\x14delivery_rate_per_km\x18\x02 \x01(\x01R\x11deliveryRatePerKm\x12\x19\n" +
+	"\btax_rate\x18\x03 \x01(\x01R\ataxRate\x126\n" +
+	"\x17free_delivery_threshold\x18\x04 \x01(\x01R\x15freeDeliveryThreshold\x122\n" +
+	"\x15cancel_window_minutes\x18\x05 \x01(\x05R\x13cancelWindowMinutes\x12*\n" +
+	"\x11loyalty_earn_rate\x18\x06 \x01(\x05R\x0floyaltyEarnRate\x12.\n" +
+	"\x13loyalty_redeem_rate\x18\a \x01(\x05R\x11loyaltyRedeemRate\x12&\n" +
+	"\x0fmax_order_value\x18\b \x01(\x05R\rmaxOrderValue\x12&\n" +
+	"\x0fmin_order_value\x18\t \x01(\x05R\rminOrderValue\x12*\n" +
+	"\x11order_cutoff_time\x18\n" +
+	" \x01(\tR\x0forderCutoffTime\"@\n" +
+	"\x10DateRangeRequest\x12\x17\n" +
+	"\afrom_ts\x18\x01 \x01(\x03R\x06fromTs\x12\x13\n" +
+	"\x05to_ts\x18\x02 \x01(\x03R\x04toTs\"~\n" +
+	"\x0eRevenueSummary\x12#\n" +
+	"\rtotal_revenue\x18\x01 \x01(\x01R\ftotalRevenue\x12\x1f\n" +
+	"\vorder_count\x18\x02 \x01(\x05R\n" +
+	"orderCount\x12&\n" +
+	"\x0favg_order_value\x18\x03 \x01(\x01R\ravgOrderValue\"U\n" +
+	"\x0fTopItemsRequest\x12\x17\n" +
+	"\afrom_ts\x18\x01 \x01(\x03R\x06fromTs\x12\x13\n" +
+	"\x05to_ts\x18\x02 \x01(\x03R\x04toTs\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"t\n" +
+	"\fTopItemEntry\x12\x17\n" +
+	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"units_sold\x18\x03 \x01(\x05R\tunitsSold\x12\x18\n" +
+	"\arevenue\x18\x04 \x01(\x01R\arevenue\"A\n" +
+	"\x10TopItemsResponse\x12-\n" +
+	"\x05items\x18\x01 \x03(\v2\x17.logistics.TopItemEntryR\x05items\"A\n" +
+	"\x10OrderVolumePoint\x12\x17\n" +
+	"\adate_ts\x18\x01 \x01(\x03R\x06dateTs\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x05R\x05count\"G\n" +
+	"\x10OrderVolumeTrend\x123\n" +
+	"\x06points\x18\x01 \x03(\v2\x1b.logistics.OrderVolumePointR\x06points\"/\n" +
+	"\x0fLowStockRequest\x12\x1c\n" +
+	"\tthreshold\x18\x01 \x01(\x05R\tthreshold\"p\n" +
+	"\rLowStockEntry\x12\x17\n" +
+	"\aitem_id\x18\x01 \x01(\tR\x06itemId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05stock\x18\x03 \x01(\x05R\x05stock\x12\x1c\n" +
+	"\tthreshold\x18\x04 \x01(\x05R\tthreshold\"B\n" +
+	"\x10LowStockResponse\x12.\n" +
+	"\x05items\x18\x01 \x03(\v2\x18.logistics.LowStockEntryR\x05items\"]\n" +
+	"\x11MaintenanceWindow\x12\x19\n" +
+	"\bstart_ts\x18\x01 \x01(\x03R\astartTs\x12\x15\n" +
+	"\x06end_ts\x18\x02 \x01(\x03R\x05endTs\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason2\x98!\n" +
 	"\x0fLogisticsEngine\x128\n" +
 	"\vCheckHealth\x12\x10.logistics.Empty\x1a\x17.logistics.HealthStatus\x12@\n" +
-	"\x11ToggleMaintenance\x12\x10.logistics.Empty\x1a\x19.logistics.StatusResponse\x12:\n" +
+	"\x11ToggleMaintenance\x12\x10.logistics.Empty\x1a\x19.logistics.StatusResponse\x12N\n" +
+	"\x13ScheduleMaintenance\x12\x1c.logistics.MaintenanceWindow\x1a\x19.logistics.StatusResponse\x12C\n" +
 	"\n" +
-	"GetCatalog\x12\x10.logistics.Empty\x1a\x1a.logistics.CatalogResponse\x125\n" +
-	"\aAddItem\x12\x0f.logistics.Item\x1a\x19.logistics.StatusResponse\x12G\n" +
+	"GetCatalog\x12\x19.logistics.CatalogRequest\x1a\x1a.logistics.CatalogResponse\x12-\n" +
+	"\aGetItem\x12\x11.logistics.ItemId\x1a\x0f.logistics.Item\x125\n" +
+	"\aAddItem\x12\x0f.logistics.Item\x1a\x19.logistics.StatusResponse\x126\n" +
+	"\bEditItem\x12\x0f.logistics.Item\x1a\x19.logistics.StatusResponse\x12G\n" +
 	"\rEditItemPrice\x12\x1b.logistics.EditPriceRequest\x1a\x19.logistics.StatusResponse\x12G\n" +
 	"\rEditItemStock\x12\x1b.logistics.EditStockRequest\x1a\x19.logistics.StatusResponse\x12:\n" +
 	"\n" +
-	"RemoveItem\x12\x11.logistics.ItemId\x1a\x19.logistics.StatusResponse\x12C\n" +
+	"RemoveItem\x12\x11.logistics.ItemId\x1a\x19.logistics.StatusResponse\x12N\n" +
+	"\x0fBulkImportItems\x12\x1c.logistics.BulkImportRequest\x1a\x1d.logistics.BulkImportResponse\x12A\n" +
+	"\bSaveCart\x12\x1a.logistics.SaveCartRequest\x1a\x19.logistics.StatusResponse\x125\n" +
+	"\aGetCart\x12\x11.logistics.UserId\x1a\x17.logistics.CartResponse\x129\n" +
+	"\tClearCart\x12\x11.logistics.UserId\x1a\x19.logistics.StatusResponse\x12C\n" +
 	"\x0eCalculateQuote\x12\x17.logistics.QuoteRequest\x1a\x18.logistics.QuoteResponse\x12?\n" +
 	"\n" +
-	"PlaceOrder\x12\x17.logistics.OrderRequest\x1a\x18.logistics.OrderResponse\x12B\n" +
-	"\x0fGetActiveOrders\x12\x11.logistics.UserId\x1a\x1c.logistics.OrderListResponse\x12L\n" +
+	"PlaceOrder\x12\x17.logistics.OrderRequest\x1a\x18.logistics.OrderResponse\x120\n" +
+	"\bGetOrder\x12\x12.logistics.OrderId\x1a\x10.logistics.Order\x12N\n" +
+	"\rGetUserOrders\x12\x1f.logistics.GetUserOrdersRequest\x1a\x1c.logistics.OrderListResponse\x12L\n" +
 	"\fGetAllOrders\x12\x1e.logistics.GetAllOrdersRequest\x1a\x1c.logistics.OrderListResponse\x12N\n" +
-	"\x11UpdateOrderStatus\x12\x1e.logistics.UpdateStatusRequest\x1a\x19.logistics.StatusResponse\x12A\n" +
-	"\bSaveCart\x12\x1a.logistics.SaveCartRequest\x1a\x19.logistics.StatusResponse\x12I\n" +
-	"\fAddWarehouse\x12\x1e.logistics.AddWarehouseRequest\x1a\x19.logistics.StatusResponse\x12D\n" +
-	"\x0eListWarehouses\x12\x10.logistics.Empty\x1a .logistics.ListWarehouseResponseB$Z\"logistics-engine/api;logistics_apib\x06proto3"
+	"\x11UpdateOrderStatus\x12\x1e.logistics.UpdateStatusRequest\x1a\x19.logistics.StatusResponse\x12G\n" +
+	"\vCancelOrder\x12\x1d.logistics.CancelOrderRequest\x1a\x19.logistics.StatusResponse\x12E\n" +
+	"\x10ReportOrderIssue\x12\x16.logistics.IssueReport\x1a\x19.logistics.StatusResponse\x12N\n" +
+	"\x11ResolveOrderIssue\x12\x1e.logistics.ResolveIssueRequest\x1a\x19.logistics.StatusResponse\x12I\n" +
+	"\fAssignDriver\x12\x1e.logistics.AssignDriverRequest\x1a\x19.logistics.StatusResponse\x12F\n" +
+	"\fAddOrderNote\x12\x1b.logistics.OrderNoteRequest\x1a\x19.logistics.StatusResponse\x12D\n" +
+	"\x0eListWarehouses\x12\x10.logistics.Empty\x1a .logistics.WarehouseListResponse\x12?\n" +
+	"\fAddWarehouse\x12\x14.logistics.Warehouse\x1a\x19.logistics.StatusResponse\x12@\n" +
+	"\rEditWarehouse\x12\x14.logistics.Warehouse\x1a\x19.logistics.StatusResponse\x12D\n" +
+	"\x0fRemoveWarehouse\x12\x16.logistics.WarehouseId\x1a\x19.logistics.StatusResponse\x12K\n" +
+	"\vListDrivers\x12\x1d.logistics.ListDriversRequest\x1a\x1d.logistics.DriverListResponse\x129\n" +
+	"\tAddDriver\x12\x11.logistics.Driver\x1a\x19.logistics.StatusResponse\x12:\n" +
+	"\n" +
+	"EditDriver\x12\x11.logistics.Driver\x1a\x19.logistics.StatusResponse\x12>\n" +
+	"\fRemoveDriver\x12\x13.logistics.DriverId\x1a\x19.logistics.StatusResponse\x12Q\n" +
+	"\x15SetDriverAvailability\x12\x1d.logistics.DriverAvailability\x1a\x19.logistics.StatusResponse\x12J\n" +
+	"\x10BroadcastDrivers\x12\x1b.logistics.BroadcastRequest\x1a\x19.logistics.StatusResponse\x12<\n" +
+	"\n" +
+	"ListPromos\x12\x10.logistics.Empty\x1a\x1c.logistics.PromoListResponse\x127\n" +
+	"\bAddPromo\x12\x10.logistics.Promo\x1a\x19.logistics.StatusResponse\x128\n" +
+	"\tEditPromo\x12\x10.logistics.Promo\x1a\x19.logistics.StatusResponse\x12<\n" +
+	"\vRemovePromo\x12\x12.logistics.PromoId\x1a\x19.logistics.StatusResponse\x12F\n" +
+	"\x0eApplyPromoCode\x12\x1c.logistics.ApplyPromoRequest\x1a\x16.logistics.PromoEffect\x12A\n" +
+	"\x11GetLoyaltyBalance\x12\x11.logistics.UserId\x1a\x19.logistics.LoyaltyBalance\x12N\n" +
+	"\x13AdjustLoyaltyPoints\x12\x1c.logistics.LoyaltyAdjustment\x1a\x19.logistics.StatusResponse\x12;\n" +
+	"\n" +
+	"GetProfile\x12\x11.logistics.UserId\x1a\x1a.logistics.CustomerProfile\x12F\n" +
+	"\rUpsertProfile\x12\x1a.logistics.CustomerProfile\x1a\x19.logistics.StatusResponse\x12G\n" +
+	"\x12ListSavedAddresses\x12\x11.logistics.UserId\x1a\x1e.logistics.AddressListResponse\x12A\n" +
+	"\vSaveAddress\x12\x17.logistics.SavedAddress\x1a\x19.logistics.StatusResponse\x12@\n" +
+	"\rDeleteAddress\x12\x14.logistics.AddressId\x1a\x19.logistics.StatusResponse\x129\n" +
+	"\rGetNotifPrefs\x12\x11.logistics.UserId\x1a\x15.logistics.NotifPrefs\x12A\n" +
+	"\rSetNotifPrefs\x12\x15.logistics.NotifPrefs\x1a\x19.logistics.StatusResponse\x12C\n" +
+	"\x10GetPendingNotifs\x12\x11.logistics.UserId\x1a\x1c.logistics.NotifListResponse\x12G\n" +
+	"\x0eSubscribeStock\x12\x1a.logistics.StockSubRequest\x1a\x19.logistics.StatusResponse\x12I\n" +
+	"\x10UnsubscribeStock\x12\x1a.logistics.StockSubRequest\x1a\x19.logistics.StatusResponse\x12<\n" +
+	"\n" +
+	"ListAdmins\x12\x10.logistics.Empty\x1a\x1c.logistics.AdminListResponse\x12;\n" +
+	"\bAddAdmin\x12\x14.logistics.AdminUser\x1a\x19.logistics.StatusResponse\x12@\n" +
+	"\vRemoveAdmin\x12\x16.logistics.AdminUserId\x1a\x19.logistics.StatusResponse\x12F\n" +
+	"\vGetAuditLog\x12\x1a.logistics.AuditLogRequest\x1a\x1b.logistics.AuditLogResponse\x12@\n" +
+	"\x11GetSystemSettings\x12\x10.logistics.Empty\x1a\x19.logistics.SystemSettings\x12I\n" +
+	"\x11SetSystemSettings\x12\x19.logistics.SystemSettings\x1a\x19.logistics.StatusResponse\x12K\n" +
+	"\x11GetRevenueSummary\x12\x1b.logistics.DateRangeRequest\x1a\x19.logistics.RevenueSummary\x12F\n" +
+	"\vGetTopItems\x12\x1a.logistics.TopItemsRequest\x1a\x1b.logistics.TopItemsResponse\x12O\n" +
+	"\x13GetOrderVolumeTrend\x12\x1b.logistics.DateRangeRequest\x1a\x1b.logistics.OrderVolumeTrend\x12L\n" +
+	"\x11GetLowStockReport\x12\x1a.logistics.LowStockRequest\x1a\x1b.logistics.LowStockResponseB$Z\"logistics-engine/api;logistics_apib\x06proto3"
 
 var (
 	file_logistics_proto_rawDescOnce sync.Once
@@ -1471,74 +5497,231 @@ func file_logistics_proto_rawDescGZIP() []byte {
 	return file_logistics_proto_rawDescData
 }
 
-var file_logistics_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_logistics_proto_msgTypes = make([]protoimpl.MessageInfo, 74)
 var file_logistics_proto_goTypes = []any{
 	(*Empty)(nil),                 // 0: logistics.Empty
 	(*HealthStatus)(nil),          // 1: logistics.HealthStatus
 	(*StatusResponse)(nil),        // 2: logistics.StatusResponse
 	(*Item)(nil),                  // 3: logistics.Item
-	(*CatalogResponse)(nil),       // 4: logistics.CatalogResponse
-	(*EditPriceRequest)(nil),      // 5: logistics.EditPriceRequest
-	(*EditStockRequest)(nil),      // 6: logistics.EditStockRequest
-	(*ItemId)(nil),                // 7: logistics.ItemId
-	(*CartItem)(nil),              // 8: logistics.CartItem
-	(*QuoteRequest)(nil),          // 9: logistics.QuoteRequest
-	(*QuoteResponse)(nil),         // 10: logistics.QuoteResponse
-	(*OrderRequest)(nil),          // 11: logistics.OrderRequest
-	(*OrderResponse)(nil),         // 12: logistics.OrderResponse
-	(*Order)(nil),                 // 13: logistics.Order
-	(*OrderListResponse)(nil),     // 14: logistics.OrderListResponse
-	(*UserId)(nil),                // 15: logistics.UserId
-	(*UpdateStatusRequest)(nil),   // 16: logistics.UpdateStatusRequest
-	(*GetAllOrdersRequest)(nil),   // 17: logistics.GetAllOrdersRequest
-	(*Warehouse)(nil),             // 18: logistics.Warehouse
-	(*AddWarehouseRequest)(nil),   // 19: logistics.AddWarehouseRequest
-	(*ListWarehouseResponse)(nil), // 20: logistics.ListWarehouseResponse
-	(*SaveCartRequest)(nil),       // 21: logistics.SaveCartRequest
-	nil,                           // 22: logistics.CatalogResponse.ItemsEntry
+	(*ItemId)(nil),                // 4: logistics.ItemId
+	(*CatalogRequest)(nil),        // 5: logistics.CatalogRequest
+	(*CatalogResponse)(nil),       // 6: logistics.CatalogResponse
+	(*EditPriceRequest)(nil),      // 7: logistics.EditPriceRequest
+	(*EditStockRequest)(nil),      // 8: logistics.EditStockRequest
+	(*BulkImportRequest)(nil),     // 9: logistics.BulkImportRequest
+	(*BulkImportResponse)(nil),    // 10: logistics.BulkImportResponse
+	(*CartItem)(nil),              // 11: logistics.CartItem
+	(*SaveCartRequest)(nil),       // 12: logistics.SaveCartRequest
+	(*CartResponse)(nil),          // 13: logistics.CartResponse
+	(*QuoteRequest)(nil),          // 14: logistics.QuoteRequest
+	(*QuoteResponse)(nil),         // 15: logistics.QuoteResponse
+	(*OrderRequest)(nil),          // 16: logistics.OrderRequest
+	(*OrderResponse)(nil),         // 17: logistics.OrderResponse
+	(*OrderId)(nil),               // 18: logistics.OrderId
+	(*Order)(nil),                 // 19: logistics.Order
+	(*OrderStatusEvent)(nil),      // 20: logistics.OrderStatusEvent
+	(*OrderNote)(nil),             // 21: logistics.OrderNote
+	(*OrderListResponse)(nil),     // 22: logistics.OrderListResponse
+	(*GetUserOrdersRequest)(nil),  // 23: logistics.GetUserOrdersRequest
+	(*GetAllOrdersRequest)(nil),   // 24: logistics.GetAllOrdersRequest
+	(*UpdateStatusRequest)(nil),   // 25: logistics.UpdateStatusRequest
+	(*CancelOrderRequest)(nil),    // 26: logistics.CancelOrderRequest
+	(*IssueReport)(nil),           // 27: logistics.IssueReport
+	(*ResolveIssueRequest)(nil),   // 28: logistics.ResolveIssueRequest
+	(*AssignDriverRequest)(nil),   // 29: logistics.AssignDriverRequest
+	(*OrderNoteRequest)(nil),      // 30: logistics.OrderNoteRequest
+	(*Warehouse)(nil),             // 31: logistics.Warehouse
+	(*WarehouseId)(nil),           // 32: logistics.WarehouseId
+	(*WarehouseListResponse)(nil), // 33: logistics.WarehouseListResponse
+	(*Driver)(nil),                // 34: logistics.Driver
+	(*DriverId)(nil),              // 35: logistics.DriverId
+	(*ListDriversRequest)(nil),    // 36: logistics.ListDriversRequest
+	(*DriverListResponse)(nil),    // 37: logistics.DriverListResponse
+	(*DriverAvailability)(nil),    // 38: logistics.DriverAvailability
+	(*BroadcastRequest)(nil),      // 39: logistics.BroadcastRequest
+	(*Promo)(nil),                 // 40: logistics.Promo
+	(*PromoId)(nil),               // 41: logistics.PromoId
+	(*PromoListResponse)(nil),     // 42: logistics.PromoListResponse
+	(*ApplyPromoRequest)(nil),     // 43: logistics.ApplyPromoRequest
+	(*PromoEffect)(nil),           // 44: logistics.PromoEffect
+	(*LoyaltyBalance)(nil),        // 45: logistics.LoyaltyBalance
+	(*LoyaltyAdjustment)(nil),     // 46: logistics.LoyaltyAdjustment
+	(*CustomerProfile)(nil),       // 47: logistics.CustomerProfile
+	(*UserId)(nil),                // 48: logistics.UserId
+	(*SavedAddress)(nil),          // 49: logistics.SavedAddress
+	(*AddressId)(nil),             // 50: logistics.AddressId
+	(*AddressListResponse)(nil),   // 51: logistics.AddressListResponse
+	(*NotifPrefs)(nil),            // 52: logistics.NotifPrefs
+	(*Notif)(nil),                 // 53: logistics.Notif
+	(*NotifListResponse)(nil),     // 54: logistics.NotifListResponse
+	(*StockSubRequest)(nil),       // 55: logistics.StockSubRequest
+	(*AdminUser)(nil),             // 56: logistics.AdminUser
+	(*AdminUserId)(nil),           // 57: logistics.AdminUserId
+	(*AdminListResponse)(nil),     // 58: logistics.AdminListResponse
+	(*AuditLogRequest)(nil),       // 59: logistics.AuditLogRequest
+	(*AuditEntry)(nil),            // 60: logistics.AuditEntry
+	(*AuditLogResponse)(nil),      // 61: logistics.AuditLogResponse
+	(*SystemSettings)(nil),        // 62: logistics.SystemSettings
+	(*DateRangeRequest)(nil),      // 63: logistics.DateRangeRequest
+	(*RevenueSummary)(nil),        // 64: logistics.RevenueSummary
+	(*TopItemsRequest)(nil),       // 65: logistics.TopItemsRequest
+	(*TopItemEntry)(nil),          // 66: logistics.TopItemEntry
+	(*TopItemsResponse)(nil),      // 67: logistics.TopItemsResponse
+	(*OrderVolumePoint)(nil),      // 68: logistics.OrderVolumePoint
+	(*OrderVolumeTrend)(nil),      // 69: logistics.OrderVolumeTrend
+	(*LowStockRequest)(nil),       // 70: logistics.LowStockRequest
+	(*LowStockEntry)(nil),         // 71: logistics.LowStockEntry
+	(*LowStockResponse)(nil),      // 72: logistics.LowStockResponse
+	(*MaintenanceWindow)(nil),     // 73: logistics.MaintenanceWindow
 }
 var file_logistics_proto_depIdxs = []int32{
-	22, // 0: logistics.CatalogResponse.items:type_name -> logistics.CatalogResponse.ItemsEntry
-	8,  // 1: logistics.QuoteRequest.cart_items:type_name -> logistics.CartItem
-	8,  // 2: logistics.QuoteResponse.cart_items:type_name -> logistics.CartItem
-	13, // 3: logistics.OrderListResponse.orders:type_name -> logistics.Order
-	18, // 4: logistics.ListWarehouseResponse.warehouses:type_name -> logistics.Warehouse
-	3,  // 5: logistics.CatalogResponse.ItemsEntry.value:type_name -> logistics.Item
-	0,  // 6: logistics.LogisticsEngine.CheckHealth:input_type -> logistics.Empty
-	0,  // 7: logistics.LogisticsEngine.ToggleMaintenance:input_type -> logistics.Empty
-	0,  // 8: logistics.LogisticsEngine.GetCatalog:input_type -> logistics.Empty
-	3,  // 9: logistics.LogisticsEngine.AddItem:input_type -> logistics.Item
-	5,  // 10: logistics.LogisticsEngine.EditItemPrice:input_type -> logistics.EditPriceRequest
-	6,  // 11: logistics.LogisticsEngine.EditItemStock:input_type -> logistics.EditStockRequest
-	7,  // 12: logistics.LogisticsEngine.RemoveItem:input_type -> logistics.ItemId
-	9,  // 13: logistics.LogisticsEngine.CalculateQuote:input_type -> logistics.QuoteRequest
-	11, // 14: logistics.LogisticsEngine.PlaceOrder:input_type -> logistics.OrderRequest
-	15, // 15: logistics.LogisticsEngine.GetActiveOrders:input_type -> logistics.UserId
-	17, // 16: logistics.LogisticsEngine.GetAllOrders:input_type -> logistics.GetAllOrdersRequest
-	16, // 17: logistics.LogisticsEngine.UpdateOrderStatus:input_type -> logistics.UpdateStatusRequest
-	21, // 18: logistics.LogisticsEngine.SaveCart:input_type -> logistics.SaveCartRequest
-	19, // 19: logistics.LogisticsEngine.AddWarehouse:input_type -> logistics.AddWarehouseRequest
-	0,  // 20: logistics.LogisticsEngine.ListWarehouses:input_type -> logistics.Empty
-	1,  // 21: logistics.LogisticsEngine.CheckHealth:output_type -> logistics.HealthStatus
-	2,  // 22: logistics.LogisticsEngine.ToggleMaintenance:output_type -> logistics.StatusResponse
-	4,  // 23: logistics.LogisticsEngine.GetCatalog:output_type -> logistics.CatalogResponse
-	2,  // 24: logistics.LogisticsEngine.AddItem:output_type -> logistics.StatusResponse
-	2,  // 25: logistics.LogisticsEngine.EditItemPrice:output_type -> logistics.StatusResponse
-	2,  // 26: logistics.LogisticsEngine.EditItemStock:output_type -> logistics.StatusResponse
-	2,  // 27: logistics.LogisticsEngine.RemoveItem:output_type -> logistics.StatusResponse
-	10, // 28: logistics.LogisticsEngine.CalculateQuote:output_type -> logistics.QuoteResponse
-	12, // 29: logistics.LogisticsEngine.PlaceOrder:output_type -> logistics.OrderResponse
-	14, // 30: logistics.LogisticsEngine.GetActiveOrders:output_type -> logistics.OrderListResponse
-	14, // 31: logistics.LogisticsEngine.GetAllOrders:output_type -> logistics.OrderListResponse
-	2,  // 32: logistics.LogisticsEngine.UpdateOrderStatus:output_type -> logistics.StatusResponse
-	2,  // 33: logistics.LogisticsEngine.SaveCart:output_type -> logistics.StatusResponse
-	2,  // 34: logistics.LogisticsEngine.AddWarehouse:output_type -> logistics.StatusResponse
-	20, // 35: logistics.LogisticsEngine.ListWarehouses:output_type -> logistics.ListWarehouseResponse
-	21, // [21:36] is the sub-list for method output_type
-	6,  // [6:21] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	3,  // 0: logistics.CatalogResponse.items:type_name -> logistics.Item
+	3,  // 1: logistics.BulkImportRequest.items:type_name -> logistics.Item
+	11, // 2: logistics.SaveCartRequest.items:type_name -> logistics.CartItem
+	11, // 3: logistics.CartResponse.items:type_name -> logistics.CartItem
+	11, // 4: logistics.QuoteRequest.cart_items:type_name -> logistics.CartItem
+	20, // 5: logistics.Order.history:type_name -> logistics.OrderStatusEvent
+	21, // 6: logistics.Order.notes:type_name -> logistics.OrderNote
+	19, // 7: logistics.OrderListResponse.orders:type_name -> logistics.Order
+	31, // 8: logistics.WarehouseListResponse.warehouses:type_name -> logistics.Warehouse
+	34, // 9: logistics.DriverListResponse.drivers:type_name -> logistics.Driver
+	40, // 10: logistics.PromoListResponse.promos:type_name -> logistics.Promo
+	49, // 11: logistics.AddressListResponse.addresses:type_name -> logistics.SavedAddress
+	53, // 12: logistics.NotifListResponse.notifs:type_name -> logistics.Notif
+	56, // 13: logistics.AdminListResponse.admins:type_name -> logistics.AdminUser
+	60, // 14: logistics.AuditLogResponse.entries:type_name -> logistics.AuditEntry
+	66, // 15: logistics.TopItemsResponse.items:type_name -> logistics.TopItemEntry
+	68, // 16: logistics.OrderVolumeTrend.points:type_name -> logistics.OrderVolumePoint
+	71, // 17: logistics.LowStockResponse.items:type_name -> logistics.LowStockEntry
+	0,  // 18: logistics.LogisticsEngine.CheckHealth:input_type -> logistics.Empty
+	0,  // 19: logistics.LogisticsEngine.ToggleMaintenance:input_type -> logistics.Empty
+	73, // 20: logistics.LogisticsEngine.ScheduleMaintenance:input_type -> logistics.MaintenanceWindow
+	5,  // 21: logistics.LogisticsEngine.GetCatalog:input_type -> logistics.CatalogRequest
+	4,  // 22: logistics.LogisticsEngine.GetItem:input_type -> logistics.ItemId
+	3,  // 23: logistics.LogisticsEngine.AddItem:input_type -> logistics.Item
+	3,  // 24: logistics.LogisticsEngine.EditItem:input_type -> logistics.Item
+	7,  // 25: logistics.LogisticsEngine.EditItemPrice:input_type -> logistics.EditPriceRequest
+	8,  // 26: logistics.LogisticsEngine.EditItemStock:input_type -> logistics.EditStockRequest
+	4,  // 27: logistics.LogisticsEngine.RemoveItem:input_type -> logistics.ItemId
+	9,  // 28: logistics.LogisticsEngine.BulkImportItems:input_type -> logistics.BulkImportRequest
+	12, // 29: logistics.LogisticsEngine.SaveCart:input_type -> logistics.SaveCartRequest
+	48, // 30: logistics.LogisticsEngine.GetCart:input_type -> logistics.UserId
+	48, // 31: logistics.LogisticsEngine.ClearCart:input_type -> logistics.UserId
+	14, // 32: logistics.LogisticsEngine.CalculateQuote:input_type -> logistics.QuoteRequest
+	16, // 33: logistics.LogisticsEngine.PlaceOrder:input_type -> logistics.OrderRequest
+	18, // 34: logistics.LogisticsEngine.GetOrder:input_type -> logistics.OrderId
+	23, // 35: logistics.LogisticsEngine.GetUserOrders:input_type -> logistics.GetUserOrdersRequest
+	24, // 36: logistics.LogisticsEngine.GetAllOrders:input_type -> logistics.GetAllOrdersRequest
+	25, // 37: logistics.LogisticsEngine.UpdateOrderStatus:input_type -> logistics.UpdateStatusRequest
+	26, // 38: logistics.LogisticsEngine.CancelOrder:input_type -> logistics.CancelOrderRequest
+	27, // 39: logistics.LogisticsEngine.ReportOrderIssue:input_type -> logistics.IssueReport
+	28, // 40: logistics.LogisticsEngine.ResolveOrderIssue:input_type -> logistics.ResolveIssueRequest
+	29, // 41: logistics.LogisticsEngine.AssignDriver:input_type -> logistics.AssignDriverRequest
+	30, // 42: logistics.LogisticsEngine.AddOrderNote:input_type -> logistics.OrderNoteRequest
+	0,  // 43: logistics.LogisticsEngine.ListWarehouses:input_type -> logistics.Empty
+	31, // 44: logistics.LogisticsEngine.AddWarehouse:input_type -> logistics.Warehouse
+	31, // 45: logistics.LogisticsEngine.EditWarehouse:input_type -> logistics.Warehouse
+	32, // 46: logistics.LogisticsEngine.RemoveWarehouse:input_type -> logistics.WarehouseId
+	36, // 47: logistics.LogisticsEngine.ListDrivers:input_type -> logistics.ListDriversRequest
+	34, // 48: logistics.LogisticsEngine.AddDriver:input_type -> logistics.Driver
+	34, // 49: logistics.LogisticsEngine.EditDriver:input_type -> logistics.Driver
+	35, // 50: logistics.LogisticsEngine.RemoveDriver:input_type -> logistics.DriverId
+	38, // 51: logistics.LogisticsEngine.SetDriverAvailability:input_type -> logistics.DriverAvailability
+	39, // 52: logistics.LogisticsEngine.BroadcastDrivers:input_type -> logistics.BroadcastRequest
+	0,  // 53: logistics.LogisticsEngine.ListPromos:input_type -> logistics.Empty
+	40, // 54: logistics.LogisticsEngine.AddPromo:input_type -> logistics.Promo
+	40, // 55: logistics.LogisticsEngine.EditPromo:input_type -> logistics.Promo
+	41, // 56: logistics.LogisticsEngine.RemovePromo:input_type -> logistics.PromoId
+	43, // 57: logistics.LogisticsEngine.ApplyPromoCode:input_type -> logistics.ApplyPromoRequest
+	48, // 58: logistics.LogisticsEngine.GetLoyaltyBalance:input_type -> logistics.UserId
+	46, // 59: logistics.LogisticsEngine.AdjustLoyaltyPoints:input_type -> logistics.LoyaltyAdjustment
+	48, // 60: logistics.LogisticsEngine.GetProfile:input_type -> logistics.UserId
+	47, // 61: logistics.LogisticsEngine.UpsertProfile:input_type -> logistics.CustomerProfile
+	48, // 62: logistics.LogisticsEngine.ListSavedAddresses:input_type -> logistics.UserId
+	49, // 63: logistics.LogisticsEngine.SaveAddress:input_type -> logistics.SavedAddress
+	50, // 64: logistics.LogisticsEngine.DeleteAddress:input_type -> logistics.AddressId
+	48, // 65: logistics.LogisticsEngine.GetNotifPrefs:input_type -> logistics.UserId
+	52, // 66: logistics.LogisticsEngine.SetNotifPrefs:input_type -> logistics.NotifPrefs
+	48, // 67: logistics.LogisticsEngine.GetPendingNotifs:input_type -> logistics.UserId
+	55, // 68: logistics.LogisticsEngine.SubscribeStock:input_type -> logistics.StockSubRequest
+	55, // 69: logistics.LogisticsEngine.UnsubscribeStock:input_type -> logistics.StockSubRequest
+	0,  // 70: logistics.LogisticsEngine.ListAdmins:input_type -> logistics.Empty
+	56, // 71: logistics.LogisticsEngine.AddAdmin:input_type -> logistics.AdminUser
+	57, // 72: logistics.LogisticsEngine.RemoveAdmin:input_type -> logistics.AdminUserId
+	59, // 73: logistics.LogisticsEngine.GetAuditLog:input_type -> logistics.AuditLogRequest
+	0,  // 74: logistics.LogisticsEngine.GetSystemSettings:input_type -> logistics.Empty
+	62, // 75: logistics.LogisticsEngine.SetSystemSettings:input_type -> logistics.SystemSettings
+	63, // 76: logistics.LogisticsEngine.GetRevenueSummary:input_type -> logistics.DateRangeRequest
+	65, // 77: logistics.LogisticsEngine.GetTopItems:input_type -> logistics.TopItemsRequest
+	63, // 78: logistics.LogisticsEngine.GetOrderVolumeTrend:input_type -> logistics.DateRangeRequest
+	70, // 79: logistics.LogisticsEngine.GetLowStockReport:input_type -> logistics.LowStockRequest
+	1,  // 80: logistics.LogisticsEngine.CheckHealth:output_type -> logistics.HealthStatus
+	2,  // 81: logistics.LogisticsEngine.ToggleMaintenance:output_type -> logistics.StatusResponse
+	2,  // 82: logistics.LogisticsEngine.ScheduleMaintenance:output_type -> logistics.StatusResponse
+	6,  // 83: logistics.LogisticsEngine.GetCatalog:output_type -> logistics.CatalogResponse
+	3,  // 84: logistics.LogisticsEngine.GetItem:output_type -> logistics.Item
+	2,  // 85: logistics.LogisticsEngine.AddItem:output_type -> logistics.StatusResponse
+	2,  // 86: logistics.LogisticsEngine.EditItem:output_type -> logistics.StatusResponse
+	2,  // 87: logistics.LogisticsEngine.EditItemPrice:output_type -> logistics.StatusResponse
+	2,  // 88: logistics.LogisticsEngine.EditItemStock:output_type -> logistics.StatusResponse
+	2,  // 89: logistics.LogisticsEngine.RemoveItem:output_type -> logistics.StatusResponse
+	10, // 90: logistics.LogisticsEngine.BulkImportItems:output_type -> logistics.BulkImportResponse
+	2,  // 91: logistics.LogisticsEngine.SaveCart:output_type -> logistics.StatusResponse
+	13, // 92: logistics.LogisticsEngine.GetCart:output_type -> logistics.CartResponse
+	2,  // 93: logistics.LogisticsEngine.ClearCart:output_type -> logistics.StatusResponse
+	15, // 94: logistics.LogisticsEngine.CalculateQuote:output_type -> logistics.QuoteResponse
+	17, // 95: logistics.LogisticsEngine.PlaceOrder:output_type -> logistics.OrderResponse
+	19, // 96: logistics.LogisticsEngine.GetOrder:output_type -> logistics.Order
+	22, // 97: logistics.LogisticsEngine.GetUserOrders:output_type -> logistics.OrderListResponse
+	22, // 98: logistics.LogisticsEngine.GetAllOrders:output_type -> logistics.OrderListResponse
+	2,  // 99: logistics.LogisticsEngine.UpdateOrderStatus:output_type -> logistics.StatusResponse
+	2,  // 100: logistics.LogisticsEngine.CancelOrder:output_type -> logistics.StatusResponse
+	2,  // 101: logistics.LogisticsEngine.ReportOrderIssue:output_type -> logistics.StatusResponse
+	2,  // 102: logistics.LogisticsEngine.ResolveOrderIssue:output_type -> logistics.StatusResponse
+	2,  // 103: logistics.LogisticsEngine.AssignDriver:output_type -> logistics.StatusResponse
+	2,  // 104: logistics.LogisticsEngine.AddOrderNote:output_type -> logistics.StatusResponse
+	33, // 105: logistics.LogisticsEngine.ListWarehouses:output_type -> logistics.WarehouseListResponse
+	2,  // 106: logistics.LogisticsEngine.AddWarehouse:output_type -> logistics.StatusResponse
+	2,  // 107: logistics.LogisticsEngine.EditWarehouse:output_type -> logistics.StatusResponse
+	2,  // 108: logistics.LogisticsEngine.RemoveWarehouse:output_type -> logistics.StatusResponse
+	37, // 109: logistics.LogisticsEngine.ListDrivers:output_type -> logistics.DriverListResponse
+	2,  // 110: logistics.LogisticsEngine.AddDriver:output_type -> logistics.StatusResponse
+	2,  // 111: logistics.LogisticsEngine.EditDriver:output_type -> logistics.StatusResponse
+	2,  // 112: logistics.LogisticsEngine.RemoveDriver:output_type -> logistics.StatusResponse
+	2,  // 113: logistics.LogisticsEngine.SetDriverAvailability:output_type -> logistics.StatusResponse
+	2,  // 114: logistics.LogisticsEngine.BroadcastDrivers:output_type -> logistics.StatusResponse
+	42, // 115: logistics.LogisticsEngine.ListPromos:output_type -> logistics.PromoListResponse
+	2,  // 116: logistics.LogisticsEngine.AddPromo:output_type -> logistics.StatusResponse
+	2,  // 117: logistics.LogisticsEngine.EditPromo:output_type -> logistics.StatusResponse
+	2,  // 118: logistics.LogisticsEngine.RemovePromo:output_type -> logistics.StatusResponse
+	44, // 119: logistics.LogisticsEngine.ApplyPromoCode:output_type -> logistics.PromoEffect
+	45, // 120: logistics.LogisticsEngine.GetLoyaltyBalance:output_type -> logistics.LoyaltyBalance
+	2,  // 121: logistics.LogisticsEngine.AdjustLoyaltyPoints:output_type -> logistics.StatusResponse
+	47, // 122: logistics.LogisticsEngine.GetProfile:output_type -> logistics.CustomerProfile
+	2,  // 123: logistics.LogisticsEngine.UpsertProfile:output_type -> logistics.StatusResponse
+	51, // 124: logistics.LogisticsEngine.ListSavedAddresses:output_type -> logistics.AddressListResponse
+	2,  // 125: logistics.LogisticsEngine.SaveAddress:output_type -> logistics.StatusResponse
+	2,  // 126: logistics.LogisticsEngine.DeleteAddress:output_type -> logistics.StatusResponse
+	52, // 127: logistics.LogisticsEngine.GetNotifPrefs:output_type -> logistics.NotifPrefs
+	2,  // 128: logistics.LogisticsEngine.SetNotifPrefs:output_type -> logistics.StatusResponse
+	54, // 129: logistics.LogisticsEngine.GetPendingNotifs:output_type -> logistics.NotifListResponse
+	2,  // 130: logistics.LogisticsEngine.SubscribeStock:output_type -> logistics.StatusResponse
+	2,  // 131: logistics.LogisticsEngine.UnsubscribeStock:output_type -> logistics.StatusResponse
+	58, // 132: logistics.LogisticsEngine.ListAdmins:output_type -> logistics.AdminListResponse
+	2,  // 133: logistics.LogisticsEngine.AddAdmin:output_type -> logistics.StatusResponse
+	2,  // 134: logistics.LogisticsEngine.RemoveAdmin:output_type -> logistics.StatusResponse
+	61, // 135: logistics.LogisticsEngine.GetAuditLog:output_type -> logistics.AuditLogResponse
+	62, // 136: logistics.LogisticsEngine.GetSystemSettings:output_type -> logistics.SystemSettings
+	2,  // 137: logistics.LogisticsEngine.SetSystemSettings:output_type -> logistics.StatusResponse
+	64, // 138: logistics.LogisticsEngine.GetRevenueSummary:output_type -> logistics.RevenueSummary
+	67, // 139: logistics.LogisticsEngine.GetTopItems:output_type -> logistics.TopItemsResponse
+	69, // 140: logistics.LogisticsEngine.GetOrderVolumeTrend:output_type -> logistics.OrderVolumeTrend
+	72, // 141: logistics.LogisticsEngine.GetLowStockReport:output_type -> logistics.LowStockResponse
+	80, // [80:142] is the sub-list for method output_type
+	18, // [18:80] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_logistics_proto_init() }
@@ -1552,7 +5735,7 @@ func file_logistics_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_logistics_proto_rawDesc), len(file_logistics_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   74,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

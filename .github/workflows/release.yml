@@ -43,6 +43,19 @@ jobs:
             engine/go.sum
             supervisor/go.sum
 
+      # ── Protobuf ────────────────────────────────────────────────────────────
+      - name: Generate Go proto bindings
+        run: |
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.3
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          
+          protoc --proto_path=engine/api \
+            --go_out=engine/api     --go_opt=paths=source_relative \
+            --go-grpc_out=engine/api --go-grpc_opt=paths=source_relative \
+            engine/api/logistics.proto
+
       # ── Binaries ──────────────────────────────────────────────────────────
       - name: Build engine binary (linux/amd64)
         working-directory: engine
@@ -77,12 +90,12 @@ jobs:
       - name: Build & push engine image
         uses: docker/build-push-action@v6
         with:
-          context: engine
+          context: .
           file: engine/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_ENGINE }}:${{ github.ref_name }}
-            ${{ env.IMAGE_ENGINE }}:latest
+            ${{ env.IMAGE_ENGINE }}:v10-latest
           build-args: BUILD_VERSION=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -95,7 +108,7 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_BOT }}:${{ github.ref_name }}
-            ${{ env.IMAGE_BOT }}:latest
+            ${{ env.IMAGE_BOT }}:v10-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -141,32 +154,48 @@ jobs:
           mkdir -p ota_payload
           cat > ota_payload/docker-compose.yml << 'COMPOSE'
           services:
+            postgres:
+              image: postgres:16-alpine
+              restart: unless-stopped
+              env_file: .env
+              environment:
+                - POSTGRES_USER=${POSTGRES_USER}
+                - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+                - POSTGRES_DB=${POSTGRES_DB}
+              volumes:
+                - postgres_data:/var/lib/postgresql/data
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+                start_period: 15s
+              networks: [backend]
             engine:
               image: ${{ env.IMAGE_ENGINE }}:${{ github.ref_name }}
               container_name: logistics_engine
               restart: unless-stopped
               env_file: .env
               environment:
+                - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
                 - INTERNAL_TOKEN=${INTERNAL_TOKEN}
                 - MAPBOX_TOKEN=${MAPBOX_TOKEN}
-                - LICENSE_KEY=${LICENSE_KEY}
+                - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+                - LICENSE_PUBLIC_KEY=${LICENSE_PUBLIC_KEY:-}
                 - BUILD_VERSION=${{ github.ref_name }}
               volumes:
-                - engine_data:/app/data
                 - sockets:/app/sockets
+                - backups:/app/backups
+              depends_on:
+                postgres:
+                  condition: service_healthy
               healthcheck:
-                test: ["CMD", "test", "-S", "/app/sockets/logistics.sock"]
+                test: ["CMD-SHELL", "test -S /app/sockets/logistics.sock"]
                 interval: 10s
                 timeout: 5s
                 retries: 6
                 start_period: 20s
-              deploy:
-                resources:
-                  limits:   {cpus: "1.5",  memory: 512M}
-                  reservations: {cpus: "0.25", memory: 128M}
-              logging:
-                driver: json-file
-                options: {max-size: 20m, max-file: "5"}
+              networks: [backend]
             bot:
               image: ${{ env.IMAGE_BOT }}:${{ github.ref_name }}
               container_name: logistics_bot
@@ -175,22 +204,20 @@ jobs:
               environment:
                 - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
                 - INTERNAL_TOKEN=${INTERNAL_TOKEN}
-                - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+                - ENGINE_SOCKET=/app/sockets/logistics.sock
               volumes:
-                - sockets:/app/sockets
+                - sockets:/app/sockets:ro
               depends_on:
                 engine:
                   condition: service_healthy
-              deploy:
-                resources:
-                  limits:   {cpus: "0.75", memory: 256M}
-                  reservations: {cpus: "0.10", memory: 64M}
-              logging:
-                driver: json-file
-                options: {max-size: 20m, max-file: "5"}
+              networks: [backend]
           volumes:
-            engine_data: {driver: local}
-            sockets:     {driver: local}
+            postgres_data: {driver: local}
+            sockets:       {driver: local}
+            backups:       {driver: local}
+          networks:
+            backend:
+              driver: bridge
           COMPOSE
           tar -czf update.tar.gz -C ota_payload docker-compose.yml
           
@@ -230,16 +257,16 @@ jobs:
           aws s3 cp ./install.sh $BUCKET/install.sh \
             --endpoint-url $ENDPOINT
 
-          # 4. Mirror to a 'latest' folder for static CDN URLs
-          aws s3 cp ./dist/logistics-supervisor-linux-amd64 s3://${{ secrets.R2_BUCKET_NAME }}/latest/supervisor \
+          # 4. Mirror to a 'v10-latest' folder for static CDN URLs
+          aws s3 cp ./dist/logistics-supervisor-linux-amd64 s3://${{ secrets.R2_BUCKET_NAME }}/v10-latest/supervisor \
             --endpoint-url $ENDPOINT
-          aws s3 cp ./install.sh s3://${{ secrets.R2_BUCKET_NAME }}/latest/install.sh \
+          aws s3 cp ./install.sh s3://${{ secrets.R2_BUCKET_NAME }}/v10-latest/install.sh \
             --endpoint-url $ENDPOINT
 
           # 5. Upload OTA updates
           aws s3 cp ./update.tar.gz $BUCKET/update.tar.gz \
             --endpoint-url $ENDPOINT
-          aws s3 cp ./manifest.json s3://${{ secrets.R2_BUCKET_NAME }}/latest/manifest.json \
+          aws s3 cp ./manifest.json s3://${{ secrets.R2_BUCKET_NAME }}/v10-latest/manifest.json \
             --endpoint-url $ENDPOINT
 
           echo "✅ Upload complete!"
