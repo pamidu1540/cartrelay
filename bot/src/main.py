@@ -1,11 +1,5 @@
 """
-main.py — logistics bot entry point (v5)
-
-Fixes addressed:
-  BUG-001: gRPC channel pool started in post_init (not at module import time)
-  BUG-003: SIGTERM handler flushes pending carts before shutdown
-  BUG-016: stale cart flush tasks cancelled on conversation reset
-  BUG-030: ConversationHandler states cleared on /start
+main.py — logistics bot entry point
 """
 
 from __future__ import annotations
@@ -30,6 +24,11 @@ from admin_handlers import (
     cmd_admin,
     cmd_add_item,
     cb_admin_menu,
+    cb_item_add_start,
+    cb_item_category_callback,
+    cb_item_photo_skip,
+    cb_item_desc_skip,
+    cb_item_cancel,
     msg_item_name,
     msg_item_price,
     msg_item_stock,
@@ -101,15 +100,18 @@ from admin_handlers import (
     # wizard callbacks
     cb_wh_remove,
     cb_wh_add_start,
+    cb_wh_cancel,
     cb_driver_remove,
     cb_driver_add_start,
     cb_driver_add_vehicle,
+    cb_driver_cancel,
     cb_admin_remove,
     cb_admin_add_start,
     cb_admin_add_role,
     cb_promo_remove,
     cb_promo_add_start,
     cb_promo_flow_type,
+    cb_promo_cancel,
     cb_set_setting_key,
 )
 from cart_manager import CartManager
@@ -316,22 +318,59 @@ def build_application() -> Application:
             CallbackQueryHandler(cb_promo_add_start, pattern=r"^promo_add:start$"),
             CallbackQueryHandler(cb_admin_add_start, pattern=r"^admin_add:start$"),
             CallbackQueryHandler(cb_set_setting_key, pattern=r"^set_key:"),
+            CallbackQueryHandler(cb_item_add_start, pattern=r"^item_add:start$"),
         ],
         states={
-            STATE_ITEM_NAME:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_name)],
-            STATE_ITEM_PRICE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_price)],
-            STATE_ITEM_STOCK:   [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_stock)],
-            STATE_ITEM_CATEGORY:[MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_category)],
-            STATE_ITEM_PHOTO:   [MessageHandler(filters.PHOTO, msg_item_photo)],
-            STATE_ITEM_DESC:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_description)],
+            STATE_ITEM_NAME:    [
+                CallbackQueryHandler(cb_item_cancel, pattern=r"^item_add:cancel$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_name)
+            ],
+            STATE_ITEM_PRICE:   [
+                CallbackQueryHandler(cb_item_cancel, pattern=r"^item_add:cancel$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_price)
+            ],
+            STATE_ITEM_STOCK:   [
+                CallbackQueryHandler(cb_item_cancel, pattern=r"^item_add:cancel$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_stock)
+            ],
+            STATE_ITEM_CATEGORY:[
+                CallbackQueryHandler(cb_item_category_callback, pattern=r"^item_cat_select:"),
+                CallbackQueryHandler(cb_item_cancel, pattern=r"^item_add:cancel$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_category)
+            ],
+            STATE_ITEM_PHOTO:   [
+                CallbackQueryHandler(cb_item_photo_skip, pattern=r"^item_photo_skip$"),
+                CallbackQueryHandler(cb_item_cancel, pattern=r"^item_add:cancel$"),
+                MessageHandler(filters.PHOTO | (filters.TEXT & ~filters.COMMAND), msg_item_photo)
+            ],
+            STATE_ITEM_DESC:    [
+                CallbackQueryHandler(cb_item_desc_skip, pattern=r"^item_desc_skip$"),
+                CallbackQueryHandler(cb_item_cancel, pattern=r"^item_add:cancel$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_description)
+            ],
             STATE_STATUS_REASON:[MessageHandler(filters.TEXT & ~filters.COMMAND, msg_status_reason)],
             STATE_NOTE_TEXT:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_note_text)],
             STATE_ORDER_SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_order_search_query)],
-            STATE_WH_NAME:      [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_warehouse_name)],
-            STATE_WH_COORDS:    [MessageHandler(filters.LOCATION | (filters.TEXT & ~filters.COMMAND), msg_warehouse_coords)],
-            STATE_DRV_NAME:     [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_driver_name)],
-            STATE_DRV_PHONE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_driver_phone)],
-            STATE_PROMO_DEF:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_promo_def)],
+            STATE_WH_NAME:      [
+                CallbackQueryHandler(cb_wh_cancel, pattern=r"^wh_add:cancel$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_warehouse_name)
+            ],
+            STATE_WH_COORDS:    [
+                CallbackQueryHandler(cb_wh_cancel, pattern=r"^wh_add:cancel$"),
+                MessageHandler(filters.LOCATION | (filters.TEXT & ~filters.COMMAND), msg_warehouse_coords)
+            ],
+            STATE_DRV_NAME:     [
+                CallbackQueryHandler(cb_driver_cancel, pattern=r"^driver_add:cancel$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_driver_name)
+            ],
+            STATE_DRV_PHONE:    [
+                CallbackQueryHandler(cb_driver_cancel, pattern=r"^driver_add:cancel$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_driver_phone)
+            ],
+            STATE_PROMO_DEF:    [
+                CallbackQueryHandler(cb_promo_cancel, pattern=r"^promo_add:cancel$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_promo_def)
+            ],
             STATE_BROADCAST:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_broadcast_text)],
             STATE_LOYALTY_ADJ:  [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_loyalty_adjustment)],
             STATE_NEW_ADMIN:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_new_admin)],

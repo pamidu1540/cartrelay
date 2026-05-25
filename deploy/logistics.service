@@ -17,7 +17,7 @@ ExecStart=/usr/bin/docker compose up -d --pull always
 ExecStop=/usr/bin/docker compose stop --timeout 30
 
 # Reload — Pull fresh images and recreate only if the image changed
-ExecReload=/bin/bash -c '/usr/bin/docker compose pull && /usr/bin/docker compose up -d --no-recreate'
+ExecReload=/bin/bash -c '/usr/bin/docker compose pull && /usr/bin/docker compose up -d'
 
 TimeoutStartSec=180
 TimeoutStopSec=45
