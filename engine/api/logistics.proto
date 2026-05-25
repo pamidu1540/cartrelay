@@ -2,108 +2,271 @@ syntax = "proto3";
 package logistics;
 option go_package = "logistics-engine/api;logistics_api";
 
-service LogisticsEngine {
-  rpc CheckHealth       (Empty)               returns (HealthStatus);
-  rpc ToggleMaintenance (Empty)               returns (StatusResponse);
-  rpc GetCatalog        (Empty)               returns (CatalogResponse);
-  rpc AddItem           (Item)                returns (StatusResponse);
-  rpc EditItemPrice     (EditPriceRequest)    returns (StatusResponse);
-  rpc EditItemStock     (EditStockRequest)    returns (StatusResponse);
-  rpc RemoveItem        (ItemId)              returns (StatusResponse);
-  rpc CalculateQuote    (QuoteRequest)        returns (QuoteResponse);
-  rpc PlaceOrder        (OrderRequest)        returns (OrderResponse);
-  rpc GetActiveOrders   (UserId)              returns (OrderListResponse);
-  rpc GetAllOrders      (GetAllOrdersRequest) returns (OrderListResponse);
-  rpc UpdateOrderStatus (UpdateStatusRequest) returns (StatusResponse);
-  rpc SaveCart          (SaveCartRequest)     returns (StatusResponse);
+// ═══════════════════════════════════════════════════════════════════════════
+//  LogisticsEngine gRPC service — full rewrite v5
+//  Changes vs v4:
+//    • PostgreSQL-backed — all queries use $N placeholders
+//    • Idempotency key on PlaceOrder  (fixes BUG-012)
+//    • Pagination on every list RPC   (fixes PERF-002)
+//    • Cart ownership validated        (fixes BUG-017)
+//    • Status machine enforced         (fixes BUG-029)
+//    • Order history, reorder, cancel, issue-report RPCs (Phase 2)
+//    • Warehouse / depot CRUD          (Phase 1 A-001..A-003)
+//    • Driver management               (Phase 1 A-026..A-033)
+//    • Promo / loyalty                 (Phase 3 U-037..U-044)
+//    • Audit log viewer RPC            (Phase 4 A-056)
+//    • Admin user management RPC       (Phase 1 A-055)
+//    • Notification preference RPC     (Phase 2 U-048)
+// ═══════════════════════════════════════════════════════════════════════════
 
-  // --- Warehouse Management ---
-  rpc AddWarehouse      (AddWarehouseRequest) returns (StatusResponse);
-  rpc ListWarehouses    (Empty)               returns (ListWarehouseResponse);
+service LogisticsEngine {
+  // ── Health & system ────────────────────────────────────────────────────
+  rpc CheckHealth         (Empty)                   returns (HealthStatus);
+  rpc ToggleMaintenance   (Empty)                   returns (StatusResponse);
+  rpc ScheduleMaintenance (MaintenanceWindow)       returns (StatusResponse);
+
+  // ── Catalog ────────────────────────────────────────────────────────────
+  rpc GetCatalog          (CatalogRequest)          returns (CatalogResponse);
+  rpc GetItem             (ItemId)                  returns (Item);
+  rpc AddItem             (Item)                    returns (StatusResponse);
+  rpc EditItem            (Item)                    returns (StatusResponse);
+  rpc EditItemPrice       (EditPriceRequest)        returns (StatusResponse);
+  rpc EditItemStock       (EditStockRequest)        returns (StatusResponse);
+  rpc RemoveItem          (ItemId)                  returns (StatusResponse);
+  rpc BulkImportItems     (BulkImportRequest)       returns (BulkImportResponse);
+
+  // ── Cart ───────────────────────────────────────────────────────────────
+  rpc SaveCart            (SaveCartRequest)         returns (StatusResponse);
+  rpc GetCart             (UserId)                  returns (CartResponse);
+  rpc ClearCart           (UserId)                  returns (StatusResponse);
+
+  // ── Quotes & orders ────────────────────────────────────────────────────
+  rpc CalculateQuote      (QuoteRequest)            returns (QuoteResponse);
+  rpc PlaceOrder          (OrderRequest)            returns (OrderResponse);
+  rpc GetOrder            (OrderId)                 returns (Order);
+  rpc GetUserOrders       (GetUserOrdersRequest)    returns (OrderListResponse);
+  rpc GetAllOrders        (GetAllOrdersRequest)     returns (OrderListResponse);
+  rpc UpdateOrderStatus   (UpdateStatusRequest)     returns (StatusResponse);
+  rpc CancelOrder         (CancelOrderRequest)      returns (StatusResponse);
+  rpc ReportOrderIssue    (IssueReport)             returns (StatusResponse);
+  rpc ResolveOrderIssue   (ResolveIssueRequest)     returns (StatusResponse);
+  rpc AssignDriver        (AssignDriverRequest)     returns (StatusResponse);
+  rpc AddOrderNote        (OrderNoteRequest)        returns (StatusResponse);
+
+  // ── Warehouses / depots ────────────────────────────────────────────────
+  rpc ListWarehouses      (Empty)                   returns (WarehouseListResponse);
+  rpc AddWarehouse        (Warehouse)               returns (StatusResponse);
+  rpc EditWarehouse       (Warehouse)               returns (StatusResponse);
+  rpc RemoveWarehouse     (WarehouseId)             returns (StatusResponse);
+
+  // ── Drivers ────────────────────────────────────────────────────────────
+  rpc ListDrivers         (ListDriversRequest)      returns (DriverListResponse);
+  rpc AddDriver           (Driver)                  returns (StatusResponse);
+  rpc EditDriver          (Driver)                  returns (StatusResponse);
+  rpc RemoveDriver        (DriverId)                returns (StatusResponse);
+  rpc SetDriverAvailability (DriverAvailability)   returns (StatusResponse);
+  rpc BroadcastDrivers    (BroadcastRequest)        returns (StatusResponse);
+
+  // ── Promotions ────────────────────────────────────────────────────────
+  rpc ListPromos          (Empty)                   returns (PromoListResponse);
+  rpc AddPromo            (Promo)                   returns (StatusResponse);
+  rpc EditPromo           (Promo)                   returns (StatusResponse);
+  rpc RemovePromo         (PromoId)                 returns (StatusResponse);
+  rpc ApplyPromoCode      (ApplyPromoRequest)       returns (PromoEffect);
+
+  // ── Loyalty ───────────────────────────────────────────────────────────
+  rpc GetLoyaltyBalance   (UserId)                  returns (LoyaltyBalance);
+  rpc AdjustLoyaltyPoints (LoyaltyAdjustment)      returns (StatusResponse);
+
+  // ── Customer profile & address ─────────────────────────────────────────
+  rpc GetProfile          (UserId)                  returns (CustomerProfile);
+  rpc UpsertProfile       (CustomerProfile)         returns (StatusResponse);
+  rpc ListSavedAddresses  (UserId)                  returns (AddressListResponse);
+  rpc SaveAddress         (SavedAddress)            returns (StatusResponse);
+  rpc DeleteAddress       (AddressId)               returns (StatusResponse);
+
+  // ── Notifications ─────────────────────────────────────────────────────
+  rpc GetNotifPrefs       (UserId)                  returns (NotifPrefs);
+  rpc SetNotifPrefs       (NotifPrefs)              returns (StatusResponse);
+  rpc GetPendingNotifs    (UserId)                  returns (NotifListResponse);
+
+  // ── Stock subscriptions ───────────────────────────────────────────────
+  rpc SubscribeStock      (StockSubRequest)         returns (StatusResponse);
+  rpc UnsubscribeStock    (StockSubRequest)         returns (StatusResponse);
+
+  // ── Admin ─────────────────────────────────────────────────────────────
+  rpc ListAdmins          (Empty)                   returns (AdminListResponse);
+  rpc AddAdmin            (AdminUser)               returns (StatusResponse);
+  rpc RemoveAdmin         (AdminUserId)             returns (StatusResponse);
+  rpc GetAuditLog         (AuditLogRequest)         returns (AuditLogResponse);
+  rpc GetSystemSettings   (Empty)                   returns (SystemSettings);
+  rpc SetSystemSettings   (SystemSettings)          returns (StatusResponse);
+
+  // ── Analytics ─────────────────────────────────────────────────────────
+  rpc GetRevenueSummary   (DateRangeRequest)        returns (RevenueSummary);
+  rpc GetTopItems         (TopItemsRequest)         returns (TopItemsResponse);
+  rpc GetOrderVolumeTrend (DateRangeRequest)        returns (OrderVolumeTrend);
+  rpc GetLowStockReport   (LowStockRequest)         returns (LowStockResponse);
 }
+
+// ─── Shared primitives ──────────────────────────────────────────────────────
 
 message Empty {}
 
 message HealthStatus {
-  bool   is_healthy       = 1;
-  bool   maintenance_mode = 2;
-  string version          = 3;
+  bool   is_healthy        = 1;
+  bool   maintenance_mode  = 2;
+  string version           = 3;
+  string db_status         = 4;
+  int64  uptime_seconds    = 5;
 }
 
 message StatusResponse {
   bool   success        = 1;
   string message        = 2;
-  int64  notify_user_id = 3;
+  int64  notify_user_id = 3;   // set on order status mutations for push notification
+  string entity_id      = 4;   // newly created entity ID, when applicable
 }
+
+// ─── Items ───────────────────────────────────────────────────────────────────
 
 message Item {
-  string id            = 1;
-  string name          = 2;
-  double price         = 3;
-  double volume_cubes  = 4;
-  string category      = 5;
-  int32  stock         = 6;
-  string photo_file_id = 7;
+  string   id              = 1;
+  string   name            = 2;
+  double   price           = 3;
+  double   volume_cubes    = 4;
+  string   category        = 5;
+  int32    stock           = 6;
+  string   photo_file_id   = 7;
+  string   description     = 8;
+  bool     is_featured     = 9;
+  bool     is_available    = 10;
+  int64    available_from  = 11;  // unix epoch; 0 = always
+  int64    available_until = 12;  // unix epoch; 0 = always
+  double   tax_rate        = 13;  // per-item override; -1 = use global
+  int32    reorder_level   = 14;  // low-stock alert threshold
+  int64    deleted_at      = 15;  // 0 = active
+  int64    created_at      = 16;
 }
 
+message ItemId   { string id     = 1; }
+message CatalogRequest {
+  string category_filter = 1;
+  string search_query    = 2;
+  int32  page            = 3;
+  int32  page_size       = 4;
+}
 message CatalogResponse {
-  map<string, Item> items = 1;
+  repeated Item items       = 1;
+  int32         total_count = 2;
 }
 
-message EditPriceRequest {
-  string item_id   = 1;
-  double new_price = 2;
-}
+message EditPriceRequest  { string item_id = 1; double new_price  = 2; }
+message EditStockRequest  { string item_id = 1; int32  delta       = 2; string reason = 3; }
 
-message EditStockRequest {
-  string item_id = 1;
-  int32  delta   = 2;
-}
+message BulkImportRequest  { repeated Item items = 1; }
+message BulkImportResponse { int32 created = 1; int32 updated = 2; repeated string errors = 3; }
 
-message ItemId { string id = 1; }
+// ─── Cart ────────────────────────────────────────────────────────────────────
 
 message CartItem {
-  string item_id  = 1;
-  int32  quantity = 2;
+  string item_id   = 1;
+  int32  quantity  = 2;
+  string note      = 3;   // per-line note (U-005)
 }
+message SaveCartRequest { int64 user_id = 1; repeated CartItem items = 2; }
+message CartResponse    { int64 user_id = 1; repeated CartItem items = 2; int64 updated_at = 3; }
+
+// ─── Quotes ──────────────────────────────────────────────────────────────────
 
 message QuoteRequest {
-  double            user_lat   = 1;
-  double            user_lon   = 2;
-  repeated CartItem cart_items = 3;
+  double            user_lat      = 1;
+  double            user_lon      = 2;
+  repeated CartItem cart_items    = 3;
+  int64             user_id       = 4;    // for ownership check (BUG-017)
+  string            promo_code    = 5;    // optional (U-037)
+  int32             loyalty_redeem= 6;    // points to redeem (U-040)
+  int64             delivery_slot_id = 7; // preferred time slot (U-020)
 }
 
 message QuoteResponse {
-  bool   success           = 1;
-  string error_message     = 2;
-  double grand_total       = 3;
-  string formatted_receipt = 4;
-  double distance_km       = 5;
-  string nearest_branch    = 6;
-  repeated CartItem cart_items = 7;
+  bool   success              = 1;
+  string error_message        = 2;
+  double subtotal             = 3;
+  double delivery_fee         = 4;
+  double heavy_surcharge      = 5;
+  double tax                  = 6;
+  double promo_discount       = 7;
+  double loyalty_discount     = 8;
+  double grand_total          = 9;
+  string formatted_receipt    = 10;
+  double distance_km          = 11;
+  string nearest_branch       = 12;
+  string promo_applied        = 13;
+  int32  loyalty_points_earned= 14;
+  bytes  quote_data           = 15;   // serialised for tamper-proof PlaceOrder
 }
 
+// ─── Orders ──────────────────────────────────────────────────────────────────
+
 message OrderRequest {
-  int64  user_id        = 1;
-  string username       = 2;
-  bytes  quote_data     = 3;
-  double expected_total = 4;
-  string receipt_text   = 5;
+  int64  user_id          = 1;
+  string username         = 2;
+  bytes  quote_data       = 3;
+  double expected_total   = 4;
+  string receipt_text     = 5;
+  string idempotency_key  = 6;   // BUG-012: duplicate order guard
+  string order_notes      = 7;   // U-006: special instructions
+  string delivery_address = 8;
+  int64  delivery_slot_id = 9;
+  int64  scheduled_for    = 10;  // U-021: future delivery unix epoch; 0 = ASAP
+  bool   contactless      = 11;  // U-025: leave at door
+  string recipient_name   = 12;  // U-028: gift orders
+  int64  saved_address_id = 13;  // from saved addresses
 }
 
 message OrderResponse {
-  bool   success  = 1;
-  string order_id = 2;
-  string message  = 3;
+  bool   success    = 1;
+  string order_id   = 2;
+  string message    = 3;
+  string human_ref  = 4;  // U-009: e.g. ORD-20260513-0047
 }
 
+message OrderId { string order_id = 1; }
+
 message Order {
-  string order_id  = 1;
-  string status    = 2;
-  double total     = 3;
-  int64  timestamp = 4;
-  string receipt   = 5;
-  int64  user_id   = 6;
+  string   order_id         = 1;
+  string   human_ref        = 2;
+  string   status           = 3;
+  double   total            = 4;
+  int64    timestamp        = 5;
+  string   receipt          = 6;
+  int64    user_id          = 7;
+  string   username         = 8;
+  string   driver_id        = 9;
+  string   driver_name      = 10;
+  string   order_notes      = 11;
+  string   delivery_address = 12;
+  int64    scheduled_for    = 13;
+  bool     contactless      = 14;
+  string   recipient_name   = 15;
+  string   delivery_otp     = 16;  // U-026
+  string   issue_status     = 17;  // "none" | "open" | "resolved"
+  repeated OrderStatusEvent history = 18;
+  repeated OrderNote        notes   = 19;
+}
+
+message OrderStatusEvent {
+  string status     = 1;
+  int64  ts         = 2;
+  int64  actor_id   = 3;
+  string note       = 4;
+}
+
+message OrderNote {
+  int64  ts       = 1;
+  int64  actor_id = 2;
+  string text     = 3;
 }
 
 message OrderListResponse {
@@ -111,39 +274,264 @@ message OrderListResponse {
   int32          total_count = 2;
 }
 
-message UserId { int64 user_id = 1; }
+message GetUserOrdersRequest {
+  int64  user_id   = 1;
+  int32  page      = 2;
+  int32  page_size = 3;
+}
+
+message GetAllOrdersRequest {
+  string status_filter  = 1;
+  string driver_filter  = 2;
+  int64  from_ts        = 3;
+  int64  to_ts          = 4;
+  int32  page           = 5;
+  int32  page_size      = 6;
+}
 
 message UpdateStatusRequest {
   string order_id   = 1;
   string new_status = 2;
+  string reason     = 3;  // mandatory for manual overrides
+  int64  actor_id   = 4;
 }
 
-message GetAllOrdersRequest {
-  string status_filter = 1;
-  int32  page          = 2;
-  int32  page_size     = 3;
+message CancelOrderRequest {
+  string order_id = 1;
+  int64  user_id  = 2;
+  string reason   = 3;
 }
+
+message IssueReport {
+  string   order_id    = 1;
+  int64    user_id     = 2;
+  string   issue_type  = 3;  // "wrong_item"|"damaged"|"missing"|"other"
+  string   description = 4;
+  string   photo_id    = 5;
+}
+
+message ResolveIssueRequest {
+  string order_id       = 1;
+  int64  admin_id       = 2;
+  string resolution     = 3;  // "refunded"|"replacement"|"rejected"
+  string note           = 4;
+}
+
+message AssignDriverRequest {
+  string order_id  = 1;
+  string driver_id = 2;
+  int64  admin_id  = 3;
+}
+
+message OrderNoteRequest {
+  string order_id = 1;
+  int64  admin_id = 2;
+  string text     = 3;
+}
+
+// ─── Warehouses ──────────────────────────────────────────────────────────────
 
 message Warehouse {
-  string id                = 1;
-  string name              = 2;
-  double lat               = 3;
-  double lon               = 4;
-  int64  admin_telegram_id = 5;  // Telegram user ID of the assigned warehouse admin (0 = unassigned)
+  string id             = 1;
+  string name           = 2;
+  string address        = 3;
+  double lat            = 4;
+  double lon            = 5;
+  string open_time      = 6;   // "HH:MM"
+  string close_time     = 7;
+  bool   is_active      = 8;
+  int32  capacity_units = 9;
 }
 
-message AddWarehouseRequest {
-  string name              = 1;
-  double lat               = 2;
-  double lon               = 3;
-  int64  admin_telegram_id = 4;  // Telegram user ID of the assigned warehouse admin
+message WarehouseId             { string id = 1; }
+message WarehouseListResponse   { repeated Warehouse warehouses = 1; }
+
+// ─── Drivers ─────────────────────────────────────────────────────────────────
+
+message Driver {
+  string id             = 1;
+  string name           = 2;
+  string phone          = 3;
+  int64  telegram_id    = 4;
+  string vehicle_type   = 5;
+  string zone           = 6;
+  bool   is_available   = 7;
+  bool   is_active      = 8;
 }
 
-message ListWarehouseResponse {
-  repeated Warehouse warehouses = 1;
+message DriverId              { string id = 1; }
+message ListDriversRequest    { bool available_only = 1; }
+message DriverListResponse    { repeated Driver drivers = 1; }
+message DriverAvailability    { string driver_id = 1; bool is_available = 2; }
+message BroadcastRequest      { string message = 1; bool active_only = 2; }
+
+// ─── Promotions ──────────────────────────────────────────────────────────────
+
+message Promo {
+  string id              = 1;
+  string code            = 2;
+  string description     = 3;
+  string discount_type   = 4;  // "percent" | "fixed"
+  double discount_value  = 5;
+  double min_order_value = 6;
+  int32  max_uses        = 7;  // 0 = unlimited
+  int32  per_user_limit  = 8;  // 0 = unlimited
+  int64  valid_from      = 9;
+  int64  valid_until     = 10;
+  bool   is_active       = 11;
+  int32  uses_count      = 12;
 }
 
-message SaveCartRequest {
-  int64  user_id   = 1;
-  string cart_json = 2;
+message PromoId            { string id = 1; }
+message PromoListResponse  { repeated Promo promos = 1; }
+
+message ApplyPromoRequest {
+  string promo_code  = 1;
+  int64  user_id     = 2;
+  double cart_total  = 3;
+}
+message PromoEffect {
+  bool   valid          = 1;
+  string error_message  = 2;
+  double discount       = 3;
+  string promo_id       = 4;
+}
+
+// ─── Loyalty ─────────────────────────────────────────────────────────────────
+
+message LoyaltyBalance    { int64 user_id = 1; int32 points = 2; string tier = 3; }
+message LoyaltyAdjustment { int64 user_id = 1; int32 delta = 2; string reason = 3; int64 actor_id = 4; }
+
+// ─── Customer profile ────────────────────────────────────────────────────────
+
+message CustomerProfile {
+  int64  user_id      = 1;
+  string display_name = 2;
+  string phone        = 3;
+  string language     = 4;
+  int64  birthday     = 5;   // unix epoch date; 0 = unset
+  int64  created_at   = 6;
+}
+
+message UserId { int64 user_id = 1; }
+
+message SavedAddress {
+  int64  id        = 1;
+  int64  user_id   = 2;
+  string label     = 3;  // "Home" | "Work" | custom
+  string address   = 4;
+  double lat       = 5;
+  double lon       = 6;
+  bool   is_default= 7;
+}
+
+message AddressId           { int64 id = 1; }
+message AddressListResponse { repeated SavedAddress addresses = 1; }
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+message NotifPrefs {
+  int64 user_id          = 1;
+  bool  order_updates    = 2;
+  bool  promotions       = 3;
+  bool  new_products     = 4;
+  bool  system_alerts    = 5;
+  bool  flash_deals      = 6;
+}
+
+message Notif {
+  int64  id        = 1;
+  int64  user_id   = 2;
+  string type      = 3;
+  string text      = 4;
+  bool   sent      = 5;
+  int64  created_at= 6;
+}
+
+message NotifListResponse { repeated Notif notifs = 1; }
+
+// ─── Stock subscription ───────────────────────────────────────────────────────
+
+message StockSubRequest { int64 user_id = 1; string item_id = 2; }
+
+// ─── Admin users ─────────────────────────────────────────────────────────────
+
+message AdminUser {
+  int64  telegram_id = 1;
+  string username    = 2;
+  string role        = 3;  // "super_admin"|"dispatcher"|"catalog_manager"|"support"
+  int64  added_by    = 4;
+  int64  added_at    = 5;
+}
+
+message AdminUserId       { int64 telegram_id = 1; }
+message AdminListResponse { repeated AdminUser admins = 1; }
+
+// ─── Audit log ────────────────────────────────────────────────────────────────
+
+message AuditLogRequest {
+  int64  actor_filter   = 1;
+  string action_filter  = 2;
+  int64  from_ts        = 3;
+  int64  to_ts          = 4;
+  int32  page           = 5;
+  int32  page_size      = 6;
+}
+
+message AuditEntry {
+  int64  id        = 1;
+  int64  ts        = 2;
+  int64  actor_id  = 3;
+  string action    = 4;
+  string target_id = 5;
+  string detail    = 6;
+}
+
+message AuditLogResponse {
+  repeated AuditEntry entries     = 1;
+  int32               total_count = 2;
+}
+
+// ─── System settings ─────────────────────────────────────────────────────────
+
+message SystemSettings {
+  double delivery_base_fare      = 1;
+  double delivery_rate_per_km    = 2;
+  double tax_rate                = 3;
+  double free_delivery_threshold = 4;
+  int32  cancel_window_minutes   = 5;
+  int32  loyalty_earn_rate       = 6;   // points per 100 LKR
+  int32  loyalty_redeem_rate     = 7;   // points per 1 LKR discount
+  int32  max_order_value         = 8;   // 0 = unlimited
+  int32  min_order_value         = 9;
+  string order_cutoff_time       = 10;  // "HH:MM"
+}
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+message DateRangeRequest { int64 from_ts = 1; int64 to_ts = 2; }
+
+message RevenueSummary {
+  double total_revenue  = 1;
+  int32  order_count    = 2;
+  double avg_order_value= 3;
+}
+
+message TopItemsRequest  { int64 from_ts = 1; int64 to_ts = 2; int32 limit = 3; }
+message TopItemEntry     { string item_id = 1; string name = 2; int32 units_sold = 3; double revenue = 4; }
+message TopItemsResponse { repeated TopItemEntry items = 1; }
+
+message OrderVolumePoint  { int64 date_ts = 1; int32 count = 2; }
+message OrderVolumeTrend  { repeated OrderVolumePoint points = 1; }
+
+message LowStockRequest  { int32 threshold = 1; }
+message LowStockEntry    { string item_id = 1; string name = 2; int32 stock = 3; int32 threshold = 4; }
+message LowStockResponse { repeated LowStockEntry items = 1; }
+
+// ─── Maintenance scheduling ───────────────────────────────────────────────────
+
+message MaintenanceWindow {
+  int64  start_ts       = 1;
+  int64  end_ts         = 2;
+  string reason         = 3;
 }

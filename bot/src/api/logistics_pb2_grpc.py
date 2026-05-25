@@ -26,7 +26,24 @@ if _version_not_supported:
 
 
 class LogisticsEngineStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """═══════════════════════════════════════════════════════════════════════════
+    LogisticsEngine gRPC service — full rewrite v5
+    Changes vs v4:
+    • PostgreSQL-backed — all queries use $N placeholders
+    • Idempotency key on PlaceOrder  (fixes BUG-012)
+    • Pagination on every list RPC   (fixes PERF-002)
+    • Cart ownership validated        (fixes BUG-017)
+    • Status machine enforced         (fixes BUG-029)
+    • Order history, reorder, cancel, issue-report RPCs (Phase 2)
+    • Warehouse / depot CRUD          (Phase 1 A-001..A-003)
+    • Driver management               (Phase 1 A-026..A-033)
+    • Promo / loyalty                 (Phase 3 U-037..U-044)
+    • Audit log viewer RPC            (Phase 4 A-056)
+    • Admin user management RPC       (Phase 1 A-055)
+    • Notification preference RPC     (Phase 2 U-048)
+    ═══════════════════════════════════════════════════════════════════════════
+
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -44,13 +61,28 @@ class LogisticsEngineStub(object):
                 request_serializer=logistics__pb2.Empty.SerializeToString,
                 response_deserializer=logistics__pb2.StatusResponse.FromString,
                 _registered_method=True)
+        self.ScheduleMaintenance = channel.unary_unary(
+                '/logistics.LogisticsEngine/ScheduleMaintenance',
+                request_serializer=logistics__pb2.MaintenanceWindow.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
         self.GetCatalog = channel.unary_unary(
                 '/logistics.LogisticsEngine/GetCatalog',
-                request_serializer=logistics__pb2.Empty.SerializeToString,
+                request_serializer=logistics__pb2.CatalogRequest.SerializeToString,
                 response_deserializer=logistics__pb2.CatalogResponse.FromString,
+                _registered_method=True)
+        self.GetItem = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetItem',
+                request_serializer=logistics__pb2.ItemId.SerializeToString,
+                response_deserializer=logistics__pb2.Item.FromString,
                 _registered_method=True)
         self.AddItem = channel.unary_unary(
                 '/logistics.LogisticsEngine/AddItem',
+                request_serializer=logistics__pb2.Item.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.EditItem = channel.unary_unary(
+                '/logistics.LogisticsEngine/EditItem',
                 request_serializer=logistics__pb2.Item.SerializeToString,
                 response_deserializer=logistics__pb2.StatusResponse.FromString,
                 _registered_method=True)
@@ -69,6 +101,26 @@ class LogisticsEngineStub(object):
                 request_serializer=logistics__pb2.ItemId.SerializeToString,
                 response_deserializer=logistics__pb2.StatusResponse.FromString,
                 _registered_method=True)
+        self.BulkImportItems = channel.unary_unary(
+                '/logistics.LogisticsEngine/BulkImportItems',
+                request_serializer=logistics__pb2.BulkImportRequest.SerializeToString,
+                response_deserializer=logistics__pb2.BulkImportResponse.FromString,
+                _registered_method=True)
+        self.SaveCart = channel.unary_unary(
+                '/logistics.LogisticsEngine/SaveCart',
+                request_serializer=logistics__pb2.SaveCartRequest.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.GetCart = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetCart',
+                request_serializer=logistics__pb2.UserId.SerializeToString,
+                response_deserializer=logistics__pb2.CartResponse.FromString,
+                _registered_method=True)
+        self.ClearCart = channel.unary_unary(
+                '/logistics.LogisticsEngine/ClearCart',
+                request_serializer=logistics__pb2.UserId.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
         self.CalculateQuote = channel.unary_unary(
                 '/logistics.LogisticsEngine/CalculateQuote',
                 request_serializer=logistics__pb2.QuoteRequest.SerializeToString,
@@ -79,9 +131,14 @@ class LogisticsEngineStub(object):
                 request_serializer=logistics__pb2.OrderRequest.SerializeToString,
                 response_deserializer=logistics__pb2.OrderResponse.FromString,
                 _registered_method=True)
-        self.GetActiveOrders = channel.unary_unary(
-                '/logistics.LogisticsEngine/GetActiveOrders',
-                request_serializer=logistics__pb2.UserId.SerializeToString,
+        self.GetOrder = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetOrder',
+                request_serializer=logistics__pb2.OrderId.SerializeToString,
+                response_deserializer=logistics__pb2.Order.FromString,
+                _registered_method=True)
+        self.GetUserOrders = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetUserOrders',
+                request_serializer=logistics__pb2.GetUserOrdersRequest.SerializeToString,
                 response_deserializer=logistics__pb2.OrderListResponse.FromString,
                 _registered_method=True)
         self.GetAllOrders = channel.unary_unary(
@@ -94,28 +151,241 @@ class LogisticsEngineStub(object):
                 request_serializer=logistics__pb2.UpdateStatusRequest.SerializeToString,
                 response_deserializer=logistics__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.SaveCart = channel.unary_unary(
-                '/logistics.LogisticsEngine/SaveCart',
-                request_serializer=logistics__pb2.SaveCartRequest.SerializeToString,
+        self.CancelOrder = channel.unary_unary(
+                '/logistics.LogisticsEngine/CancelOrder',
+                request_serializer=logistics__pb2.CancelOrderRequest.SerializeToString,
                 response_deserializer=logistics__pb2.StatusResponse.FromString,
                 _registered_method=True)
-        self.AddWarehouse = channel.unary_unary(
-                '/logistics.LogisticsEngine/AddWarehouse',
-                request_serializer=logistics__pb2.AddWarehouseRequest.SerializeToString,
+        self.ReportOrderIssue = channel.unary_unary(
+                '/logistics.LogisticsEngine/ReportOrderIssue',
+                request_serializer=logistics__pb2.IssueReport.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.ResolveOrderIssue = channel.unary_unary(
+                '/logistics.LogisticsEngine/ResolveOrderIssue',
+                request_serializer=logistics__pb2.ResolveIssueRequest.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.AssignDriver = channel.unary_unary(
+                '/logistics.LogisticsEngine/AssignDriver',
+                request_serializer=logistics__pb2.AssignDriverRequest.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.AddOrderNote = channel.unary_unary(
+                '/logistics.LogisticsEngine/AddOrderNote',
+                request_serializer=logistics__pb2.OrderNoteRequest.SerializeToString,
                 response_deserializer=logistics__pb2.StatusResponse.FromString,
                 _registered_method=True)
         self.ListWarehouses = channel.unary_unary(
                 '/logistics.LogisticsEngine/ListWarehouses',
                 request_serializer=logistics__pb2.Empty.SerializeToString,
-                response_deserializer=logistics__pb2.ListWarehouseResponse.FromString,
+                response_deserializer=logistics__pb2.WarehouseListResponse.FromString,
+                _registered_method=True)
+        self.AddWarehouse = channel.unary_unary(
+                '/logistics.LogisticsEngine/AddWarehouse',
+                request_serializer=logistics__pb2.Warehouse.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.EditWarehouse = channel.unary_unary(
+                '/logistics.LogisticsEngine/EditWarehouse',
+                request_serializer=logistics__pb2.Warehouse.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.RemoveWarehouse = channel.unary_unary(
+                '/logistics.LogisticsEngine/RemoveWarehouse',
+                request_serializer=logistics__pb2.WarehouseId.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.ListDrivers = channel.unary_unary(
+                '/logistics.LogisticsEngine/ListDrivers',
+                request_serializer=logistics__pb2.ListDriversRequest.SerializeToString,
+                response_deserializer=logistics__pb2.DriverListResponse.FromString,
+                _registered_method=True)
+        self.AddDriver = channel.unary_unary(
+                '/logistics.LogisticsEngine/AddDriver',
+                request_serializer=logistics__pb2.Driver.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.EditDriver = channel.unary_unary(
+                '/logistics.LogisticsEngine/EditDriver',
+                request_serializer=logistics__pb2.Driver.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.RemoveDriver = channel.unary_unary(
+                '/logistics.LogisticsEngine/RemoveDriver',
+                request_serializer=logistics__pb2.DriverId.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.SetDriverAvailability = channel.unary_unary(
+                '/logistics.LogisticsEngine/SetDriverAvailability',
+                request_serializer=logistics__pb2.DriverAvailability.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.BroadcastDrivers = channel.unary_unary(
+                '/logistics.LogisticsEngine/BroadcastDrivers',
+                request_serializer=logistics__pb2.BroadcastRequest.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.ListPromos = channel.unary_unary(
+                '/logistics.LogisticsEngine/ListPromos',
+                request_serializer=logistics__pb2.Empty.SerializeToString,
+                response_deserializer=logistics__pb2.PromoListResponse.FromString,
+                _registered_method=True)
+        self.AddPromo = channel.unary_unary(
+                '/logistics.LogisticsEngine/AddPromo',
+                request_serializer=logistics__pb2.Promo.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.EditPromo = channel.unary_unary(
+                '/logistics.LogisticsEngine/EditPromo',
+                request_serializer=logistics__pb2.Promo.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.RemovePromo = channel.unary_unary(
+                '/logistics.LogisticsEngine/RemovePromo',
+                request_serializer=logistics__pb2.PromoId.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.ApplyPromoCode = channel.unary_unary(
+                '/logistics.LogisticsEngine/ApplyPromoCode',
+                request_serializer=logistics__pb2.ApplyPromoRequest.SerializeToString,
+                response_deserializer=logistics__pb2.PromoEffect.FromString,
+                _registered_method=True)
+        self.GetLoyaltyBalance = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetLoyaltyBalance',
+                request_serializer=logistics__pb2.UserId.SerializeToString,
+                response_deserializer=logistics__pb2.LoyaltyBalance.FromString,
+                _registered_method=True)
+        self.AdjustLoyaltyPoints = channel.unary_unary(
+                '/logistics.LogisticsEngine/AdjustLoyaltyPoints',
+                request_serializer=logistics__pb2.LoyaltyAdjustment.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.GetProfile = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetProfile',
+                request_serializer=logistics__pb2.UserId.SerializeToString,
+                response_deserializer=logistics__pb2.CustomerProfile.FromString,
+                _registered_method=True)
+        self.UpsertProfile = channel.unary_unary(
+                '/logistics.LogisticsEngine/UpsertProfile',
+                request_serializer=logistics__pb2.CustomerProfile.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.ListSavedAddresses = channel.unary_unary(
+                '/logistics.LogisticsEngine/ListSavedAddresses',
+                request_serializer=logistics__pb2.UserId.SerializeToString,
+                response_deserializer=logistics__pb2.AddressListResponse.FromString,
+                _registered_method=True)
+        self.SaveAddress = channel.unary_unary(
+                '/logistics.LogisticsEngine/SaveAddress',
+                request_serializer=logistics__pb2.SavedAddress.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.DeleteAddress = channel.unary_unary(
+                '/logistics.LogisticsEngine/DeleteAddress',
+                request_serializer=logistics__pb2.AddressId.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.GetNotifPrefs = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetNotifPrefs',
+                request_serializer=logistics__pb2.UserId.SerializeToString,
+                response_deserializer=logistics__pb2.NotifPrefs.FromString,
+                _registered_method=True)
+        self.SetNotifPrefs = channel.unary_unary(
+                '/logistics.LogisticsEngine/SetNotifPrefs',
+                request_serializer=logistics__pb2.NotifPrefs.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.GetPendingNotifs = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetPendingNotifs',
+                request_serializer=logistics__pb2.UserId.SerializeToString,
+                response_deserializer=logistics__pb2.NotifListResponse.FromString,
+                _registered_method=True)
+        self.SubscribeStock = channel.unary_unary(
+                '/logistics.LogisticsEngine/SubscribeStock',
+                request_serializer=logistics__pb2.StockSubRequest.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.UnsubscribeStock = channel.unary_unary(
+                '/logistics.LogisticsEngine/UnsubscribeStock',
+                request_serializer=logistics__pb2.StockSubRequest.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.ListAdmins = channel.unary_unary(
+                '/logistics.LogisticsEngine/ListAdmins',
+                request_serializer=logistics__pb2.Empty.SerializeToString,
+                response_deserializer=logistics__pb2.AdminListResponse.FromString,
+                _registered_method=True)
+        self.AddAdmin = channel.unary_unary(
+                '/logistics.LogisticsEngine/AddAdmin',
+                request_serializer=logistics__pb2.AdminUser.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.RemoveAdmin = channel.unary_unary(
+                '/logistics.LogisticsEngine/RemoveAdmin',
+                request_serializer=logistics__pb2.AdminUserId.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.GetAuditLog = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetAuditLog',
+                request_serializer=logistics__pb2.AuditLogRequest.SerializeToString,
+                response_deserializer=logistics__pb2.AuditLogResponse.FromString,
+                _registered_method=True)
+        self.GetSystemSettings = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetSystemSettings',
+                request_serializer=logistics__pb2.Empty.SerializeToString,
+                response_deserializer=logistics__pb2.SystemSettings.FromString,
+                _registered_method=True)
+        self.SetSystemSettings = channel.unary_unary(
+                '/logistics.LogisticsEngine/SetSystemSettings',
+                request_serializer=logistics__pb2.SystemSettings.SerializeToString,
+                response_deserializer=logistics__pb2.StatusResponse.FromString,
+                _registered_method=True)
+        self.GetRevenueSummary = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetRevenueSummary',
+                request_serializer=logistics__pb2.DateRangeRequest.SerializeToString,
+                response_deserializer=logistics__pb2.RevenueSummary.FromString,
+                _registered_method=True)
+        self.GetTopItems = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetTopItems',
+                request_serializer=logistics__pb2.TopItemsRequest.SerializeToString,
+                response_deserializer=logistics__pb2.TopItemsResponse.FromString,
+                _registered_method=True)
+        self.GetOrderVolumeTrend = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetOrderVolumeTrend',
+                request_serializer=logistics__pb2.DateRangeRequest.SerializeToString,
+                response_deserializer=logistics__pb2.OrderVolumeTrend.FromString,
+                _registered_method=True)
+        self.GetLowStockReport = channel.unary_unary(
+                '/logistics.LogisticsEngine/GetLowStockReport',
+                request_serializer=logistics__pb2.LowStockRequest.SerializeToString,
+                response_deserializer=logistics__pb2.LowStockResponse.FromString,
                 _registered_method=True)
 
 
 class LogisticsEngineServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """═══════════════════════════════════════════════════════════════════════════
+    LogisticsEngine gRPC service — full rewrite v5
+    Changes vs v4:
+    • PostgreSQL-backed — all queries use $N placeholders
+    • Idempotency key on PlaceOrder  (fixes BUG-012)
+    • Pagination on every list RPC   (fixes PERF-002)
+    • Cart ownership validated        (fixes BUG-017)
+    • Status machine enforced         (fixes BUG-029)
+    • Order history, reorder, cancel, issue-report RPCs (Phase 2)
+    • Warehouse / depot CRUD          (Phase 1 A-001..A-003)
+    • Driver management               (Phase 1 A-026..A-033)
+    • Promo / loyalty                 (Phase 3 U-037..U-044)
+    • Audit log viewer RPC            (Phase 4 A-056)
+    • Admin user management RPC       (Phase 1 A-055)
+    • Notification preference RPC     (Phase 2 U-048)
+    ═══════════════════════════════════════════════════════════════════════════
+
+    """
 
     def CheckHealth(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """── Health & system ────────────────────────────────────────────────────
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -126,13 +396,32 @@ class LogisticsEngineServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ScheduleMaintenance(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetCatalog(self, request, context):
+        """── Catalog ────────────────────────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetItem(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def AddItem(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def EditItem(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -156,8 +445,34 @@ class LogisticsEngineServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CalculateQuote(self, request, context):
+    def BulkImportItems(self, request, context):
         """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SaveCart(self, request, context):
+        """── Cart ───────────────────────────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetCart(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ClearCart(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CalculateQuote(self, request, context):
+        """── Quotes & orders ────────────────────────────────────────────────────
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -168,7 +483,13 @@ class LogisticsEngineServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def GetActiveOrders(self, request, context):
+    def GetOrder(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetUserOrders(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -186,20 +507,262 @@ class LogisticsEngineServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def SaveCart(self, request, context):
+    def CancelOrder(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def AddWarehouse(self, request, context):
-        """--- Warehouse Management ---
-        """
+    def ReportOrderIssue(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ResolveOrderIssue(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AssignDriver(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AddOrderNote(self, request, context):
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ListWarehouses(self, request, context):
+        """── Warehouses / depots ────────────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AddWarehouse(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def EditWarehouse(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RemoveWarehouse(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListDrivers(self, request, context):
+        """── Drivers ────────────────────────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AddDriver(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def EditDriver(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RemoveDriver(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetDriverAvailability(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def BroadcastDrivers(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListPromos(self, request, context):
+        """── Promotions ────────────────────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AddPromo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def EditPromo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RemovePromo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ApplyPromoCode(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetLoyaltyBalance(self, request, context):
+        """── Loyalty ───────────────────────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AdjustLoyaltyPoints(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetProfile(self, request, context):
+        """── Customer profile & address ─────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UpsertProfile(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListSavedAddresses(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SaveAddress(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeleteAddress(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetNotifPrefs(self, request, context):
+        """── Notifications ─────────────────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetNotifPrefs(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetPendingNotifs(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SubscribeStock(self, request, context):
+        """── Stock subscriptions ───────────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UnsubscribeStock(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListAdmins(self, request, context):
+        """── Admin ─────────────────────────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AddAdmin(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RemoveAdmin(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetAuditLog(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetSystemSettings(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetSystemSettings(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetRevenueSummary(self, request, context):
+        """── Analytics ─────────────────────────────────────────────────────────
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetTopItems(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetOrderVolumeTrend(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetLowStockReport(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -218,13 +781,28 @@ def add_LogisticsEngineServicer_to_server(servicer, server):
                     request_deserializer=logistics__pb2.Empty.FromString,
                     response_serializer=logistics__pb2.StatusResponse.SerializeToString,
             ),
+            'ScheduleMaintenance': grpc.unary_unary_rpc_method_handler(
+                    servicer.ScheduleMaintenance,
+                    request_deserializer=logistics__pb2.MaintenanceWindow.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
             'GetCatalog': grpc.unary_unary_rpc_method_handler(
                     servicer.GetCatalog,
-                    request_deserializer=logistics__pb2.Empty.FromString,
+                    request_deserializer=logistics__pb2.CatalogRequest.FromString,
                     response_serializer=logistics__pb2.CatalogResponse.SerializeToString,
+            ),
+            'GetItem': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetItem,
+                    request_deserializer=logistics__pb2.ItemId.FromString,
+                    response_serializer=logistics__pb2.Item.SerializeToString,
             ),
             'AddItem': grpc.unary_unary_rpc_method_handler(
                     servicer.AddItem,
+                    request_deserializer=logistics__pb2.Item.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'EditItem': grpc.unary_unary_rpc_method_handler(
+                    servicer.EditItem,
                     request_deserializer=logistics__pb2.Item.FromString,
                     response_serializer=logistics__pb2.StatusResponse.SerializeToString,
             ),
@@ -243,6 +821,26 @@ def add_LogisticsEngineServicer_to_server(servicer, server):
                     request_deserializer=logistics__pb2.ItemId.FromString,
                     response_serializer=logistics__pb2.StatusResponse.SerializeToString,
             ),
+            'BulkImportItems': grpc.unary_unary_rpc_method_handler(
+                    servicer.BulkImportItems,
+                    request_deserializer=logistics__pb2.BulkImportRequest.FromString,
+                    response_serializer=logistics__pb2.BulkImportResponse.SerializeToString,
+            ),
+            'SaveCart': grpc.unary_unary_rpc_method_handler(
+                    servicer.SaveCart,
+                    request_deserializer=logistics__pb2.SaveCartRequest.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'GetCart': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetCart,
+                    request_deserializer=logistics__pb2.UserId.FromString,
+                    response_serializer=logistics__pb2.CartResponse.SerializeToString,
+            ),
+            'ClearCart': grpc.unary_unary_rpc_method_handler(
+                    servicer.ClearCart,
+                    request_deserializer=logistics__pb2.UserId.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
             'CalculateQuote': grpc.unary_unary_rpc_method_handler(
                     servicer.CalculateQuote,
                     request_deserializer=logistics__pb2.QuoteRequest.FromString,
@@ -253,9 +851,14 @@ def add_LogisticsEngineServicer_to_server(servicer, server):
                     request_deserializer=logistics__pb2.OrderRequest.FromString,
                     response_serializer=logistics__pb2.OrderResponse.SerializeToString,
             ),
-            'GetActiveOrders': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetActiveOrders,
-                    request_deserializer=logistics__pb2.UserId.FromString,
+            'GetOrder': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetOrder,
+                    request_deserializer=logistics__pb2.OrderId.FromString,
+                    response_serializer=logistics__pb2.Order.SerializeToString,
+            ),
+            'GetUserOrders': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetUserOrders,
+                    request_deserializer=logistics__pb2.GetUserOrdersRequest.FromString,
                     response_serializer=logistics__pb2.OrderListResponse.SerializeToString,
             ),
             'GetAllOrders': grpc.unary_unary_rpc_method_handler(
@@ -268,20 +871,215 @@ def add_LogisticsEngineServicer_to_server(servicer, server):
                     request_deserializer=logistics__pb2.UpdateStatusRequest.FromString,
                     response_serializer=logistics__pb2.StatusResponse.SerializeToString,
             ),
-            'SaveCart': grpc.unary_unary_rpc_method_handler(
-                    servicer.SaveCart,
-                    request_deserializer=logistics__pb2.SaveCartRequest.FromString,
+            'CancelOrder': grpc.unary_unary_rpc_method_handler(
+                    servicer.CancelOrder,
+                    request_deserializer=logistics__pb2.CancelOrderRequest.FromString,
                     response_serializer=logistics__pb2.StatusResponse.SerializeToString,
             ),
-            'AddWarehouse': grpc.unary_unary_rpc_method_handler(
-                    servicer.AddWarehouse,
-                    request_deserializer=logistics__pb2.AddWarehouseRequest.FromString,
+            'ReportOrderIssue': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReportOrderIssue,
+                    request_deserializer=logistics__pb2.IssueReport.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'ResolveOrderIssue': grpc.unary_unary_rpc_method_handler(
+                    servicer.ResolveOrderIssue,
+                    request_deserializer=logistics__pb2.ResolveIssueRequest.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'AssignDriver': grpc.unary_unary_rpc_method_handler(
+                    servicer.AssignDriver,
+                    request_deserializer=logistics__pb2.AssignDriverRequest.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'AddOrderNote': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddOrderNote,
+                    request_deserializer=logistics__pb2.OrderNoteRequest.FromString,
                     response_serializer=logistics__pb2.StatusResponse.SerializeToString,
             ),
             'ListWarehouses': grpc.unary_unary_rpc_method_handler(
                     servicer.ListWarehouses,
                     request_deserializer=logistics__pb2.Empty.FromString,
-                    response_serializer=logistics__pb2.ListWarehouseResponse.SerializeToString,
+                    response_serializer=logistics__pb2.WarehouseListResponse.SerializeToString,
+            ),
+            'AddWarehouse': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddWarehouse,
+                    request_deserializer=logistics__pb2.Warehouse.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'EditWarehouse': grpc.unary_unary_rpc_method_handler(
+                    servicer.EditWarehouse,
+                    request_deserializer=logistics__pb2.Warehouse.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'RemoveWarehouse': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveWarehouse,
+                    request_deserializer=logistics__pb2.WarehouseId.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'ListDrivers': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListDrivers,
+                    request_deserializer=logistics__pb2.ListDriversRequest.FromString,
+                    response_serializer=logistics__pb2.DriverListResponse.SerializeToString,
+            ),
+            'AddDriver': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddDriver,
+                    request_deserializer=logistics__pb2.Driver.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'EditDriver': grpc.unary_unary_rpc_method_handler(
+                    servicer.EditDriver,
+                    request_deserializer=logistics__pb2.Driver.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'RemoveDriver': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveDriver,
+                    request_deserializer=logistics__pb2.DriverId.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'SetDriverAvailability': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetDriverAvailability,
+                    request_deserializer=logistics__pb2.DriverAvailability.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'BroadcastDrivers': grpc.unary_unary_rpc_method_handler(
+                    servicer.BroadcastDrivers,
+                    request_deserializer=logistics__pb2.BroadcastRequest.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'ListPromos': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListPromos,
+                    request_deserializer=logistics__pb2.Empty.FromString,
+                    response_serializer=logistics__pb2.PromoListResponse.SerializeToString,
+            ),
+            'AddPromo': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddPromo,
+                    request_deserializer=logistics__pb2.Promo.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'EditPromo': grpc.unary_unary_rpc_method_handler(
+                    servicer.EditPromo,
+                    request_deserializer=logistics__pb2.Promo.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'RemovePromo': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemovePromo,
+                    request_deserializer=logistics__pb2.PromoId.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'ApplyPromoCode': grpc.unary_unary_rpc_method_handler(
+                    servicer.ApplyPromoCode,
+                    request_deserializer=logistics__pb2.ApplyPromoRequest.FromString,
+                    response_serializer=logistics__pb2.PromoEffect.SerializeToString,
+            ),
+            'GetLoyaltyBalance': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetLoyaltyBalance,
+                    request_deserializer=logistics__pb2.UserId.FromString,
+                    response_serializer=logistics__pb2.LoyaltyBalance.SerializeToString,
+            ),
+            'AdjustLoyaltyPoints': grpc.unary_unary_rpc_method_handler(
+                    servicer.AdjustLoyaltyPoints,
+                    request_deserializer=logistics__pb2.LoyaltyAdjustment.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'GetProfile': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetProfile,
+                    request_deserializer=logistics__pb2.UserId.FromString,
+                    response_serializer=logistics__pb2.CustomerProfile.SerializeToString,
+            ),
+            'UpsertProfile': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpsertProfile,
+                    request_deserializer=logistics__pb2.CustomerProfile.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'ListSavedAddresses': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListSavedAddresses,
+                    request_deserializer=logistics__pb2.UserId.FromString,
+                    response_serializer=logistics__pb2.AddressListResponse.SerializeToString,
+            ),
+            'SaveAddress': grpc.unary_unary_rpc_method_handler(
+                    servicer.SaveAddress,
+                    request_deserializer=logistics__pb2.SavedAddress.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'DeleteAddress': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteAddress,
+                    request_deserializer=logistics__pb2.AddressId.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'GetNotifPrefs': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetNotifPrefs,
+                    request_deserializer=logistics__pb2.UserId.FromString,
+                    response_serializer=logistics__pb2.NotifPrefs.SerializeToString,
+            ),
+            'SetNotifPrefs': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetNotifPrefs,
+                    request_deserializer=logistics__pb2.NotifPrefs.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'GetPendingNotifs': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetPendingNotifs,
+                    request_deserializer=logistics__pb2.UserId.FromString,
+                    response_serializer=logistics__pb2.NotifListResponse.SerializeToString,
+            ),
+            'SubscribeStock': grpc.unary_unary_rpc_method_handler(
+                    servicer.SubscribeStock,
+                    request_deserializer=logistics__pb2.StockSubRequest.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'UnsubscribeStock': grpc.unary_unary_rpc_method_handler(
+                    servicer.UnsubscribeStock,
+                    request_deserializer=logistics__pb2.StockSubRequest.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'ListAdmins': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListAdmins,
+                    request_deserializer=logistics__pb2.Empty.FromString,
+                    response_serializer=logistics__pb2.AdminListResponse.SerializeToString,
+            ),
+            'AddAdmin': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddAdmin,
+                    request_deserializer=logistics__pb2.AdminUser.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'RemoveAdmin': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveAdmin,
+                    request_deserializer=logistics__pb2.AdminUserId.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'GetAuditLog': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAuditLog,
+                    request_deserializer=logistics__pb2.AuditLogRequest.FromString,
+                    response_serializer=logistics__pb2.AuditLogResponse.SerializeToString,
+            ),
+            'GetSystemSettings': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSystemSettings,
+                    request_deserializer=logistics__pb2.Empty.FromString,
+                    response_serializer=logistics__pb2.SystemSettings.SerializeToString,
+            ),
+            'SetSystemSettings': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetSystemSettings,
+                    request_deserializer=logistics__pb2.SystemSettings.FromString,
+                    response_serializer=logistics__pb2.StatusResponse.SerializeToString,
+            ),
+            'GetRevenueSummary': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetRevenueSummary,
+                    request_deserializer=logistics__pb2.DateRangeRequest.FromString,
+                    response_serializer=logistics__pb2.RevenueSummary.SerializeToString,
+            ),
+            'GetTopItems': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetTopItems,
+                    request_deserializer=logistics__pb2.TopItemsRequest.FromString,
+                    response_serializer=logistics__pb2.TopItemsResponse.SerializeToString,
+            ),
+            'GetOrderVolumeTrend': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetOrderVolumeTrend,
+                    request_deserializer=logistics__pb2.DateRangeRequest.FromString,
+                    response_serializer=logistics__pb2.OrderVolumeTrend.SerializeToString,
+            ),
+            'GetLowStockReport': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetLowStockReport,
+                    request_deserializer=logistics__pb2.LowStockRequest.FromString,
+                    response_serializer=logistics__pb2.LowStockResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -292,7 +1090,24 @@ def add_LogisticsEngineServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class LogisticsEngine(object):
-    """Missing associated documentation comment in .proto file."""
+    """═══════════════════════════════════════════════════════════════════════════
+    LogisticsEngine gRPC service — full rewrite v5
+    Changes vs v4:
+    • PostgreSQL-backed — all queries use $N placeholders
+    • Idempotency key on PlaceOrder  (fixes BUG-012)
+    • Pagination on every list RPC   (fixes PERF-002)
+    • Cart ownership validated        (fixes BUG-017)
+    • Status machine enforced         (fixes BUG-029)
+    • Order history, reorder, cancel, issue-report RPCs (Phase 2)
+    • Warehouse / depot CRUD          (Phase 1 A-001..A-003)
+    • Driver management               (Phase 1 A-026..A-033)
+    • Promo / loyalty                 (Phase 3 U-037..U-044)
+    • Audit log viewer RPC            (Phase 4 A-056)
+    • Admin user management RPC       (Phase 1 A-055)
+    • Notification preference RPC     (Phase 2 U-048)
+    ═══════════════════════════════════════════════════════════════════════════
+
+    """
 
     @staticmethod
     def CheckHealth(request,
@@ -349,6 +1164,33 @@ class LogisticsEngine(object):
             _registered_method=True)
 
     @staticmethod
+    def ScheduleMaintenance(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/ScheduleMaintenance',
+            logistics__pb2.MaintenanceWindow.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def GetCatalog(request,
             target,
             options=(),
@@ -363,8 +1205,35 @@ class LogisticsEngine(object):
             request,
             target,
             '/logistics.LogisticsEngine/GetCatalog',
-            logistics__pb2.Empty.SerializeToString,
+            logistics__pb2.CatalogRequest.SerializeToString,
             logistics__pb2.CatalogResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetItem(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetItem',
+            logistics__pb2.ItemId.SerializeToString,
+            logistics__pb2.Item.FromString,
             options,
             channel_credentials,
             insecure,
@@ -390,6 +1259,33 @@ class LogisticsEngine(object):
             request,
             target,
             '/logistics.LogisticsEngine/AddItem',
+            logistics__pb2.Item.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EditItem(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/EditItem',
             logistics__pb2.Item.SerializeToString,
             logistics__pb2.StatusResponse.FromString,
             options,
@@ -484,6 +1380,114 @@ class LogisticsEngine(object):
             _registered_method=True)
 
     @staticmethod
+    def BulkImportItems(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/BulkImportItems',
+            logistics__pb2.BulkImportRequest.SerializeToString,
+            logistics__pb2.BulkImportResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SaveCart(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/SaveCart',
+            logistics__pb2.SaveCartRequest.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetCart(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetCart',
+            logistics__pb2.UserId.SerializeToString,
+            logistics__pb2.CartResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ClearCart(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/ClearCart',
+            logistics__pb2.UserId.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def CalculateQuote(request,
             target,
             options=(),
@@ -538,7 +1542,7 @@ class LogisticsEngine(object):
             _registered_method=True)
 
     @staticmethod
-    def GetActiveOrders(request,
+    def GetOrder(request,
             target,
             options=(),
             channel_credentials=None,
@@ -551,8 +1555,35 @@ class LogisticsEngine(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/logistics.LogisticsEngine/GetActiveOrders',
-            logistics__pb2.UserId.SerializeToString,
+            '/logistics.LogisticsEngine/GetOrder',
+            logistics__pb2.OrderId.SerializeToString,
+            logistics__pb2.Order.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetUserOrders(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetUserOrders',
+            logistics__pb2.GetUserOrdersRequest.SerializeToString,
             logistics__pb2.OrderListResponse.FromString,
             options,
             channel_credentials,
@@ -619,7 +1650,7 @@ class LogisticsEngine(object):
             _registered_method=True)
 
     @staticmethod
-    def SaveCart(request,
+    def CancelOrder(request,
             target,
             options=(),
             channel_credentials=None,
@@ -632,8 +1663,8 @@ class LogisticsEngine(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/logistics.LogisticsEngine/SaveCart',
-            logistics__pb2.SaveCartRequest.SerializeToString,
+            '/logistics.LogisticsEngine/CancelOrder',
+            logistics__pb2.CancelOrderRequest.SerializeToString,
             logistics__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -646,7 +1677,7 @@ class LogisticsEngine(object):
             _registered_method=True)
 
     @staticmethod
-    def AddWarehouse(request,
+    def ReportOrderIssue(request,
             target,
             options=(),
             channel_credentials=None,
@@ -659,8 +1690,89 @@ class LogisticsEngine(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/logistics.LogisticsEngine/AddWarehouse',
-            logistics__pb2.AddWarehouseRequest.SerializeToString,
+            '/logistics.LogisticsEngine/ReportOrderIssue',
+            logistics__pb2.IssueReport.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ResolveOrderIssue(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/ResolveOrderIssue',
+            logistics__pb2.ResolveIssueRequest.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AssignDriver(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/AssignDriver',
+            logistics__pb2.AssignDriverRequest.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AddOrderNote(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/AddOrderNote',
+            logistics__pb2.OrderNoteRequest.SerializeToString,
             logistics__pb2.StatusResponse.FromString,
             options,
             channel_credentials,
@@ -688,7 +1800,979 @@ class LogisticsEngine(object):
             target,
             '/logistics.LogisticsEngine/ListWarehouses',
             logistics__pb2.Empty.SerializeToString,
-            logistics__pb2.ListWarehouseResponse.FromString,
+            logistics__pb2.WarehouseListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AddWarehouse(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/AddWarehouse',
+            logistics__pb2.Warehouse.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EditWarehouse(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/EditWarehouse',
+            logistics__pb2.Warehouse.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemoveWarehouse(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/RemoveWarehouse',
+            logistics__pb2.WarehouseId.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListDrivers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/ListDrivers',
+            logistics__pb2.ListDriversRequest.SerializeToString,
+            logistics__pb2.DriverListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AddDriver(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/AddDriver',
+            logistics__pb2.Driver.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EditDriver(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/EditDriver',
+            logistics__pb2.Driver.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemoveDriver(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/RemoveDriver',
+            logistics__pb2.DriverId.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetDriverAvailability(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/SetDriverAvailability',
+            logistics__pb2.DriverAvailability.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def BroadcastDrivers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/BroadcastDrivers',
+            logistics__pb2.BroadcastRequest.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListPromos(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/ListPromos',
+            logistics__pb2.Empty.SerializeToString,
+            logistics__pb2.PromoListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AddPromo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/AddPromo',
+            logistics__pb2.Promo.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EditPromo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/EditPromo',
+            logistics__pb2.Promo.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemovePromo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/RemovePromo',
+            logistics__pb2.PromoId.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ApplyPromoCode(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/ApplyPromoCode',
+            logistics__pb2.ApplyPromoRequest.SerializeToString,
+            logistics__pb2.PromoEffect.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetLoyaltyBalance(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetLoyaltyBalance',
+            logistics__pb2.UserId.SerializeToString,
+            logistics__pb2.LoyaltyBalance.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AdjustLoyaltyPoints(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/AdjustLoyaltyPoints',
+            logistics__pb2.LoyaltyAdjustment.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetProfile(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetProfile',
+            logistics__pb2.UserId.SerializeToString,
+            logistics__pb2.CustomerProfile.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpsertProfile(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/UpsertProfile',
+            logistics__pb2.CustomerProfile.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListSavedAddresses(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/ListSavedAddresses',
+            logistics__pb2.UserId.SerializeToString,
+            logistics__pb2.AddressListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SaveAddress(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/SaveAddress',
+            logistics__pb2.SavedAddress.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteAddress(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/DeleteAddress',
+            logistics__pb2.AddressId.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetNotifPrefs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetNotifPrefs',
+            logistics__pb2.UserId.SerializeToString,
+            logistics__pb2.NotifPrefs.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetNotifPrefs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/SetNotifPrefs',
+            logistics__pb2.NotifPrefs.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetPendingNotifs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetPendingNotifs',
+            logistics__pb2.UserId.SerializeToString,
+            logistics__pb2.NotifListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SubscribeStock(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/SubscribeStock',
+            logistics__pb2.StockSubRequest.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UnsubscribeStock(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/UnsubscribeStock',
+            logistics__pb2.StockSubRequest.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListAdmins(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/ListAdmins',
+            logistics__pb2.Empty.SerializeToString,
+            logistics__pb2.AdminListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AddAdmin(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/AddAdmin',
+            logistics__pb2.AdminUser.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemoveAdmin(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/RemoveAdmin',
+            logistics__pb2.AdminUserId.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAuditLog(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetAuditLog',
+            logistics__pb2.AuditLogRequest.SerializeToString,
+            logistics__pb2.AuditLogResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetSystemSettings(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetSystemSettings',
+            logistics__pb2.Empty.SerializeToString,
+            logistics__pb2.SystemSettings.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetSystemSettings(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/SetSystemSettings',
+            logistics__pb2.SystemSettings.SerializeToString,
+            logistics__pb2.StatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetRevenueSummary(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetRevenueSummary',
+            logistics__pb2.DateRangeRequest.SerializeToString,
+            logistics__pb2.RevenueSummary.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetTopItems(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetTopItems',
+            logistics__pb2.TopItemsRequest.SerializeToString,
+            logistics__pb2.TopItemsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetOrderVolumeTrend(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetOrderVolumeTrend',
+            logistics__pb2.DateRangeRequest.SerializeToString,
+            logistics__pb2.OrderVolumeTrend.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetLowStockReport(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/logistics.LogisticsEngine/GetLowStockReport',
+            logistics__pb2.LowStockRequest.SerializeToString,
+            logistics__pb2.LowStockResponse.FromString,
             options,
             channel_credentials,
             insecure,
