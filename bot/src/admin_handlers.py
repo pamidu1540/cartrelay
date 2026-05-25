@@ -86,8 +86,14 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         [InlineKeyboardButton("🔒 Maintenance",callback_data="admin_menu:maintenance"),
          InlineKeyboardButton("📜 Audit Log",  callback_data="admin_menu:audit")],
     ]
-    await _reply(update, "🔧 *Admin Panel*\nSelect a section:",
-                 reply_markup=InlineKeyboardMarkup(kb))
+    text = "🔧 *Admin Panel*\nSelect a section:"
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text, parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+    else:
+        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
     return ConversationHandler.END
 
 
@@ -108,11 +114,14 @@ async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     }
     if section in dispatch:
         await dispatch[section](update, context)
+    elif section == "main":
+        await cmd_admin(update, context)
     elif section == "catalog":
         kb = [
             [InlineKeyboardButton("➕ Add Item",    callback_data="admin_menu:additem")],
             [InlineKeyboardButton("📥 Bulk Import", callback_data="admin_menu:bulkimport")],
             [InlineKeyboardButton("📉 Low Stock",   callback_data="admin_menu:lowstock")],
+            [InlineKeyboardButton("⬅ Back to Menu", callback_data="admin_menu:main")],
         ]
         await query.edit_message_text("📦 *Catalog Management*",
             parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(kb))
@@ -121,6 +130,7 @@ async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             [InlineKeyboardButton("💰 Revenue",   callback_data="admin_menu:do_revenue")],
             [InlineKeyboardButton("📈 Trend",     callback_data="admin_menu:do_trend")],
             [InlineKeyboardButton("🏆 Top Items", callback_data="admin_menu:do_topitems")],
+            [InlineKeyboardButton("⬅ Back to Menu", callback_data="admin_menu:main")],
         ]
         await query.edit_message_text("📊 *Analytics*",
             parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(kb))
@@ -623,65 +633,123 @@ async def cmd_warehouses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _rpc_error(update, e)
         return
 
-    if not resp.warehouses:
-        await _reply(update, "🏭 No warehouses configured.\n\nUse /addwh to add the first one.")
-        return
-
     lines = ["🏭 *Warehouses*\n"]
-    for w in resp.warehouses:
-        flag = "✅" if w.is_active else "⏸"
-        lines.append(
-            f"{flag} *{w.name}*\n"
-            f"   📍 {w.address}\n"
-            f"   ⏰ {w.open_time}–{w.close_time}\n"
-            f"   🗺 {w.lat:.4f},{w.lon:.4f}\n"
-            f"   ID: `{w.id}`"
+    kb = []
+    if not resp.warehouses:
+        lines.append("_No warehouses configured._")
+    else:
+        for w in resp.warehouses:
+            flag = "✅" if w.is_active else "⏸"
+            lines.append(
+                f"{flag} *{w.name}*\n"
+                f"   📍 {w.address}\n"
+                f"   ⏰ {w.open_time}–{w.close_time}\n"
+                f"   🗺 {w.lat:.4f},{w.lon:.4f}\n"
+                f"   ID: `{w.id}`"
+            )
+            kb.append([InlineKeyboardButton(f"🗑 Remove {w.name}", callback_data=f"wh_remove:{w.id}")])
+
+    kb.append([InlineKeyboardButton("➕ Add Warehouse", callback_data="wh_add:start")])
+    kb.append([InlineKeyboardButton("⬅ Back to Menu", callback_data="admin_menu:main")])
+
+    text = "\n\n".join(lines)
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text, parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(kb)
         )
-    await _reply(update, "\n\n".join(lines))
+    else:
+        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+
+
+async def cb_wh_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    wh_id = query.data.split(":", 1)[1]
+    try:
+        resp = await pool.call(
+            "/logistics.LogisticsEngine/RemoveWarehouse",
+            lambda stub, meta: stub.RemoveWarehouse(pb.WarehouseId(id=wh_id), metadata=meta),
+            user_id=update.effective_user.id,
+        )
+        if resp.success:
+            await query.answer("✅ Warehouse removed successfully!")
+        else:
+            await query.answer(f"❌ {resp.message}", show_alert=True)
+    except Exception as e:
+        await query.answer(f"⚠️ {e}", show_alert=True)
+    await cmd_warehouses(update, context)
+
+
+async def cb_wh_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    context.user_data["new_wh_flow"] = {}
+    await query.edit_message_text("🏭 *Add Warehouse Wizard*\n\nStep 1/3 — Enter the warehouse *name*:")
+    return STATE_WH_NAME
 
 
 @admin_only
 async def cmd_add_warehouse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["new_wh"] = {}
-    await _reply(
-        update,
-        "🏭 *Add Warehouse*\n\n"
-        "Step 1/2 — Enter name and address:\n"
-        "Format: `Name | Full street address`",
-    )
+    context.user_data["new_wh_flow"] = {}
+    await _reply(update, "🏭 *Add Warehouse Wizard*\n\nStep 1/3 — Enter the warehouse *name*:")
     return STATE_WH_NAME
 
 
 async def msg_warehouse_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    flow = context.user_data.get("new_wh_flow")
+    if flow is None:
+        # Fallback to old format if they typed "Name | Address"
+        text = update.effective_message.text.strip()
+        if "|" in text:
+            name, addr = text.split("|", 1)
+            context.user_data["new_wh"] = {"name": name.strip(), "address": addr.strip()}
+            await _reply(update, "Step 2/2 — Enter `latitude,longitude`:")
+            return STATE_WH_COORDS
+        flow = {}
+        context.user_data["new_wh_flow"] = flow
+
     text = update.effective_message.text.strip()
-    if "|" in text:
-        name, addr = text.split("|", 1)
-        context.user_data["new_wh"]["name"]    = name.strip()
-        context.user_data["new_wh"]["address"] = addr.strip()
-    else:
-        context.user_data["new_wh"]["name"]    = text
-        context.user_data["new_wh"]["address"] = text
-    await _reply(update, "Step 2/2 — Enter `latitude,longitude`\n(e.g. `6.9271,79.8612`):")
+    if "name" not in flow:
+        flow["name"] = text
+        await _reply(update, "Step 2/3 — Enter the *full street address* of the warehouse:")
+        return STATE_WH_NAME
+    
+    if "address" not in flow:
+        flow["address"] = text
+        await _reply(update, "Step 3/3 — 📍 Please share the warehouse *location* (tap the 📎 attachment icon and select Location, or share a live/static location, or type `latitude,longitude`):")
+        return STATE_WH_COORDS
     return STATE_WH_COORDS
 
 
 async def msg_warehouse_coords(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    text = update.effective_message.text.strip()
-    try:
-        lat_s, lon_s = text.split(",", 1)
-        lat, lon = float(lat_s.strip()), float(lon_s.strip())
-    except (ValueError, TypeError):
-        await _reply(update, "❌ Bad format. Enter: `lat,lon`")
-        return STATE_WH_COORDS
+    msg = update.effective_message
+    flow = context.user_data.pop("new_wh_flow", None)
+    if flow is None:
+        flow = context.user_data.pop("new_wh", {})
 
-    d = context.user_data.pop("new_wh", {})
+    lat, lon = 0.0, 0.0
+    if msg.location:
+        lat = msg.location.latitude
+        lon = msg.location.longitude
+    else:
+        text = msg.text.strip()
+        try:
+            lat_s, lon_s = text.split(",", 1)
+            lat, lon = float(lat_s.strip()), float(lon_s.strip())
+        except (ValueError, TypeError):
+            # Put flow back
+            context.user_data["new_wh_flow"] = flow
+            await _reply(update, "❌ Please send a location attachment or enter in `lat,lon` format:")
+            return STATE_WH_COORDS
+
     try:
         resp = await pool.call(
             "/logistics.LogisticsEngine/AddWarehouse",
             lambda stub, meta: stub.AddWarehouse(
                 pb.Warehouse(
-                    name=d.get("name", ""),
-                    address=d.get("address", ""),
+                    name=flow.get("name", ""),
+                    address=flow.get("address", ""),
                     lat=lat, lon=lon,
                     open_time="08:00", close_time="20:00",
                     is_active=True,
@@ -690,10 +758,9 @@ async def msg_warehouse_coords(update: Update, context: ContextTypes.DEFAULT_TYP
             ),
             user_id=update.effective_user.id,
         )
-        await _reply(update,
-            f"✅ Warehouse *{d.get('name')}* added!\nID: `{resp.entity_id}`")
-    except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _reply(update, f"✅ Warehouse *{flow.get('name')}* added successfully!\nID: `{resp.entity_id}`")
+    except Exception as e:
+        await _reply(update, f"❌ Failed to add warehouse: {e}")
     return ConversationHandler.END
 
 
@@ -731,45 +798,120 @@ async def cmd_drivers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await _rpc_error(update, e)
         return
 
-    if not resp.drivers:
-        await _reply(update, "🚗 No drivers configured.\n\nUse /adddriver to add one.")
-        return
-
     lines = ["🚗 *Drivers*\n"]
-    for d in resp.drivers:
-        avail = "🟢 On-duty" if d.is_available else "🔴 Off-duty"
-        lines.append(
-            f"• *{d.name}* ({d.vehicle_type}) — {avail}\n"
-            f"  📱 {d.phone}   Zone: {d.zone or 'Any'}\n"
-            f"  ID: `{d.id}`"
+    kb = []
+    if not resp.drivers:
+        lines.append("_No drivers configured._")
+    else:
+        for d in resp.drivers:
+            avail = "🟢 On-duty" if d.is_available else "🔴 Off-duty"
+            lines.append(
+                f"• *{d.name}* ({d.vehicle_type}) — {avail}\n"
+                f"  📱 {d.phone}   Zone: {d.zone or 'Any'}\n"
+                f"  ID: `{d.id}`"
+            )
+            kb.append([InlineKeyboardButton(f"🗑 Remove {d.name}", callback_data=f"driver_remove:{d.id}")])
+
+    kb.append([InlineKeyboardButton("➕ Add New Driver", callback_data="driver_add:start")])
+    kb.append([InlineKeyboardButton("⬅ Back to Menu", callback_data="admin_menu:main")])
+
+    text = "\n\n".join(lines)
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text, parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(kb)
         )
-    await _reply(update, "\n\n".join(lines))
+    else:
+        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+
+
+async def cb_driver_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    drv_id = query.data.split(":", 1)[1]
+    try:
+        resp = await pool.call(
+            "/logistics.LogisticsEngine/RemoveDriver",
+            lambda stub, meta: stub.RemoveDriver(pb.DriverId(id=drv_id), metadata=meta),
+            user_id=update.effective_user.id,
+        )
+        if resp.success:
+            await query.answer("✅ Driver removed successfully!")
+        else:
+            await query.answer(f"❌ {resp.message}", show_alert=True)
+    except Exception as e:
+        await query.answer(f"⚠️ {e}", show_alert=True)
+    await cmd_drivers(update, context)
+
+
+async def cb_driver_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    context.user_data["new_driver_flow"] = {}
+    await query.edit_message_text("🚗 *Add Driver Wizard*\n\nStep 1/3 — Enter driver's *full name*:")
+    return STATE_DRV_NAME
 
 
 @admin_only
 async def cmd_add_driver(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["new_driver"] = {}
-    await _reply(update, "🚗 *Add Driver*\n\nEnter driver's *full name*:")
+    context.user_data["new_driver_flow"] = {}
+    await _reply(update, "🚗 *Add Driver Wizard*\n\nStep 1/3 — Enter driver's *full name*:")
     return STATE_DRV_NAME
 
 
 async def msg_driver_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data.setdefault("new_driver", {})["name"] = update.effective_message.text.strip()
-    await _reply(update, "Enter driver's *phone number*:")
+    flow = context.user_data.get("new_driver_flow")
+    if flow is None:
+        context.user_data.setdefault("new_driver", {})["name"] = update.effective_message.text.strip()
+        await _reply(update, "Enter driver's *phone number*:")
+        return STATE_DRV_PHONE
+
+    flow["name"] = update.effective_message.text.strip()
+    await _reply(update, "Step 2/3 — Enter driver's *phone number*:")
     return STATE_DRV_PHONE
 
 
 async def msg_driver_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["new_driver"]["phone"] = update.effective_message.text.strip()
-    d = context.user_data.pop("new_driver", {})
+    flow = context.user_data.get("new_driver_flow")
+    if flow is None:
+        context.user_data["new_driver"]["phone"] = update.effective_message.text.strip()
+        d = context.user_data.pop("new_driver", {})
+        flow = d
+        context.user_data["new_driver_flow"] = flow
+
+    flow["phone"] = update.effective_message.text.strip()
+    
+    kb = [
+        [
+            InlineKeyboardButton("🏍 Motorcycle", callback_data=f"driver_veh:{flow['name']}:{flow['phone']}:Motorcycle"),
+            InlineKeyboardButton("🚗 Car / Van", callback_data=f"driver_veh:{flow['name']}:{flow['phone']}:Car"),
+        ],
+        [
+            InlineKeyboardButton("🚲 Bicycle", callback_data=f"driver_veh:{flow['name']}:{flow['phone']}:Bicycle"),
+            InlineKeyboardButton("❌ Cancel", callback_data="admin_menu:drivers")
+        ]
+    ]
+    await _reply(update, "Step 3/3 — Choose driver's *vehicle type*:", reply_markup=InlineKeyboardMarkup(kb))
+    return ConversationHandler.END
+
+
+async def cb_driver_add_vehicle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")
+    name = parts[1]
+    phone = parts[2]
+    veh = parts[3]
+    context.user_data.pop("new_driver_flow", None)
+
     try:
         resp = await pool.call(
             "/logistics.LogisticsEngine/AddDriver",
             lambda stub, meta: stub.AddDriver(
                 pb.Driver(
-                    name=d.get("name", ""),
-                    phone=d.get("phone", ""),
-                    vehicle_type="Motorcycle",
+                    name=name,
+                    phone=phone,
+                    vehicle_type=veh,
                     is_available=False,
                     is_active=True,
                 ),
@@ -777,9 +919,11 @@ async def msg_driver_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             ),
             user_id=update.effective_user.id,
         )
-        await _reply(update, f"✅ Driver *{d.get('name')}* added!\nID: `{resp.entity_id}`")
-    except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await query.edit_message_text(f"✅ Driver *{name}* added successfully!\nID: `{resp.entity_id}`")
+    except Exception as e:
+        await query.edit_message_text(f"❌ Failed to add driver: {e}")
+
+    await cmd_drivers(update, context)
     return ConversationHandler.END
 
 
@@ -838,55 +982,160 @@ async def cmd_promos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await _rpc_error(update, e)
         return
 
-    if not resp.promos:
-        await _reply(update, "🏷 No promos configured.\n\nUse /addpromo to create one.")
-        return
-
     lines = ["🏷 *Promotions*\n"]
-    for p in resp.promos:
-        flag = "✅" if p.is_active else "⏸"
-        disc = f"{p.discount_value:.0f}%" if p.discount_type == "percent" \
-               else f"LKR {p.discount_value:.0f}"
-        uses = f"{p.uses_count}/{p.max_uses}" if p.max_uses else f"{p.uses_count}/∞"
-        lines.append(
-            f"{flag} *{p.code}* — {disc} off\n"
-            f"   Min order: LKR {p.min_order_value:.0f}   Uses: {uses}\n"
-            f"   ID: `{p.id}`"
+    kb = []
+    if not resp.promos:
+        lines.append("_No promos configured._")
+    else:
+        for p in resp.promos:
+            flag = "✅" if p.is_active else "⏸"
+            disc = f"{p.discount_value:.0f}%" if p.discount_type == "percent" \
+                   else f"LKR {p.discount_value:.0f}"
+            uses = f"{p.uses_count}/{p.max_uses}" if p.max_uses else f"{p.uses_count}/∞"
+            lines.append(
+                f"{flag} *{p.code}* — {disc} off\n"
+                f"   Min order: LKR {p.min_order_value:.0f}   Uses: {uses}\n"
+                f"   ID: `{p.id}`"
+            )
+            kb.append([InlineKeyboardButton(f"🗑 Remove {p.code}", callback_data=f"promo_remove:{p.id}")])
+
+    kb.append([InlineKeyboardButton("➕ Create Promo Code", callback_data="promo_add:start")])
+    kb.append([InlineKeyboardButton("⬅ Back to Menu", callback_data="admin_menu:main")])
+
+    text = "\n\n".join(lines)
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text, parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(kb)
         )
-    await _reply(update, "\n\n".join(lines))
+    else:
+        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+
+
+async def cb_promo_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    promo_id = query.data.split(":", 1)[1]
+    try:
+        resp = await pool.call(
+            "/logistics.LogisticsEngine/RemovePromo",
+            lambda stub, meta: stub.RemovePromo(pb.PromoId(id=promo_id), metadata=meta),
+            user_id=update.effective_user.id,
+        )
+        if resp.success:
+            await query.answer("✅ Promo removed successfully!")
+        else:
+            await query.answer(f"❌ {resp.message}", show_alert=True)
+    except Exception as e:
+        await query.answer(f"⚠️ {e}", show_alert=True)
+    await cmd_promos(update, context)
+
+
+async def cb_promo_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    context.user_data["new_promo_flow"] = {}
+    await query.edit_message_text("🏷 *Create Promo Code Wizard*\n\nStep 1/4 — Enter the *Promo Code* (e.g. SAVE10):")
+    return STATE_PROMO_DEF
 
 
 @admin_only
 async def cmd_add_promo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await _reply(
-        update,
-        "🏷 *Create Promo Code*\n\n"
-        "Format: `CODE | percent|fixed | value | min_order`\n\n"
-        "Examples:\n"
-        "`SAVE10 | percent | 10 | 1000`\n"
-        "`FLAT200 | fixed | 200 | 0`",
-    )
+    context.user_data["new_promo_flow"] = {}
+    await _reply(update, "🏷 *Create Promo Code Wizard*\n\nStep 1/4 — Enter the *Promo Code* (e.g. SAVE10):")
+    return STATE_PROMO_DEF
+
+
+async def cb_promo_flow_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    dtype = query.data.split(":", 1)[1]
+    flow = context.user_data.get("new_promo_flow")
+
+    if not flow or "code" not in flow:
+        await query.edit_message_text("❌ Session expired.")
+        return ConversationHandler.END
+
+    flow["discount_type"] = dtype
+    friendly = "percentage value (e.g. 10 for 10%)" if dtype == "percent" else "LKR discount amount (e.g. 200)"
+    await query.edit_message_text(f"Step 3/4 — Enter the *{friendly}*:")
     return STATE_PROMO_DEF
 
 
 async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    parts = [p.strip() for p in update.effective_message.text.split("|")]
-    if len(parts) < 3:
-        await _reply(update, "❌ Format: `CODE | percent|fixed | value | min_order`")
-        return STATE_PROMO_DEF
-    try:
-        code   = parts[0].upper()
-        dtype  = parts[1].lower()
-        if dtype not in ("percent", "fixed"):
-            raise ValueError("type must be 'percent' or 'fixed'")
-        value     = float(parts[2])
-        min_order = float(parts[3]) if len(parts) > 3 else 0.0
+    flow = context.user_data.get("new_promo_flow")
+    if flow is None:
+        text = update.effective_message.text.strip()
+        if "|" in text:
+            parts = [p.strip() for p in text.split("|")]
+            if len(parts) >= 3:
+                try:
+                    code = parts[0].upper()
+                    dtype = parts[1].lower()
+                    val = float(parts[2])
+                    min_order = float(parts[3]) if len(parts) > 3 else 0.0
+                    await pool.call(
+                        "/logistics.LogisticsEngine/AddPromo",
+                        lambda stub, meta: stub.AddPromo(
+                            pb.Promo(
+                                code=code, discount_type=dtype, discount_value=val,
+                                min_order_value=min_order, is_active=True,
+                                max_uses=0, per_user_limit=0,
+                            ),
+                            metadata=meta,
+                        ),
+                        user_id=update.effective_user.id,
+                    )
+                    await _reply(update, f"✅ Promo *{code}* created!")
+                except Exception as e:
+                    await _reply(update, f"❌ Failed: {e}")
+                return ConversationHandler.END
+        flow = {}
+        context.user_data["new_promo_flow"] = flow
 
+    text = update.effective_message.text.strip()
+    if "code" not in flow:
+        flow["code"] = text.upper()
+        kb = [
+            [
+                InlineKeyboardButton("Percentage (%)", callback_data="promo_flow_type:percent"),
+                InlineKeyboardButton("Fixed Amount (LKR)", callback_data="promo_flow_type:fixed"),
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="admin_menu:promos")]
+        ]
+        await _reply(update, f"Step 2/4 — Choose discount type for *{flow['code']}*:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_PROMO_DEF
+
+    if "discount_type" not in flow:
+        await _reply(update, "❌ Please choose a discount type using the buttons above.")
+        return STATE_PROMO_DEF
+
+    if "value" not in flow:
+        try:
+            val = float(text)
+            if val < 0:
+                raise ValueError("cannot be negative")
+            flow["value"] = val
+            await _reply(update, "Step 4/4 — Enter the *minimum order value* required to apply this promo (LKR, or 0 for none):")
+            return STATE_PROMO_DEF
+        except ValueError:
+            await _reply(update, "❌ Please enter a valid positive number for discount value:")
+            return STATE_PROMO_DEF
+
+    try:
+        min_order = float(text)
+        if min_order < 0:
+            raise ValueError("cannot be negative")
+        
+        code = flow["code"]
+        dtype = flow["discount_type"]
+        val = flow["value"]
+        
         resp = await pool.call(
             "/logistics.LogisticsEngine/AddPromo",
             lambda stub, meta: stub.AddPromo(
                 pb.Promo(
-                    code=code, discount_type=dtype, discount_value=value,
+                    code=code, discount_type=dtype, discount_value=val,
                     min_order_value=min_order, is_active=True,
                     max_uses=0, per_user_limit=0,
                 ),
@@ -894,12 +1143,14 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ),
             user_id=update.effective_user.id,
         )
-        await _reply(update, f"✅ Promo *{code}* created! ID: `{resp.entity_id}`")
-    except ValueError as e:
-        await _reply(update, f"❌ {e}")
+        await _reply(update, f"✅ Promo *{code}* created successfully!\nID: `{resp.entity_id}`")
+    except ValueError:
+        await _reply(update, "❌ Please enter a valid positive number for minimum order value:")
         return STATE_PROMO_DEF
-    except grpc.RpcError as e:
-        await _rpc_error(update, e)
+    except Exception as e:
+        await _reply(update, f"❌ Failed to create promo: {e}")
+
+    await cmd_promos(update, context)
     return ConversationHandler.END
 
 
@@ -979,39 +1230,133 @@ async def cmd_admins(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     lines = ["👥 *Admin Users*\n"]
+    kb = []
     for a in resp.admins:
         lines.append(f"• `{a.telegram_id}` @{a.username} — *{a.role}*")
-    await _reply(update, "\n".join(lines))
+        if a.telegram_id != update.effective_user.id:
+            kb.append([InlineKeyboardButton(f"🗑 Remove @{a.username}", callback_data=f"admin_remove:{a.telegram_id}")])
+
+    kb.append([InlineKeyboardButton("➕ Add New Admin", callback_data="admin_add:start")])
+    kb.append([InlineKeyboardButton("⬅ Back to Menu", callback_data="admin_menu:main")])
+
+    text = "\n".join(lines)
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text, parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+    else:
+        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+
+
+async def cb_admin_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    tg_id = int(query.data.split(":", 1)[1])
+    try:
+        resp = await pool.call(
+            "/logistics.LogisticsEngine/RemoveAdmin",
+            lambda stub, meta: stub.RemoveAdmin(
+                pb.AdminUserId(telegram_id=tg_id), metadata=meta
+            ),
+            user_id=update.effective_user.id,
+        )
+        if resp.success:
+            await query.answer("✅ Admin removed successfully!")
+        else:
+            await query.answer(f"❌ {resp.message}", show_alert=True)
+    except Exception as e:
+        await query.answer(f"⚠️ {e}", show_alert=True)
+    await cmd_admins(update, context)
+
+
+async def cb_admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    context.user_data["new_admin_flow"] = {}
+    await query.edit_message_text("👥 *Add Admin Wizard*\n\nStep 1/3 — Please enter the Telegram User ID of the new admin:")
+    return STATE_NEW_ADMIN
 
 
 @admin_only
 async def cmd_add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await _reply(
-        update,
-        "👥 *Add Admin*\n\n"
-        "Format: `telegram_id | @username | role`\n"
-        "Roles: `super_admin` `dispatcher` `catalog_manager` `support`\n\n"
-        "Example: `123456789 | @john | dispatcher`",
-    )
+    context.user_data["new_admin_flow"] = {}
+    await _reply(update, "👥 *Add Admin Wizard*\n\nStep 1/3 — Please enter the Telegram User ID of the new admin:")
     return STATE_NEW_ADMIN
 
 
 async def msg_new_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    parts = [p.strip() for p in update.effective_message.text.split("|")]
-    if len(parts) < 3:
-        await _reply(update, "❌ Format: `telegram_id | @username | role`")
-        return STATE_NEW_ADMIN
+    flow = context.user_data.get("new_admin_flow")
+    if flow is None:
+        text = update.effective_message.text.strip()
+        if "|" in text:
+            parts = [p.strip() for p in text.split("|")]
+            if len(parts) >= 3:
+                try:
+                    tg_id = int(parts[0])
+                    username = parts[1].lstrip("@")
+                    role = parts[2].lower()
+                    await pool.call(
+                        "/logistics.LogisticsEngine/AddAdmin",
+                        lambda stub, meta: stub.AddAdmin(
+                            pb.AdminUser(
+                                telegram_id=tg_id, username=username, role=role,
+                                added_by=update.effective_user.id,
+                            ),
+                            metadata=meta,
+                        ),
+                        user_id=update.effective_user.id,
+                    )
+                    await _reply(update, f"✅ Admin @{username} added with role *{role}*")
+                except Exception as e:
+                    await _reply(update, f"❌ Failed: {e}")
+                return ConversationHandler.END
+        flow = {}
+        context.user_data["new_admin_flow"] = flow
 
-    VALID_ROLES = {"super_admin", "dispatcher", "catalog_manager", "support"}
-    try:
-        tg_id    = int(parts[0])
-        username = parts[1].lstrip("@")
-        role     = parts[2].lower()
-        if role not in VALID_ROLES:
-            await _reply(update,
-                f"❌ Invalid role. Use one of: {', '.join(VALID_ROLES)}")
+    text = update.effective_message.text.strip()
+    if "telegram_id" not in flow:
+        try:
+            tg_id = int(text)
+            flow["telegram_id"] = tg_id
+            await _reply(update, "Step 2/3 — Enter their Telegram username (with or without @):")
+            return STATE_NEW_ADMIN
+        except ValueError:
+            await _reply(update, "❌ User ID must be a number. Please enter a valid Telegram User ID:")
             return STATE_NEW_ADMIN
 
+    if "username" not in flow:
+        flow["username"] = text.lstrip("@")
+        kb = [
+            [
+                InlineKeyboardButton("Super Admin", callback_data="add_admin_role:super_admin"),
+                InlineKeyboardButton("Dispatcher", callback_data="add_admin_role:dispatcher"),
+            ],
+            [
+                InlineKeyboardButton("Catalog Manager", callback_data="add_admin_role:catalog_manager"),
+                InlineKeyboardButton("Support", callback_data="add_admin_role:support"),
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="admin_menu:admins")]
+        ]
+        await _reply(update, "Step 3/3 — Choose their admin role:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_NEW_ADMIN
+    return STATE_NEW_ADMIN
+
+
+async def cb_admin_add_role(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    role = query.data.split(":", 1)[1]
+    flow = context.user_data.pop("new_admin_flow", None)
+
+    if not flow or "telegram_id" not in flow or "username" not in flow:
+        await query.edit_message_text("❌ Session expired.")
+        return ConversationHandler.END
+
+    tg_id = flow["telegram_id"]
+    username = flow["username"]
+
+    try:
         await pool.call(
             "/logistics.LogisticsEngine/AddAdmin",
             lambda stub, meta: stub.AddAdmin(
@@ -1023,12 +1368,11 @@ async def msg_new_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ),
             user_id=update.effective_user.id,
         )
-        await _reply(update,
-            f"✅ Admin @{username} added with role *{role}*")
-    except (ValueError, IndexError):
-        await _reply(update, "❌ Invalid input.")
-    except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await query.edit_message_text(f"✅ Admin @{username} added successfully with role *{role}*!", parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        await query.edit_message_text(f"❌ Failed to add admin: {e}")
+
+    await cmd_admins(update, context)
     return ConversationHandler.END
 
 
@@ -1068,26 +1412,124 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await _rpc_error(update, e)
         return
 
-    await _reply(
-        update,
+    text = (
         "⚙️ *System Settings*\n\n"
-        f"`delivery_base_fare`       LKR {s.delivery_base_fare:.0f}\n"
-        f"`delivery_rate_per_km`     LKR {s.delivery_rate_per_km:.0f}\n"
-        f"`tax_rate`                 {s.tax_rate * 100:.1f}%\n"
-        f"`free_delivery_threshold`  LKR {s.free_delivery_threshold:.0f}\n"
-        f"`cancel_window_minutes`    {s.cancel_window_minutes} min\n"
-        f"`loyalty_earn_rate`        {s.loyalty_earn_rate} pts / LKR 100\n"
-        f"`loyalty_redeem_rate`      {s.loyalty_redeem_rate} pts / LKR 1\n"
-        f"`min_order_value`          LKR {s.min_order_value}\n"
-        f"`max_order_value`          LKR {s.max_order_value} (0=unlimited)\n"
-        f"`order_cutoff_time`        {s.order_cutoff_time or 'None'}\n\n"
-        "To update, use: `/setsetting <key> <value>`\n"
-        "Example: `/setsetting delivery_base_fare 600`",
+        f"• *Base Fare:* LKR {s.delivery_base_fare:.0f}\n"
+        f"• *Rate Per Km:* LKR {s.delivery_rate_per_km:.0f}\n"
+        f"• *Tax Rate:* {s.tax_rate * 100:.1f}%\n"
+        f"• *Free Delivery Threshold:* LKR {s.free_delivery_threshold:.0f}\n"
+        f"• *Cancel Window:* {s.cancel_window_minutes} min\n"
+        f"• *Min Order Value:* LKR {s.min_order_value:.0f}\n"
+        f"• *Max Order Value:* LKR {s.max_order_value:.0f} (0=unlim)\n"
+        f"• *Order Cutoff Time:* {s.order_cutoff_time or 'None'}\n\n"
+        "Tap a setting below to edit its value:"
     )
+
+    kb = [
+        [
+            InlineKeyboardButton("Base Fare", callback_data="set_key:delivery_base_fare"),
+            InlineKeyboardButton("Rate/KM", callback_data="set_key:delivery_rate_per_km"),
+        ],
+        [
+            InlineKeyboardButton("Tax Rate", callback_data="set_key:tax_rate"),
+            InlineKeyboardButton("Free Deliv Threshold", callback_data="set_key:free_delivery_threshold"),
+        ],
+        [
+            InlineKeyboardButton("Cancel Window", callback_data="set_key:cancel_window_minutes"),
+            InlineKeyboardButton("Min Order Value", callback_data="set_key:min_order_value"),
+        ],
+        [
+            InlineKeyboardButton("Max Order Value", callback_data="set_key:max_order_value"),
+            InlineKeyboardButton("Cutoff Time", callback_data="set_key:order_cutoff_time"),
+        ],
+        [
+            InlineKeyboardButton("⬅ Back to Admin Menu", callback_data="admin_menu:main"),
+        ]
+    ]
+
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            text, parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+    else:
+        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+
+
+async def cb_set_setting_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    key = query.data.split(":", 1)[1]
+    context.user_data["editing_setting_key"] = key
+
+    friendly_names = {
+        "delivery_base_fare": "Base Fare (LKR)",
+        "delivery_rate_per_km": "Rate Per KM (LKR)",
+        "tax_rate": "Tax Rate (as decimal, e.g. 0.15 for 15%)",
+        "free_delivery_threshold": "Free Delivery Threshold (LKR)",
+        "cancel_window_minutes": "Cancel Window (minutes)",
+        "min_order_value": "Min Order Value (LKR)",
+        "max_order_value": "Max Order Value (LKR)",
+        "order_cutoff_time": "Order Cutoff Time (HH:MM format, or 'None')",
+    }
+
+    friendly = friendly_names.get(key, key)
+    await query.edit_message_text(f"✏️ *Editing System Setting*\n\nPlease enter the new value for *{friendly}*:")
+    return STATE_SETTINGS_VAL
 
 
 async def msg_settings_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # Reserved for interactive settings editing flow
+    key = context.user_data.pop("editing_setting_key", None)
+    if not key:
+        await _reply(update, "❌ Setting session expired.")
+        return ConversationHandler.END
+
+    val_text = update.effective_message.text.strip()
+    try:
+        s = await pool.call(
+            "/logistics.LogisticsEngine/GetSystemSettings",
+            lambda stub, meta: stub.GetSystemSettings(pb.Empty(), metadata=meta),
+            user_id=update.effective_user.id,
+        )
+    except Exception as e:
+        await _reply(update, f"❌ Failed to fetch current settings: {e}")
+        return ConversationHandler.END
+
+    try:
+        if key == "order_cutoff_time":
+            if val_text.lower() == "none" or val_text == "":
+                s.order_cutoff_time = ""
+            else:
+                import re
+                if not re.match(r"^\d{2}:\d{2}$", val_text):
+                    raise ValueError("Cutoff time must be in HH:MM format.")
+                s.order_cutoff_time = val_text
+        elif key in ("delivery_base_fare", "delivery_rate_per_km", "tax_rate", "free_delivery_threshold"):
+            val = float(val_text)
+            if val < 0:
+                raise ValueError("Value cannot be negative.")
+            setattr(s, key, val)
+        elif key in ("cancel_window_minutes", "min_order_value", "max_order_value"):
+            val = int(val_text)
+            if val < 0:
+                raise ValueError("Value cannot be negative.")
+            setattr(s, key, val)
+    except ValueError as e:
+        await _reply(update, f"❌ Invalid value: {e}. Please try again.")
+        context.user_data["editing_setting_key"] = key
+        return STATE_SETTINGS_VAL
+
+    try:
+        await pool.call(
+            "/logistics.LogisticsEngine/SetSystemSettings",
+            lambda stub, meta: stub.SetSystemSettings(s, metadata=meta),
+            user_id=update.effective_user.id,
+        )
+        await _reply(update, f"✅ Setting *{key}* updated successfully!")
+    except Exception as e:
+        await _reply(update, f"❌ Failed to save settings: {e}")
+
+    await cmd_settings(update, context)
     return ConversationHandler.END
 
 
