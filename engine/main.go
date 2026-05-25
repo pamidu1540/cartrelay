@@ -113,7 +113,7 @@ func main() {
 		slog.Error("listen failed", "socket", socketPath, "err", err)
 		os.Exit(1)
 	}
-	if err := os.Chmod(socketPath, 0o600); err != nil {
+	if err := os.Chmod(socketPath, 0o666); err != nil {
 		slog.Error("chmod socket failed", "err", err)
 		os.Exit(1)
 	}
