@@ -6,7 +6,7 @@ A high-performance, containerized logistics and e-commerce platform built with G
 
 The system is composed of three main microservices/components, orchestrated via Docker Compose:
 
-1. **Engine (Go / SQLite)**
+1. **Engine (Go / PostgreSQL)**
    The core backend service. It exposes a highly-performant gRPC API over a Unix Domain Socket (`/app/sockets/logistics.sock`). It handles:
    - Atomic transactions for inventory management.
    - Idempotent order processing and cart state persistence.
@@ -76,7 +76,7 @@ To run the stack locally for development:
 
 ## 📂 Directory Structure
 
-- `/engine/` - Go backend, gRPC server, SQLite database logic.
+- `/engine/` - Go backend, gRPC server, PostgreSQL database logic.
 - `/bot/` - Python Telegram Bot, gRPC client, UI handlers.
 - `/supervisor/` - Go CLI for managing the deployed stack.
 - `/.github/workflows/` - CI/CD pipelines.

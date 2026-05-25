@@ -95,7 +95,7 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_ENGINE }}:${{ github.ref_name }}
-            ${{ env.IMAGE_ENGINE }}:v10-latest
+            ${{ env.IMAGE_ENGINE }}:latest
           build-args: BUILD_VERSION=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -108,7 +108,7 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE_BOT }}:${{ github.ref_name }}
-            ${{ env.IMAGE_BOT }}:v10-latest
+            ${{ env.IMAGE_BOT }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -257,16 +257,16 @@ jobs:
           aws s3 cp ./install.sh $BUCKET/install.sh \
             --endpoint-url $ENDPOINT
 
-          # 4. Mirror to a 'v10-latest' folder for static CDN URLs
-          aws s3 cp ./dist/logistics-supervisor-linux-amd64 s3://${{ secrets.R2_BUCKET_NAME }}/v10-latest/supervisor \
+           # 4. Mirror to a 'latest' folder for static CDN URLs
+          aws s3 cp ./dist/logistics-supervisor-linux-amd64 s3://${{ secrets.R2_BUCKET_NAME }}/latest/supervisor \
             --endpoint-url $ENDPOINT
-          aws s3 cp ./install.sh s3://${{ secrets.R2_BUCKET_NAME }}/v10-latest/install.sh \
+          aws s3 cp ./install.sh s3://${{ secrets.R2_BUCKET_NAME }}/latest/install.sh \
             --endpoint-url $ENDPOINT
 
           # 5. Upload OTA updates
           aws s3 cp ./update.tar.gz $BUCKET/update.tar.gz \
             --endpoint-url $ENDPOINT
-          aws s3 cp ./manifest.json s3://${{ secrets.R2_BUCKET_NAME }}/v10-latest/manifest.json \
+          aws s3 cp ./manifest.json s3://${{ secrets.R2_BUCKET_NAME }}/latest/manifest.json \
             --endpoint-url $ENDPOINT
 
           echo "✅ Upload complete!"
