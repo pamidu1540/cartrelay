@@ -216,14 +216,14 @@ select_version() {
   step "Fetching latest release"
   SELECTED_VERSION=$(curl -fsSL \
     "https://api.github.com/repos/${GHCR_OWNER}/${GHCR_REPO}/releases" \
-    2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); v10=[r.get('tag_name') for r in d if r.get('tag_name','').startswith('v10')]; print(v10[0] if v10 else 'v10-latest')" \
-    2>/dev/null || echo "v10-latest")
-  [[ -z "$SELECTED_VERSION" ]] && SELECTED_VERSION="v10-latest"
+    2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); tags=[r.get('tag_name') for r in d if r.get('tag_name')]; print(tags[0] if tags else 'latest')" \
+    2>/dev/null || echo "latest")
+  [[ -z "$SELECTED_VERSION" ]] && SELECTED_VERSION="latest"
   ok "Version: ${SELECTED_VERSION}"
 }
 
 cleanup_legacy_install() {
-  step "Cleaning up legacy v5 installation"
+  step "Cleaning up legacy installation"
   
   if systemctl is-active --quiet "${SERVICE_NAME}"; then
     info "Stopping legacy systemd service…"
@@ -270,7 +270,7 @@ POSTGRES_DB=${POSTGRES_DB}
 BUILD_VERSION=${SELECTED_VERSION}
 ENGINE_IMAGE=${IMAGE_ENGINE}:${SELECTED_VERSION}
 BOT_IMAGE=${IMAGE_BOT}:${SELECTED_VERSION}
-UPDATE_MANIFEST_URL="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/v10-latest/manifest.json"
+UPDATE_MANIFEST_URL="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/manifest.json"
 ENV
   chmod 600 "$f"
   ok "Wrote ${f}  (mode 600 — root-readable only)"
@@ -418,9 +418,9 @@ install_supervisor_binary() {
   # Default to the specific version folder uploaded by GitHub Actions
   local bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/${SELECTED_VERSION}/logistics-supervisor-linux-amd64"
   
-  # Override to the 'v10-latest' folder if no specific version tag was found
-  if [[ "$SELECTED_VERSION" == "v10-latest" ]]; then
-    bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/v10-latest/supervisor"
+  # Override to the 'latest' folder if no specific version tag was found
+  if [[ "$SELECTED_VERSION" == "latest" ]]; then
+    bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/supervisor"
   fi
   
   info "Downloading from Cloudflare R2 CDN: ${SELECTED_VERSION}"
