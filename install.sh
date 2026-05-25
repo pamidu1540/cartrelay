@@ -2,7 +2,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-readonly INSTALLER_VERSION="4.0.0"
+readonly INSTALLER_VERSION="10.0.0"
 readonly GHCR_OWNER="pamidu1540"
 readonly GHCR_REPO="logistics-engine-core"
 readonly IMAGE_ENGINE="ghcr.io/${GHCR_OWNER}/${GHCR_REPO}/engine"
@@ -220,6 +220,31 @@ select_version() {
     2>/dev/null || echo "v10-latest")
   [[ -z "$SELECTED_VERSION" ]] && SELECTED_VERSION="v10-latest"
   ok "Version: ${SELECTED_VERSION}"
+}
+
+cleanup_legacy_install() {
+  step "Cleaning up legacy v5 installation"
+  
+  if systemctl is-active --quiet "${SERVICE_NAME}"; then
+    info "Stopping legacy systemd service…"
+    systemctl stop "${SERVICE_NAME}"
+    systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
+  fi
+
+  if [[ -f "${INSTALL_DIR}/deploy/docker-compose.yml" ]]; then
+    info "Stopping legacy Docker Compose stack…"
+    ( cd "${INSTALL_DIR}/deploy" && docker compose down -v 2>/dev/null || true )
+  fi
+
+  info "Removing orphaned containers…"
+  docker rm -f logistics_engine logistics_bot logistics_postgres 2>/dev/null || true
+
+  if [[ -d "${INSTALL_DIR}/data" ]]; then
+    local backup_dir="${INSTALL_DIR}.bak.$(date +%s)"
+    info "Backing up legacy SQLite data to ${backup_dir}…"
+    mv "${INSTALL_DIR}" "${backup_dir}"
+    ok "Legacy data safely backed up"
+  fi
 }
 
 create_directories() {
@@ -501,6 +526,7 @@ main() {
   verify_license
   collect_config
   select_version
+  cleanup_legacy_install
   create_directories
   write_env
   write_compose
