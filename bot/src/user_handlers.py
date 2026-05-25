@@ -118,6 +118,33 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     await _cart(context).invalidate_local(user.id)
 
+    # Check setup status for disclaimer
+    disclaimer = ""
+    try:
+        wh_resp = await pool.call(
+            "/logistics.LogisticsEngine/ListWarehouses",
+            lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta)
+        )
+        has_wh = len(wh_resp.warehouses) > 0
+    except Exception:
+        has_wh = False
+
+    try:
+        cat_resp = await pool.call(
+            "/logistics.LogisticsEngine/GetCatalog",
+            lambda stub, meta: stub.GetCatalog(pb.CatalogRequest(page=0, page_size=1), metadata=meta)
+        )
+        has_cat = len(cat_resp.items) > 0
+    except Exception:
+        has_cat = False
+
+    if not has_wh or not has_cat:
+        disclaimer = (
+            "⚠️ *Disclaimer:* The system is currently in initial setup mode. "
+            "Admin options (such as warehouses or catalog items) have not been fully configured/enabled yet. "
+            "Some features may be limited.\n\n"
+        )
+
     kb = [
         [InlineKeyboardButton("🛒 Browse Catalog", callback_data="cat_select:all:0")],
         [InlineKeyboardButton("🛍 My Cart",   callback_data="checkout"),
@@ -128,7 +155,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     ]
     await _safe_reply(
         update,
-        f"👋 Welcome back, *{user.first_name}*!\n\nHow can we help you today?",
+        f"{disclaimer}👋 Welcome back, *{user.first_name}*!\n\nHow can we help you today?",
         reply_markup=InlineKeyboardMarkup(kb),
     )
     return ConversationHandler.END
@@ -166,6 +193,17 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 @check_maintenance
 async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """U-011: Show category buttons for browsing."""
+    # Check setup status
+    disclaimer = ""
+    try:
+        wh_resp = await pool.call(
+            "/logistics.LogisticsEngine/ListWarehouses",
+            lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta)
+        )
+        has_wh = len(wh_resp.warehouses) > 0
+    except Exception:
+        has_wh = False
+
     try:
         resp = await pool.call(
             "/logistics.LogisticsEngine/GetCatalog",
@@ -173,9 +211,17 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 pb.CatalogRequest(page=0, page_size=200), metadata=meta
             ),
         )
+        has_cat = len(resp.items) > 0
     except grpc.RpcError as e:
         await _safe_reply(update, f"⚠️ Could not load catalog: {e.details()}")
         return
+
+    if not has_wh or not has_cat:
+        disclaimer = (
+            "⚠️ *Disclaimer:* The system is currently in initial setup mode. "
+            "Admin options (such as warehouses or catalog items) have not been fully configured/enabled yet. "
+            "Some features may be limited.\n\n"
+        )
 
     # Build category list
     categories = sorted({it.category for it in resp.items if it.is_available})
@@ -184,7 +230,7 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     kb.append([InlineKeyboardButton("🔍 All Items", callback_data="cat_select:all:0")])
     await _safe_reply(
         update,
-        "🛒 *Browse our catalog*\nChoose a category:",
+        f"{disclaimer}🛒 *Browse our catalog*\nChoose a category:",
         reply_markup=InlineKeyboardMarkup(kb),
     )
 
@@ -329,6 +375,21 @@ async def cb_add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     items = await _cart(context).add_item(user_id, item_id, int(qty_str))
     total_items = sum(ci.quantity for ci in items)
+    in_cart = sum(ci.quantity for ci in items if ci.item_id == item_id)
+
+    kb = [
+        [
+            InlineKeyboardButton(f"➕ Add More ({in_cart} in cart)", callback_data=f"add_to_cart:{item_id}:1"),
+        ],
+        [
+            InlineKeyboardButton("🛍 My Cart", callback_data="checkout"),
+            InlineKeyboardButton("⬅ Back to Catalog", callback_data="cat_select:all:0"),
+        ]
+    ]
+    try:
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(kb))
+    except Exception:
+        pass
     await query.answer(f"✅ Added to cart ({total_items} items total)", show_alert=False)
 
 
@@ -931,6 +992,7 @@ async def cb_reorder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     query = update.callback_query
     await query.answer()
     order_id = query.data.split(":", 1)[1]
+    user_id = update.effective_user.id
 
     try:
         order = await pool.call(
@@ -943,11 +1005,49 @@ async def cb_reorder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await query.answer(f"⚠️ {e.details()}", show_alert=True)
         return
 
-    # Parse receipt to extract items (or use order_items via separate RPC in future)
-    # For now, the engine returns order_items as part of order history
+    # Parse receipt to extract items
+    import re
+    parsed_items = []
+    for line in order.receipt.splitlines():
+        line = line.strip()
+        if line.startswith("• "):
+            match = re.match(r"^•\s+(.+?)\s+×\s+(\d+)\s+—\s+LKR", line)
+            if match:
+                name = match.group(1).strip()
+                qty = int(match.group(2))
+                parsed_items.append((name, qty))
+
+    if not parsed_items:
+        await query.answer("❌ Could not extract items from past order.", show_alert=True)
+        return
+
+    # Fetch catalog to map names to IDs
+    try:
+        catalog_resp = await pool.call(
+            "/logistics.LogisticsEngine/GetCatalog",
+            lambda stub, meta: stub.GetCatalog(
+                pb.CatalogRequest(page=0, page_size=1000), metadata=meta
+            ),
+        )
+        name_to_id = {it.name.strip().lower(): it.id for it in catalog_resp.items}
+    except Exception as e:
+        await query.answer(f"⚠️ Could not load catalog: {e}", show_alert=True)
+        return
+
+    added_count = 0
+    for name, qty in parsed_items:
+        item_id = name_to_id.get(name.lower())
+        if item_id:
+            await _cart(context).add_item(user_id, item_id, qty)
+            added_count += 1
+
+    if added_count == 0:
+        await query.answer("❌ None of the items from this order are currently available.", show_alert=True)
+        return
+
     await query.answer("Cart pre-filled from your previous order!", show_alert=True)
     await query.edit_message_text(
-        f"✅ Items from *{order.human_ref}* added to your cart.\n\nUse /cart to review and checkout.",
+        f"✅ {added_count} item(s) from *{order.human_ref}* successfully added to your cart.\n\nUse /cart to review and checkout.",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -1516,3 +1616,26 @@ async def cb_issue_submit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(f"✅ Issue reported ({issue_type}). Our support team will contact you shortly.")
     except grpc.RpcError as e:
         await query.edit_message_text(f"⚠️ {e.details()}")
+
+
+async def cb_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Fix welcome screen Help button spinner."""
+    query = update.callback_query
+    await query.answer()
+    text = (
+        "❓ *Help & FAQ*\n\n"
+        "*How to order*\n"
+        "Use /catalog to browse items, add them to your cart, then /cart to checkout.\n\n"
+        "*Track my delivery*\n"
+        "Use /orders to see your current order status and ETA updates.\n\n"
+        "*Cancel an order*\n"
+        "Use /orders → tap the order → Cancel (within 5 minutes of placing).\n\n"
+        "*Contact support*\n"
+        "Use /support to open a live support chat with our team.\n\n"
+        "*Promo codes*\n"
+        "Enter your promo code at checkout when prompted.\n\n"
+        "*Loyalty points*\n"
+        "Earn points on every order. Check your balance with /points."
+    )
+    await query.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+

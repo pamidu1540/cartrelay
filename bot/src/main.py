@@ -98,6 +98,19 @@ from admin_handlers import (
     # resolve issue
     cb_resolve_issue,
     msg_resolve_note,
+    # wizard callbacks
+    cb_wh_remove,
+    cb_wh_add_start,
+    cb_driver_remove,
+    cb_driver_add_start,
+    cb_driver_add_vehicle,
+    cb_admin_remove,
+    cb_admin_add_start,
+    cb_admin_add_role,
+    cb_promo_remove,
+    cb_promo_add_start,
+    cb_promo_flow_type,
+    cb_set_setting_key,
 )
 from cart_manager import CartManager
 from grpc_client import pool
@@ -164,6 +177,8 @@ from user_handlers import (
     cmd_support,
     # notif poll
     poll_notifications,
+    # callbacks
+    cb_help,
 )
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -250,6 +265,7 @@ def build_application() -> Application:
             CommandHandler("cart",    cmd_cart),
             CommandHandler("orders",  cmd_orders),
             CommandHandler("checkout",cmd_cart),
+            CallbackQueryHandler(cb_profile_edit, pattern=r"^profile_edit:"),
         ],
         states={
             STATE_ADDRESS: [
@@ -295,6 +311,11 @@ def build_application() -> Application:
             CommandHandler("bulkimport",cmd_bulk_import),
             CommandHandler("ordersearch",cmd_order_search),
             CommandHandler("addnote",   cmd_add_note),
+            CallbackQueryHandler(cb_wh_add_start, pattern=r"^wh_add:start$"),
+            CallbackQueryHandler(cb_driver_add_start, pattern=r"^driver_add:start$"),
+            CallbackQueryHandler(cb_promo_add_start, pattern=r"^promo_add:start$"),
+            CallbackQueryHandler(cb_admin_add_start, pattern=r"^admin_add:start$"),
+            CallbackQueryHandler(cb_set_setting_key, pattern=r"^set_key:"),
         ],
         states={
             STATE_ITEM_NAME:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_item_name)],
@@ -307,7 +328,7 @@ def build_application() -> Application:
             STATE_NOTE_TEXT:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_note_text)],
             STATE_ORDER_SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_order_search_query)],
             STATE_WH_NAME:      [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_warehouse_name)],
-            STATE_WH_COORDS:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_warehouse_coords)],
+            STATE_WH_COORDS:    [MessageHandler(filters.LOCATION | (filters.TEXT & ~filters.COMMAND), msg_warehouse_coords)],
             STATE_DRV_NAME:     [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_driver_name)],
             STATE_DRV_PHONE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_driver_phone)],
             STATE_PROMO_DEF:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_promo_def)],
@@ -377,7 +398,6 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_reorder,            pattern=r"^reorder:"))
     app.add_handler(CallbackQueryHandler(cb_confirm_cancel,     pattern=r"^confirm_cancel:"))
     app.add_handler(CallbackQueryHandler(cb_issue_type,         pattern=r"^issue_type:"))
-    app.add_handler(CallbackQueryHandler(cb_profile_edit,       pattern=r"^profile_edit:"))
     app.add_handler(CallbackQueryHandler(cb_address_default,    pattern=r"^addr_default:"))
     app.add_handler(CallbackQueryHandler(cb_address_delete,     pattern=r"^addr_delete:"))
     app.add_handler(CallbackQueryHandler(cb_notif_toggle,       pattern=r"^notif_toggle:"))
@@ -395,6 +415,20 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_admin_sf,           pattern=r"^admin_sf:"))
     app.add_handler(CallbackQueryHandler(cb_orders_page,        pattern=r"^orders_page:"))
     app.add_handler(CallbackQueryHandler(cb_orders_list,        pattern=r"^orders_list$"))
+    # Overhauled UI button callbacks
+    app.add_handler(CallbackQueryHandler(cb_help,               pattern=r"^help$"))
+    app.add_handler(CallbackQueryHandler(cb_wh_remove,          pattern=r"^wh_remove:"))
+    app.add_handler(CallbackQueryHandler(cb_wh_add_start,       pattern=r"^wh_add:start$"))
+    app.add_handler(CallbackQueryHandler(cb_driver_remove,      pattern=r"^driver_remove:"))
+    app.add_handler(CallbackQueryHandler(cb_driver_add_start,   pattern=r"^driver_add:start$"))
+    app.add_handler(CallbackQueryHandler(cb_driver_add_vehicle, pattern=r"^driver_veh:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_remove,       pattern=r"^admin_remove:"))
+    app.add_handler(CallbackQueryHandler(cb_admin_add_start,    pattern=r"^admin_add:start$"))
+    app.add_handler(CallbackQueryHandler(cb_admin_add_role,     pattern=r"^add_admin_role:"))
+    app.add_handler(CallbackQueryHandler(cb_promo_remove,       pattern=r"^promo_remove:"))
+    app.add_handler(CallbackQueryHandler(cb_promo_add_start,    pattern=r"^promo_add:start$"))
+    app.add_handler(CallbackQueryHandler(cb_promo_flow_type,    pattern=r"^promo_flow_type:"))
+    app.add_handler(CallbackQueryHandler(cb_set_setting_key,    pattern=r"^set_key:"))
 
     # Error handler
     app.add_error_handler(error_handler)
