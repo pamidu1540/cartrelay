@@ -1108,16 +1108,72 @@ async def cb_profile_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.answer()
     field = query.data.split(":", 1)[1]
 
+    if field == "view":
+        user_id = update.effective_user.id
+        try:
+            profile = await pool.call(
+                "/logistics.LogisticsEngine/GetProfile",
+                lambda stub, meta: stub.GetProfile(
+                    pb.UserId(user_id=user_id), metadata=meta
+                ),
+                user_id=user_id,
+            )
+        except Exception:
+            profile = pb.CustomerProfile(user_id=user_id)
+
+        name = profile.display_name or "Not set"
+        phone = profile.phone or "Not set"
+        lang = profile.language or "en"
+
+        kb = [
+            [InlineKeyboardButton("✏️ Edit Name",  callback_data="profile_edit:name")],
+            [InlineKeyboardButton("📱 Edit Phone", callback_data="profile_edit:phone")],
+            [InlineKeyboardButton("📍 Addresses",  callback_data="profile_edit:addresses")],
+            [InlineKeyboardButton("⬅ Back to Menu", callback_data="profile_edit:back_to_main")],
+        ]
+        await query.edit_message_text(
+            f"👤 *Your Profile*\n\nName: {name}\nPhone: {phone}\nLanguage: {lang}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+        return ConversationHandler.END
+
+    if field == "back_to_main":
+        disclaimer = ""
+        if not pool.is_licensed():
+            disclaimer = (
+                "⚠️ *Running in UNLICENSED mode.*\n"
+                "Some features may be limited.\n\n"
+            )
+
+        kb = [
+            [InlineKeyboardButton("🛒 Browse Catalog", callback_data="cat_select:all:0")],
+            [InlineKeyboardButton("🛍 My Cart",   callback_data="checkout"),
+             InlineKeyboardButton("📋 My Orders", callback_data="order_detail:list")],
+            [InlineKeyboardButton("👤 Profile",   callback_data="profile_edit:view"),
+             InlineKeyboardButton("🎁 Points",    callback_data="loyalty_view")],
+            [InlineKeyboardButton("❓ Help",       callback_data="help")],
+        ]
+        await query.edit_message_text(
+            f"{disclaimer}👋 Welcome back, *{update.effective_user.first_name}*!\n\nHow can we help you today?",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+        return ConversationHandler.END
+
     if field == "name":
-        await query.edit_message_text("✏️ Enter your new display name:")
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="profile_edit:view")]]
+        await query.edit_message_text("✏️ Enter your new display name:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROFILE_NAME
+
     if field == "phone":
-        await query.edit_message_text("📱 Enter your phone number:")
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="profile_edit:view")]]
+        await query.edit_message_text("📱 Enter your phone number:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROFILE_PHONE
+
     if field == "addresses":
         await cmd_addresses(update, context)
         return ConversationHandler.END
-    return ConversationHandler.END
 
 
 async def msg_profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1136,6 +1192,7 @@ async def msg_profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             user_id=user_id,
         )
         await _safe_reply(update, f"✅ Name updated to *{name}*")
+        await cmd_profile(update, context)
     except Exception as e:
         await _safe_reply(update, f"⚠️ Could not update profile: {e}")
     return ConversationHandler.END
@@ -1157,6 +1214,7 @@ async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             user_id=user_id,
         )
         await _safe_reply(update, "✅ Phone number updated")
+        await cmd_profile(update, context)
     except Exception as e:
         await _safe_reply(update, f"⚠️ {e}")
     return ConversationHandler.END
