@@ -141,9 +141,22 @@ install_docker() {
   if ! docker compose version &>/dev/null; then
     info "Docker Compose plugin missing — installing CLI plugin..."
     mkdir -p /usr/libexec/docker/cli-plugins
-    if curl -fsSL "https://github.com/docker/compose/releases/download/v2.27.1/docker-compose-linux-x86_64" -o /usr/libexec/docker/cli-plugins/docker-compose 2>/tmp/compose-install.log; then
+
+    # Detect system architecture for correct binary download
+    local arch
+    arch=$(uname -m)
+    case "$arch" in
+      x86_64|amd64)    arch="x86_64" ;;
+      aarch64|arm64)   arch="aarch64" ;;
+      armv7l|armhf)    arch="armv7" ;;
+      *) die "Unsupported architecture: ${arch}. Supported: x86_64, aarch64, armv7." ;;
+    esac
+
+    local compose_url="https://github.com/docker/compose/releases/download/v2.36.1/docker-compose-linux-${arch}"
+    info "Downloading compose plugin for ${arch}..."
+    if curl -fsSL "$compose_url" -o /usr/libexec/docker/cli-plugins/docker-compose 2>/tmp/compose-install.log; then
       chmod +x /usr/libexec/docker/cli-plugins/docker-compose
-      ok "Installed docker-compose plugin"
+      ok "Installed docker-compose plugin (${arch})"
     else
       warn "Failed to download compose plugin directly. Trying apt-get..."
       apt-get update -qq && apt-get install -y docker-compose-plugin &>/dev/null || die "Could not install docker-compose-plugin."
@@ -428,18 +441,26 @@ SERVICE
 install_supervisor_binary() {
   step "Installing logistics CLI (supervisor binary)"
   
+  # Detect system architecture for correct binary download
+  local go_arch
+  case "$(uname -m)" in
+    x86_64|amd64)    go_arch="amd64" ;;
+    aarch64|arm64)   go_arch="arm64" ;;
+    *) warn "Unsupported architecture for supervisor: $(uname -m). Skipping."; return 0 ;;
+  esac
+
   # Default to the specific version folder uploaded by GitHub Actions
-  local bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/${SELECTED_VERSION}/logistics-supervisor-linux-amd64"
+  local bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/${SELECTED_VERSION}/logistics-supervisor-linux-${go_arch}"
   
   # Override to the 'latest' folder if no specific version tag was found
   if [[ "$SELECTED_VERSION" == "latest" ]]; then
-    bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/supervisor"
+    bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/supervisor-${go_arch}"
   fi
   
-  info "Downloading from Cloudflare R2 CDN: ${SELECTED_VERSION}"
+  info "Downloading supervisor for linux/${go_arch} from Cloudflare R2 CDN: ${SELECTED_VERSION}"
   if curl -fsSL "$bin_url" -o "${BIN_PATH}" 2>/tmp/bin-download.log; then
     chmod +x "${BIN_PATH}"
-    ok "Installed: ${BIN_PATH}"
+    ok "Installed: ${BIN_PATH} (${go_arch})"
   else
     warn "Could not download supervisor binary."
     cat > "${BIN_PATH}" << 'STUB'
