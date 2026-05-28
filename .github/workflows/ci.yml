@@ -202,14 +202,12 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: govulncheck — engine
-        env:
-          WORK_DIR: engine
-        run: bash .github/scripts/govulncheck.sh
+        working-directory: engine
+        run: govulncheck ./...
 
       - name: govulncheck — supervisor
-        env:
-          WORK_DIR: supervisor
-        run: bash .github/scripts/govulncheck.sh
+        working-directory: supervisor
+        run: govulncheck ./...
 
 # ─── Job 3: DOCKER ───────────────────────────────────────────────────────────
   docker:
