@@ -1,15 +1,6 @@
 package main
 
-// main.go — logistics-engine v5
-// Changes vs v4:
-//   • PostgreSQL via pgx/v5 connection pool (replaces SQLite + WAL hacks)
-//   • BUG-001 fix: gRPC server started after all init, post-init hooks removed
-//   • BUG-003 fix: SIGTERM waits for in-flight RPCs (GracefulStop)
-//   • BUG-011 fix: LimitListener saturation is now logged
-//   • SEC-001/002: TLS channel + mTLS-ready interceptor
-//   • PERF-001: pgx pool supports concurrent writers natively
-//   • WAL checkpoint goroutine removed (PostgreSQL handles this)
-//   • Cart TTL enforcer still runs every 6 h
+// main.go — logistics engine entrypoint
 
 import (
 	"context"
@@ -118,7 +109,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// BUG-011 fix: log when LimitListener hits capacity
 	lim := 512
 	if v := os.Getenv("GRPC_MAX_CONNECTIONS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -135,8 +125,8 @@ func main() {
 			RateLimitInterceptor,
 		),
 		grpc.MaxConcurrentStreams(256),
-		// Unix socket: keepalive is unnecessary overhead (BUG-026)
-		// Kept minimal for future TCP migration
+		// Unix socket: keepalive is unnecessary overhead for local communication.
+		// Kept minimal for forward-compatibility with future TCP migration.
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			MaxConnectionIdle: 60 * time.Second,
 			Time:              30 * time.Second,
@@ -167,7 +157,7 @@ func main() {
 	// ── Graceful shutdown ────────────────────────────────────────────────────
 	shutdown := func() {
 		slog.Info("graceful shutdown initiated")
-		srv.GracefulStop() // BUG-003: waits for in-flight RPCs
+		srv.GracefulStop()
 	}
 
 	StartLicenseBackgroundChecker(shutdown)

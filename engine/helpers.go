@@ -1,6 +1,6 @@
 package main
 
-// helpers.go — shared utilities (v5)
+// helpers.go — shared utilities
 
 import (
 	"crypto/rand"

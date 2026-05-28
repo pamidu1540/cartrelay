@@ -1,12 +1,6 @@
 package main
 
-// catalog_cache.go — in-memory catalog cache with LRU size cap (v5)
-//
-// Fixes addressed:
-//   BUG-007: unbounded memory growth → hard 5 MB cap via entry counting
-//   BUG-008: Mapbox distance cache now uses LRU eviction, not all-or-nothing hourly drop
-//   PERF-003: cache holds proto references, not duplicated description blobs
-//   PERF-004: Mapbox entries expire individually by age, not all-at-once
+// catalog_cache.go — in-memory catalog and Mapbox distance caches
 
 import (
 	"context"
@@ -23,8 +17,8 @@ import (
 // ── Catalog cache ─────────────────────────────────────────────────────────────
 
 const (
-	defaultCatalogMaxItems  = 2000  // BUG-007: hard cap on entry count
-	catalogTTL              = 5 * time.Minute
+	defaultCatalogMaxItems = 2000
+	catalogTTL             = 5 * time.Minute
 )
 
 type catalogCacheEntry struct {
@@ -97,14 +91,13 @@ func catalogKey(cat, search string, page, pageSize int32) string {
 
 // ── Mapbox distance cache ─────────────────────────────────────────────────────
 //
-// BUG-008 / PERF-004: LRU with per-entry TTL.
-// Entries are not evicted all-at-once; each entry has its own expiry.
-// When the cache exceeds maxEntries, the oldest half is dropped.
+// LRU with per-entry TTL. Each entry has its own expiry timestamp;
+// when the cache exceeds maxEntries, the oldest half is dropped.
 
 const (
-	mapboxCacheTTL      = 1 * time.Hour
-	defaultMapboxMaxEntries = 2000  // BUG-008: hard cap
-	quantizePrecision   = 3         // ~111 m resolution — same location → same cache key
+	mapboxCacheTTL          = 1 * time.Hour
+	defaultMapboxMaxEntries = 2000
+	quantizePrecision       = 3 // ~111 m resolution — same location → same cache key
 )
 
 type mapboxEntry struct {
@@ -162,7 +155,6 @@ func setMapboxCached(originLat, originLon, destLat, destLon, distKM float64) {
 	mapboxCacheMu.Lock()
 	defer mapboxCacheMu.Unlock()
 
-	// BUG-008: evict oldest half when at capacity
 	if len(mapboxCache) >= mapboxMaxEntries {
 		evictOldestMapbox(mapboxMaxEntries / 2)
 	}

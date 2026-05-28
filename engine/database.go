@@ -1,18 +1,6 @@
 package main
 
-// database.go — PostgreSQL data-access layer (v5)
-//
-// All SQLite-specific code (WAL, PRAGMA, busy_timeout, single-writer
-// MaxOpenConns) is replaced by pgx/v5 pool which handles concurrency natively.
-//
-// Key improvements over SQLite layer:
-//   • PERF-001: concurrent writers — no more single-connection serialisation
-//   • BUG-002: no more DeadlineExceeded under spike load
-//   • BUG-009/BUG-031: no WAL growth, no integrity_check needed
-//   • BUG-012: idempotency_key UNIQUE constraint enforced at DB level
-//   • BUG-027: all table scans replaced with indexed queries
-//   • PERF-006: pgx uses prepared statements by default
-//   • BUG-020: audit log is a separate schema concern (same DB, different plan)
+// database.go — PostgreSQL data-access layer
 
 import (
 	"context"
@@ -668,12 +656,8 @@ func DBGetDriverTelegramIDs(ctx context.Context, activeOnly bool) ([]int64, erro
 
 // ── Orders ────────────────────────────────────────────────────────────────────
 
-// InsertOrder atomically:
-//  1. Checks idempotency key (BUG-012)
-//  2. Validates quote_data + price integrity
-//  3. Decrements stock in a transaction
-//  4. Inserts order + order_items + initial status event
-//  5. Records loyalty points earned
+// InsertOrder atomically validates quote integrity, decrements stock,
+// inserts the order with items and initial status event, and awards loyalty points.
 func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.CartItem, settings *pb.SystemSettings) (string, string, error) {
 	if len(req.QuoteData) == 0 {
 		return "", "", ErrQuoteMissing
@@ -692,7 +676,6 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 		}
 	}
 
-	// BUG-012: generate idempotency key if not provided
 	idempKey := req.IdempotencyKey
 	if idempKey == "" {
 		idempKey = fmt.Sprintf("auto-%d-%d", req.UserId, time.Now().UnixNano())
@@ -715,7 +698,6 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	// BUG-012: check idempotency key
 	var existing string
 	err = tx.QueryRow(ctx,
 		"SELECT order_id FROM orders WHERE idempotency_key=$1", idempKey,
@@ -962,7 +944,7 @@ func DBGetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) ([]*pb.Ord
 	return orders, total, err
 }
 
-// DBUpdateOrderStatus enforces the state machine (BUG-029) and records history.
+// DBUpdateOrderStatus enforces status machine transitions and records history.
 func DBUpdateOrderStatus(ctx context.Context, orderID, newStatus, reason string, actorID int64) (int64, error) {
 	// State machine transitions
 	allowed := map[string][]string{

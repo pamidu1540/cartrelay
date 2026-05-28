@@ -9,9 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version is injected at build time: -ldflags="-X main.Version=4.1.0"
-// FIX: variable must exist for the -X ldflags in release.yml and go-build-test.yml
-// to take effect — a missing variable causes the flag to be silently ignored.
+// Version is injected at build time via -ldflags="-X main.Version=..."
 var Version = "dev"
 
 func loadEnv() {
@@ -39,7 +37,7 @@ func main() {
 
 	root := &cobra.Command{
 		Use:   "logistics",
-		Short: "Logistics System Supervisor CLI v4",
+		Short: "Logistics System Supervisor",
 	}
 
 	// ── start ─────────────────────────────────────────────────────────────────
@@ -74,7 +72,6 @@ func main() {
 	})
 
 	// ── status ────────────────────────────────────────────────────────────────
-	// FIX: New one-shot status command; doesn't require opening the full TUI.
 	root.AddCommand(&cobra.Command{
 		Use:   "status",
 		Short: "Print a quick container health snapshot",
@@ -89,7 +86,6 @@ func main() {
 	})
 
 	// ── logs ──────────────────────────────────────────────────────────────────
-	// FIX: --service flag tails only one container (engine or bot).
 	logsCmd := &cobra.Command{
 		Use:   "logs",
 		Short: "Follow service logs (use --service engine|bot to filter)",
@@ -182,7 +178,6 @@ func main() {
 			return nil
 		},
 	})
-
 
 	// ── version ───────────────────────────────────────────────────────────────
 	root.AddCommand(&cobra.Command{

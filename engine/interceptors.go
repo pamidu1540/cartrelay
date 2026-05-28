@@ -1,11 +1,6 @@
 package main
 
-// interceptors.go — gRPC server interceptors (v5)
-//
-// Fixes addressed:
-//   SEC-002: HMAC-signed token validation (replaces plain string compare)
-//   SEC-005: per-user rate limiting via token bucket
-//   BUG-005: panic recovery → Internal instead of server crash
+// interceptors.go — gRPC server interceptors
 
 import (
 	"context"
@@ -48,11 +43,9 @@ func roleFromCtx(ctx context.Context) string {
 	return ""
 }
 
-// ── Auth interceptor ──────────────────────────────────────────────────────────
-//
-// SEC-002: The bot signs each request with HMAC-SHA256 over the method name +
+// AuthInterceptor validates each request via HMAC-SHA256 over the method name +
 // unix-minute timestamp using the shared INTERNAL_TOKEN as the key.
-// Tokens older than ±2 minutes are rejected (replay protection).
+// Tokens older than ±2 minutes are rejected for replay protection.
 //
 // Header format:
 //   x-auth-token:    <hex(HMAC-SHA256(key=INTERNAL_TOKEN, msg="method:minute"))>
@@ -221,7 +214,7 @@ func enforceRBAC(method, role string) error {
 
 // ── Rate limit interceptor ────────────────────────────────────────────────────
 //
-// SEC-005: token-bucket rate limiter, 30 requests/minute per actor_id.
+// Token-bucket rate limiter: 30 requests/minute per actor_id.
 // Engine-side backstop; the bot layer also rate-limits (see bot/src/middleware.py).
 
 type tokenBucket struct {
