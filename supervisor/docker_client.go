@@ -160,6 +160,7 @@ func RestartContainers() error {
 
 func executeDockerCompose(args ...string) error {
 	base := []string{"compose", "-f", "/opt/logistics-system/deploy/docker-compose.yml"}
+	// #nosec G204 -- admin CLI arguments are inherently trusted
 	cmd := exec.Command("docker", append(base, args...)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

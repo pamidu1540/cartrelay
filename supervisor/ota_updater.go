@@ -67,10 +67,10 @@ func CheckAndApplyUpdate() error {
 	defer os.Remove(tmpFile.Name())
 
 	if err := downloadFile(manifest.URL, tmpFile); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return fmt.Errorf("download: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// FIX: Stream-hash the tarball instead of loading it all into RAM.
 	if err := verifySignatureStreaming(tmpFile.Name(), manifest.Signature); err != nil {
@@ -79,6 +79,7 @@ func CheckAndApplyUpdate() error {
 	slog.Info("OTA signature verified", "version", manifest.Version)
 
 	// Backup the current deployment before replacing it.
+	// #nosec G301 -- backup directory permissions standard
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		slog.Warn("cannot create backup dir", "err", err)
 	} else {
@@ -147,6 +148,7 @@ func RollbackUpdate() error {
 // ── Internals ─────────────────────────────────────────────────────────────────
 
 func fetchManifest(url string) (*updateManifest, error) {
+	// #nosec G704 -- URL is configured at deployment time from trusted .env
 	resp, err := otaHTTPClient.Get(url)
 	if err != nil {
 		return nil, err
@@ -190,6 +192,7 @@ func verifySignatureStreaming(filePath, sigHex string) error {
 		return fmt.Errorf("invalid signature hex: %w", err)
 	}
 
+	// #nosec G304 -- OTA updater only operates on fixed local system directories
 	f, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("open for verification: %w", err)
@@ -229,11 +232,13 @@ func rotatingBackup(version string) error {
 }
 
 func copyFile(src, dst string) error {
+	// #nosec G304 -- OTA updater only operates on fixed local system directories
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
+	// #nosec G304 -- OTA updater only operates on fixed local system directories
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
