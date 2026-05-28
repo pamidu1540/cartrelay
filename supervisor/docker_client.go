@@ -10,8 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -78,7 +77,7 @@ func fetchLiveStats() SystemStats {
 		CollectedAt:  time.Now(),
 	}
 
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		result.EngineStatus = "DOCKER ERR 🔴"
 		result.BotStatus = "DOCKER ERR 🔴"
@@ -89,12 +88,12 @@ func fetchLiveStats() SystemStats {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 
-	containers, err := cli.ContainerList(ctx, container.ListOptions{All: true})
+	resultList, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return result
 	}
 
-	for _, c := range containers {
+	for _, c := range resultList.Items {
 		for _, name := range c.Names {
 			switch name {
 			case "/logistics_engine":
@@ -116,7 +115,10 @@ func containerMetrics(cli *client.Client, containerID string) (cpu, ram string) 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	resp, err := cli.ContainerStats(ctx, containerID, false)
+	resp, err := cli.ContainerStats(ctx, containerID, client.ContainerStatsOptions{
+		Stream:                false,
+		IncludePreviousSample: true,
+	})
 	if err != nil {
 		return "N/A", "N/A"
 	}
@@ -138,7 +140,7 @@ func containerMetrics(cli *client.Client, containerID string) (cpu, ram string) 
 }
 
 func RestartContainers() error {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		return fmt.Errorf("docker client: %w", err)
 	}
@@ -149,7 +151,7 @@ func RestartContainers() error {
 
 	timeout := 10
 	for _, name := range []string{"logistics_engine", "logistics_bot"} {
-		if err := cli.ContainerRestart(ctx, name, container.StopOptions{Timeout: &timeout}); err != nil {
+		if _, err := cli.ContainerRestart(ctx, name, client.ContainerRestartOptions{Timeout: &timeout}); err != nil {
 			return fmt.Errorf("restart %s: %w", name, err)
 		}
 	}
