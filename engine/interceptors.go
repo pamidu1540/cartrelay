@@ -36,13 +36,6 @@ func actorFromCtx(ctx context.Context) int64 {
 	return 0
 }
 
-func roleFromCtx(ctx context.Context) string {
-	if v, ok := ctx.Value(ctxRole).(string); ok {
-		return v
-	}
-	return ""
-}
-
 // AuthInterceptor validates each request via HMAC-SHA256 over the method name +
 // unix-minute timestamp using the shared INTERNAL_TOKEN as the key.
 // Tokens older than ±2 minutes are rejected for replay protection.
@@ -115,16 +108,6 @@ func validateHMACToken(token, method string) bool {
 		}
 	}
 	return false
-}
-
-// generateHMACToken creates a token for the given method (used by bot).
-func generateHMACToken(method string) string {
-	secret := []byte(os.Getenv("INTERNAL_TOKEN"))
-	minute := time.Now().Unix() / 60
-	msg := fmt.Sprintf("%s:%d", method, minute)
-	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte(msg))
-	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // isAdminRPC returns true for RPCs that require admin privileges.

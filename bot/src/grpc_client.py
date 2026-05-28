@@ -1,13 +1,14 @@
 """
-grpc_client.py — gRPC channel pool for the logistics bot (v5)
+grpc_client.py — gRPC channel pool for the logistics bot
 
-Fixes addressed:
-  BUG-001: channels created lazily inside the asyncio loop (not at module level)
-  BUG-005: exponential-backoff retry on every stub call
-  BUG-010: unhealthy channels removed and replaced asynchronously
-  PERF-008: least-in-flight channel selection replaces round-robin
-  SEC-001: TLS credentials used when TLS_CERT_FILE env is set
-  SEC-002: HMAC-signed x-auth-token header on every call
+Manages a pool of async gRPC channels to the engine with:
+  - Lazy channel creation inside the asyncio event loop
+  - Least-in-flight channel selection
+  - Exponential-backoff retry on transient failures
+  - Circuit breaker to shed load when the engine is down
+  - Periodic health checks replacing unhealthy channels
+  - HMAC-signed auth token header on every call
+  - Optional TLS when TLS_CERT_FILE is configured
 """
 
 from __future__ import annotations
@@ -131,10 +132,10 @@ class CircuitBreaker:
 
 class ChannelPool:
     """
-    Manages POOL_SIZE gRPC channels.
+    Manages POOL_SIZE gRPC channels to the engine.
 
-    BUG-001 fix: __init__ does NOT open any channels.
-    Call await pool.start() inside the bot's post_init hook.
+    Channels are not opened in __init__; call await pool.start() inside the
+    bot's post_init hook to ensure channels are created inside the event loop.
     """
 
     def __init__(self) -> None:
@@ -172,7 +173,7 @@ class ChannelPool:
     @asynccontextmanager
     async def acquire(self) -> AsyncIterator[ChannelSlot]:
         """
-        PERF-008: least-in-flight selection.
+        Least-in-flight channel selection.
         Raises RuntimeError if the circuit breaker is open.
         """
         if not await self._circuit_breaker.allow():
@@ -209,12 +210,12 @@ class ChannelPool:
 
     async def call(self, method_name: str, coro_factory, *args, **kwargs) -> Any:
         """
-        BUG-005 fix: wraps a stub call in exponential-backoff retry.
+        Wraps a stub call in exponential-backoff retry.
 
         Usage:
             resp = await pool.call(
                 "/logistics.LogisticsEngine/GetCatalog",
-                lambda stub: stub.GetCatalog(request, metadata=meta),
+                lambda stub, meta: stub.GetCatalog(request, metadata=meta),
             )
         """
         delay = RETRY_BASE_DELAY
@@ -256,10 +257,7 @@ class ChannelPool:
     # ── Health loop ───────────────────────────────────────────────────────────
 
     async def _health_loop(self) -> None:
-        """
-        BUG-010 fix: periodically check channel health.
-        Unhealthy channels are replaced with fresh ones.
-        """
+        """Periodically check channel health, replacing unhealthy channels."""
         while True:
             await asyncio.sleep(30)
             async with self._lock:
@@ -317,8 +315,6 @@ def _build_metadata(
     return meta
 
 
-# ── Module-level singleton ─────────────────────────────────────────────────────
-# BUG-001 fix: pool is created here but NOT started.
-# start() is called from the bot's post_init hook.
-
+# Module-level singleton — created here but NOT started.
+# start() is called from the bot's post_init hook after the event loop is running.
 pool = ChannelPool()

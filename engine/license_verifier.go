@@ -3,7 +3,6 @@ package main
 // license_verifier.go — license validation
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"strings"
@@ -69,11 +68,4 @@ func StartLicenseBackgroundChecker(shutdown func()) {
 			}
 		}
 	}()
-}
-
-// startMaintenanceWatcher schedules periodic enforcement of scheduled maintenance windows.
-func startMaintenanceWatcher(ctx context.Context) {
-	go runEvery(1*time.Minute, "maintenance-watcher", func() {
-		_ = EnforceScheduledMaintenance(ctx)
-	})
 }
