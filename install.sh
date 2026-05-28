@@ -264,9 +264,11 @@ INTERNAL_TOKEN=${INTERNAL_TOKEN}
 MAPBOX_TOKEN=${MAPBOX_TOKEN:-}
 ADMIN_USER_IDS=${ADMIN_USER_IDS}
 LICENSE_KEY=${LICENSE_KEY}
+LICENSE_PUBLIC_KEY=${LICENSE_KEY}
 POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=${POSTGRES_DB}
+DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
 BUILD_VERSION=${SELECTED_VERSION}
 ENGINE_IMAGE=${IMAGE_ENGINE}:${SELECTED_VERSION}
 BOT_IMAGE=${IMAGE_BOT}:${SELECTED_VERSION}
@@ -286,14 +288,10 @@ services:
     restart: unless-stopped
     command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=8MB", "-c", "effective_cache_size=64MB"]
     env_file: .env
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -315,12 +313,6 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN}
-      - MAPBOX_TOKEN=${MAPBOX_TOKEN}
-      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
-      - LICENSE_PUBLIC_KEY=${LICENSE_KEY:-}
-      - BUILD_VERSION=${BUILD_VERSION}
       - GOMEMLIMIT=48MiB
       - GOGC=50
     volumes:
@@ -352,8 +344,6 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN}
       - ENGINE_SOCKET=/app/sockets/logistics.sock
       - PYTHONMALLOC=malloc
     volumes:
