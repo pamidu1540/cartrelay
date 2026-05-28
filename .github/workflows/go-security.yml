@@ -61,16 +61,15 @@ jobs:
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
-      # FIX: Output SARIF so findings appear in GitHub Security tab rather
-      # than silently passing with continue-on-error.
-      # High/critical severity findings still block the job (exit 1 default).
+      # Run gosec to scan for security vulnerabilities.
+      # High/critical severity findings will block the build (exit 1 default).
       - name: gosec — engine (SARIF)
         working-directory: engine
-        run: gosec -fmt=sarif -out=gosec-engine.sarif ./... || true
+        run: gosec -fmt=sarif -out=gosec-engine.sarif ./...
 
       - name: gosec — supervisor (SARIF)
         working-directory: supervisor
-        run: gosec -fmt=sarif -out=gosec-supervisor.sarif ./... || true
+        run: gosec -fmt=sarif -out=gosec-supervisor.sarif ./...
 
       - name: Upload engine SARIF
         uses: github/codeql-action/upload-sarif@v3
