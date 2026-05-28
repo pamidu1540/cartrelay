@@ -110,22 +110,45 @@ check_requirements() {
 }
 
 install_docker() {
-  step "Checking Docker"
+  step "Checking Docker and Compose"
+  local has_docker=false
+  local has_compose=false
+
   if command -v docker &>/dev/null; then
+    has_docker=true
     local ver
     ver=$(docker version --format '{{.Server.Version}}' 2>/dev/null | cut -d. -f1 || echo 0)
-    if (( ver >= 24 )); then
-      ok "Docker ${ver} already installed"
-      return 0
-    fi
-    warn "Docker ${ver} is outdated — upgrading…"
+    ok "Docker/Moby daemon found (version ${ver})"
   fi
-  info "Installing Docker via get.docker.com…"
-  ( curl -fsSL https://get.docker.com | sh ) &>/tmp/logistics-docker-install.log &
-  spinner $! "Installing Docker"
-  systemctl enable --quiet docker
-  systemctl start  docker
-  ok "Docker installed and started"
+
+  if docker compose version &>/dev/null; then
+    has_compose=true
+    ok "Docker Compose subcommand is available"
+  fi
+
+  if $has_docker && $has_compose; then
+    return 0
+  fi
+
+  if ! $has_docker; then
+    info "Installing Docker via get.docker.com..."
+    ( curl -fsSL https://get.docker.com | sh ) &>/tmp/logistics-docker-install.log &
+    spinner $! "Installing Docker"
+    systemctl enable --quiet docker
+    systemctl start  docker
+  fi
+
+  if ! docker compose version &>/dev/null; then
+    info "Docker Compose plugin missing — installing CLI plugin..."
+    mkdir -p /usr/libexec/docker/cli-plugins
+    if curl -fsSL "https://github.com/docker/compose/releases/download/v2.27.1/docker-compose-linux-x86_64" -o /usr/libexec/docker/cli-plugins/docker-compose 2>/tmp/compose-install.log; then
+      chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+      ok "Installed docker-compose plugin"
+    else
+      warn "Failed to download compose plugin directly. Trying apt-get..."
+      apt-get update -qq && apt-get install -y docker-compose-plugin &>/dev/null || die "Could not install docker-compose-plugin."
+    fi
+  fi
 }
 
 verify_license() {
