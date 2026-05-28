@@ -1,13 +1,6 @@
 package main
 
-// grpc_server.go — all RPC handler implementations (v5)
-//
-// Fixes addressed here:
-//   BUG-017: cart ownership validated on CalculateQuote
-//   BUG-029: status transitions enforced in database.go / DBUpdateOrderStatus
-//   BUG-014: empty warehouses table returns error, not 0-distance
-//   BUG-019: all list RPCs are paginated
-//   SEC-005: rate limiting applied via RateLimitInterceptor (interceptors.go)
+// grpc_server.go — gRPC handler implementations
 
 import (
 	"context"
@@ -195,7 +188,6 @@ func (s *Server) ClearCart(ctx context.Context, req *pb.UserId) (*pb.StatusRespo
 // ── Quotes ────────────────────────────────────────────────────────────────────
 
 func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.QuoteResponse, error) {
-	// BUG-017: validate cart belongs to requesting user
 	if req.UserId != 0 && len(req.CartItems) > 0 {
 		storedJSON, _, _ := DBGetCart(ctx, req.UserId)
 		storedItems, _ := unmarshalCartItems(storedJSON)
@@ -213,7 +205,6 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list warehouses: %v", err)
 	}
-	// BUG-014: no warehouses = error, not 0-distance
 	if len(whs) == 0 {
 		return nil, status.Errorf(codes.FailedPrecondition,
 			"no warehouses configured — please add a warehouse before taking orders")
@@ -374,7 +365,6 @@ func (s *Server) PlaceOrder(ctx context.Context, req *pb.OrderRequest) (*pb.Orde
 	// Notify all admins
 	go notifyAdminsNewOrder(context.Background(), humanRef, req.Username, req.ExpectedTotal)
 
-	// Auto-dispatch if available (A-031)
 	go autoDispatch(context.Background(), orderID)
 
 	return &pb.OrderResponse{
@@ -833,12 +823,11 @@ func autoDispatch(ctx context.Context, orderID string) {
 	if err != nil {
 		return
 	}
-	drivers, err := DBListDrivers(ctx, true) // available only
+	drivers, err := DBListDrivers(ctx, true)
 	if err != nil || len(drivers) == 0 {
 		slog.Warn("auto-dispatch: no available drivers", "order", orderID)
 		return
 	}
-	// Simple: assign first available driver (extend with geo-routing later)
 	driver := drivers[0]
 	if err := DBAssignDriver(ctx, orderID, driver.Id, 0); err != nil {
 		slog.Warn("auto-dispatch assign failed", "order", orderID, "driver", driver.Id, "err", err)

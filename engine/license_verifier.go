@@ -1,11 +1,6 @@
 package main
 
-// license_verifier.go — license validation (v5)
-//
-// Fixes vs v4:
-//   • publicKeyPEM / publicKeyHex placeholder detection retained from v4
-//   • Background checker calls shutdown() on revocation, not os.Exit directly
-//   • SEC-013: DEV_BYPASS_SECRET explicitly blocked if DEPLOY_ENV=production
+// license_verifier.go — license validation
 
 import (
 	"context"
@@ -21,7 +16,7 @@ var placeholderPatterns = []string{
 }
 
 func VerifyLicense() error {
-	// SEC-013: block DEV_BYPASS_SECRET in production
+	// Block dev secrets in production
 	if os.Getenv("DEPLOY_ENV") == "production" {
 		if os.Getenv("DEV_BYPASS_SECRET") != "" {
 			slog.Error("DEV_BYPASS_SECRET is set in production — refusing to start. " +
@@ -51,7 +46,7 @@ func VerifyLicense() error {
 	}
 
 	// TODO: implement actual Ed25519 signature verification against a license server.
-	// For now, presence of a non-placeholder key is accepted.
+	// Presence of a non-placeholder key is accepted for now.
 	slog.Info("license key present", "prefix", pubKey[:min(len(pubKey), 8)]+"…")
 	return nil
 }
@@ -76,12 +71,9 @@ func StartLicenseBackgroundChecker(shutdown func()) {
 	}()
 }
 
-// Periodic check for scheduled maintenance windows.
-// Extracted here so it can share the shutdown callback.
+// startMaintenanceWatcher schedules periodic enforcement of scheduled maintenance windows.
 func startMaintenanceWatcher(ctx context.Context) {
 	go runEvery(1*time.Minute, "maintenance-watcher", func() {
 		_ = EnforceScheduledMaintenance(ctx)
 	})
 }
-
-

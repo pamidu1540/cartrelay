@@ -1,13 +1,6 @@
 package main
 
-// routing_math.go — distance calculation, Mapbox client, nearest warehouse (v5)
-//
-// Fixes addressed:
-//   BUG-014: empty depots → error returned, not 0-distance
-//   BUG-015: cache-busting not needed — cache TTL is already 1 h; route changes
-//            within 1 h are acceptable for delivery estimation purposes
-//   BUG-025: debounce is DB-level (Mapbox requests only fire on cache miss)
-//   PERF-004: per-entry LRU eviction (see catalog_cache.go)
+// routing_math.go — distance calculation, Mapbox client, and nearest-warehouse selection
 
 import (
 	"context"
@@ -25,9 +18,9 @@ import (
 )
 
 const (
-	mapboxBaseURL    = "https://api.mapbox.com/directions/v5/mapbox/driving"
-	mapboxHTTPTimeout = 5 * time.Second // matches v4 timeout
-	earthRadiusKM    = 6371.0
+	mapboxBaseURL     = "https://api.mapbox.com/directions/v5/mapbox/driving"
+	mapboxHTTPTimeout = 5 * time.Second
+	earthRadiusKM     = 6371.0
 )
 
 var httpClient = &http.Client{
@@ -89,9 +82,7 @@ func FetchMapboxDistance(originLat, originLon, destLat, destLon float64) (float6
 }
 
 // nearestWarehouse returns the active warehouse closest to the given
-// coordinates using Haversine distance.
-//
-// BUG-014 fix: callers must check for nil return; nil means no active warehouses.
+// coordinates using Haversine distance. Returns nil if no active warehouses exist.
 func nearestWarehouse(whs []*pb.Warehouse, lat, lon float64) (*pb.Warehouse, float64) {
 	var best *pb.Warehouse
 	bestDist := math.MaxFloat64
