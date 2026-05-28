@@ -1114,6 +1114,9 @@ async def cb_profile_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if field == "phone":
         await query.edit_message_text("📱 Enter your phone number:")
         return STATE_PROFILE_PHONE
+    if field == "addresses":
+        await cmd_addresses(update, context)
+        return ConversationHandler.END
     return ConversationHandler.END
 
 
@@ -1286,6 +1289,30 @@ async def cmd_points(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
     except Exception as e:
         await _safe_reply(update, f"⚠️ {e}")
+
+
+@rate_limit
+async def cb_loyalty_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    try:
+        bal = await pool.call(
+            "/logistics.LogisticsEngine/GetLoyaltyBalance",
+            lambda stub, meta: stub.GetLoyaltyBalance(
+                pb.UserId(user_id=user_id), metadata=meta
+            ),
+            user_id=user_id,
+        )
+        await query.edit_message_text(
+            f"🏅 *Loyalty Points*\n\n"
+            f"Balance: *{bal.points} points*\n"
+            f"Tier: {bal.tier.title()}\n\n"
+            f"Earn more points by placing orders!",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    except Exception as e:
+        await query.edit_message_text(f"⚠️ Could not load points: {e}")
 
 
 @rate_limit

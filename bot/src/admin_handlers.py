@@ -97,7 +97,7 @@ async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     elif section == "catalog":
         kb = [
             [InlineKeyboardButton("➕ Add Item",    callback_data="item_add:start")],
-            [InlineKeyboardButton("📥 Bulk Import", callback_data="admin_menu:bulkimport")],
+            [InlineKeyboardButton("📥 Bulk Import", callback_data="bulk_import:start")],
             [InlineKeyboardButton("📉 Low Stock",   callback_data="admin_menu:lowstock")],
             [InlineKeyboardButton("⬅ Back to Menu", callback_data="admin_menu:main")],
         ]
@@ -355,6 +355,18 @@ async def cmd_remove_item(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cmd_bulk_import(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _reply(
         update,
+        "📥 *Bulk Import Items*\n\n"
+        "Upload a CSV with columns:\n"
+        "`name, price, stock, category, description`\n\n"
+        "Send the CSV file now:",
+    )
+    return STATE_CSV_UPLOAD
+
+
+async def cb_bulk_import_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
         "📥 *Bulk Import Items*\n\n"
         "Upload a CSV with columns:\n"
         "`name, price, stock, category, description`\n\n"
