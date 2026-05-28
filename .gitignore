@@ -15,6 +15,7 @@ engine_bin
 logistics
 logistics.exe
 logistics-cli-linux
+logistics-supervisor.exe
 
 # OS generated files
 .DS_Store

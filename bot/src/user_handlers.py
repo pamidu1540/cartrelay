@@ -1473,9 +1473,12 @@ async def cb_confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             user_id=user_id,
         )
         for a in addr_resp.addresses:
+            addr = a  # capture loop variable by value
             await pool.call(
                 "/logistics.LogisticsEngine/DeleteAddress",
-                lambda stub, meta: stub.DeleteAddress(pb.AddressId(id=a.id), metadata=meta),
+                lambda stub, meta, _addr=addr: stub.DeleteAddress(
+                    pb.AddressId(id=_addr.id), metadata=meta
+                ),
             )
 
         await query.edit_message_text(
@@ -1524,8 +1527,8 @@ async def poll_notifications(app) -> None:
                 try:
                     notif_resp = await pool.call(
                         "/logistics.LogisticsEngine/GetPendingNotifs",
-                        lambda stub, meta: stub.GetPendingNotifs(
-                            pb.UserId(user_id=uid), metadata=meta
+                        lambda stub, meta, _uid=uid: stub.GetPendingNotifs(
+                            pb.UserId(user_id=_uid), metadata=meta
                         ),
                         user_id=uid,
                     )
