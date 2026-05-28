@@ -46,6 +46,7 @@ func FetchMapboxDistance(originLat, originLon, destLat, destLon float64) (float6
 	reqURL := fmt.Sprintf("%s/%s?access_token=%s&overview=false",
 		mapboxBaseURL, url.PathEscape(coords), url.QueryEscape(token))
 
+	// #nosec G704 -- reqURL is built from trusted constant, float64 coordinates, and token from env
 	resp, err := httpClient.Get(reqURL)
 	if err != nil {
 		slog.Warn("mapbox request failed, falling back to haversine", "err", err)

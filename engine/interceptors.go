@@ -71,7 +71,7 @@ func AuthInterceptor(
 	actorStr := mdFirst(md, "x-actor-id")
 	if actorStr != "" {
 		var actorID int64
-		fmt.Sscanf(actorStr, "%d", &actorID)
+		_, _ = fmt.Sscanf(actorStr, "%d", &actorID)
 		newCtx = context.WithValue(newCtx, ctxActorID, actorID)
 
 		// Validate admin role for admin-only RPCs
