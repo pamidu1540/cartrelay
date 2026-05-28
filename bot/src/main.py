@@ -287,8 +287,14 @@ def build_application() -> Application:
                 CallbackQueryHandler(cb_confirm_order, pattern=r"^confirm_order$"),
                 CallbackQueryHandler(cmd_cancel,       pattern=r"^cancel_order$"),
             ],
-            STATE_PROFILE_NAME:  [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_profile_name)],
-            STATE_PROFILE_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_profile_phone)],
+            STATE_PROFILE_NAME:  [
+                CallbackQueryHandler(cb_profile_edit, pattern=r"^profile_edit:"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_profile_name)
+            ],
+            STATE_PROFILE_PHONE: [
+                CallbackQueryHandler(cb_profile_edit, pattern=r"^profile_edit:"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_profile_phone)
+            ],
             STATE_NEW_ADDRESS:   [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_new_address)],
             STATE_PROMO_CODE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_promo_code)],
         },
