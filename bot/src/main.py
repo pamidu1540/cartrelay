@@ -38,6 +38,7 @@ from admin_handlers import (
     cmd_edit_item,
     cmd_remove_item,
     cmd_bulk_import,
+    cb_bulk_import_start,
     msg_csv_upload,
     # orders
     cmd_all_orders,
@@ -162,6 +163,7 @@ from user_handlers import (
     msg_new_address,
     # loyalty
     cmd_points,
+    cb_loyalty_view,
     # promo referral
     cmd_refer,
     # notifications
@@ -319,6 +321,7 @@ def build_application() -> Application:
             CallbackQueryHandler(cb_admin_add_start, pattern=r"^admin_add:start$"),
             CallbackQueryHandler(cb_set_setting_key, pattern=r"^set_key:"),
             CallbackQueryHandler(cb_item_add_start, pattern=r"^item_add:start$"),
+            CallbackQueryHandler(cb_bulk_import_start, pattern=r"^bulk_import:start$"),
         ],
         states={
             STATE_ITEM_NAME:    [
@@ -439,6 +442,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(cb_issue_type,         pattern=r"^issue_type:"))
     app.add_handler(CallbackQueryHandler(cb_address_default,    pattern=r"^addr_default:"))
     app.add_handler(CallbackQueryHandler(cb_address_delete,     pattern=r"^addr_delete:"))
+    app.add_handler(CallbackQueryHandler(cb_loyalty_view,       pattern=r"^loyalty_view$"))
     app.add_handler(CallbackQueryHandler(cb_notif_toggle,       pattern=r"^notif_toggle:"))
     app.add_handler(CallbackQueryHandler(cb_language_select,    pattern=r"^lang_select:"))
     app.add_handler(CallbackQueryHandler(cb_confirm_delete,     pattern=r"^confirm_delete$"))
