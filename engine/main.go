@@ -93,6 +93,7 @@ func main() {
 	})
 
 	// ── gRPC listener ────────────────────────────────────────────────────────
+	// #nosec G301 -- socket directory must be traversable by other container users
 	if err := os.MkdirAll("/app/sockets", 0o755); err != nil {
 		slog.Error("cannot create socket dir", "err", err)
 		os.Exit(1)
@@ -104,6 +105,7 @@ func main() {
 		slog.Error("listen failed", "socket", socketPath, "err", err)
 		os.Exit(1)
 	}
+	// #nosec G302 -- socket file must be read-writeable by other container users
 	if err := os.Chmod(socketPath, 0o666); err != nil {
 		slog.Error("chmod socket failed", "err", err)
 		os.Exit(1)

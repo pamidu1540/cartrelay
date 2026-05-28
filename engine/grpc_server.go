@@ -363,8 +363,10 @@ func (s *Server) PlaceOrder(ctx context.Context, req *pb.OrderRequest) (*pb.Orde
 	_ = DBClearCart(ctx, req.UserId)
 
 	// Notify all admins
+	// #nosec G118 -- background admin notification must outlive request context
 	go notifyAdminsNewOrder(context.Background(), humanRef, req.Username, req.ExpectedTotal)
 
+	// #nosec G118 -- background auto dispatch must outlive request context
 	go autoDispatch(context.Background(), orderID)
 
 	return &pb.OrderResponse{
@@ -422,6 +424,7 @@ func (s *Server) ReportOrderIssue(ctx context.Context, req *pb.IssueReport) (*pb
 	if err := DBReportIssue(ctx, req); err != nil {
 		return nil, status.Errorf(codes.Internal, "report issue: %v", err)
 	}
+	// #nosec G118 -- background issue notification must outlive request context
 	go notifyAdminsIssue(context.Background(), req.OrderId, req.IssueType)
 	return &pb.StatusResponse{Success: true, Message: "Issue reported — our team will review it shortly"}, nil
 }
@@ -438,6 +441,7 @@ func (s *Server) AssignDriver(ctx context.Context, req *pb.AssignDriverRequest) 
 		return nil, grpcErr(err)
 	}
 	// Notify driver
+	// #nosec G118 -- background driver notification must outlive request context
 	go notifyDriver(context.Background(), req.DriverId, req.OrderId)
 	return &pb.StatusResponse{Success: true, Message: "Driver assigned"}, nil
 }

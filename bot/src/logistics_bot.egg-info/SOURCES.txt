@@ -5,6 +5,9 @@ src/grpc_client.py
 src/main.py
 src/middleware.py
 src/user_handlers.py
+src/api/__init__.py
+src/api/logistics_pb2.py
+src/api/logistics_pb2_grpc.py
 src/logistics_bot.egg-info/PKG-INFO
 src/logistics_bot.egg-info/SOURCES.txt
 src/logistics_bot.egg-info/dependency_links.txt

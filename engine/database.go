@@ -50,8 +50,8 @@ func InitDatabase(dsn string) error {
 	}
 
 	// Pool sizing — sensible defaults, overridable via env
-	cfg.MaxConns = int32(envInt("DB_MAX_CONNS", 20))
-	cfg.MinConns = int32(envInt("DB_MIN_CONNS", 2))
+	cfg.MaxConns = envInt32("DB_MAX_CONNS", 20)
+	cfg.MinConns = envInt32("DB_MIN_CONNS", 2)
 	cfg.MaxConnLifetime = time.Duration(envInt("DB_CONN_LIFETIME_S", 3600)) * time.Second
 	cfg.MaxConnIdleTime = time.Duration(envInt("DB_CONN_IDLE_S", 300)) * time.Second
 	cfg.HealthCheckPeriod = 30 * time.Second
@@ -201,11 +201,11 @@ func GetSystemSettings(ctx context.Context) (*pb.SystemSettings, error) {
 		DeliveryRatePerKm:    parseFloat(m["delivery_rate_per_km"], 75),
 		TaxRate:              parseFloat(m["tax_rate"], 0.08),
 		FreeDeliveryThreshold: parseFloat(m["free_delivery_threshold"], 5000),
-		CancelWindowMinutes:  int32(parseInt(m["cancel_window_minutes"], 5)),
-		LoyaltyEarnRate:      int32(parseInt(m["loyalty_earn_rate"], 10)),
-		LoyaltyRedeemRate:    int32(parseInt(m["loyalty_redeem_rate"], 1)),
-		MaxOrderValue:        int32(parseInt(m["max_order_value"], 0)),
-		MinOrderValue:        int32(parseInt(m["min_order_value"], 0)),
+		CancelWindowMinutes:  parseInt32(m["cancel_window_minutes"], 5),
+		LoyaltyEarnRate:      parseInt32(m["loyalty_earn_rate"], 10),
+		LoyaltyRedeemRate:    parseInt32(m["loyalty_redeem_rate"], 1),
+		MaxOrderValue:        parseInt32(m["max_order_value"], 0),
+		MinOrderValue:        parseInt32(m["min_order_value"], 0),
 		OrderCutoffTime:      m["order_cutoff_time"],
 	}, nil
 }
@@ -313,6 +313,7 @@ func DBEditItemStock(ctx context.Context, itemID string, delta int32, reason str
 	}
 	// Notify stock subscribers if restocked (delta > 0)
 	if delta > 0 {
+		// #nosec G118 -- background stock notification must outlive request context
 		go notifyStockSubscribers(context.Background(), itemID)
 	}
 	DBAuditLog(ctx, actorID, "edit_stock", itemID, fmt.Sprintf("delta=%+d reason=%q", delta, reason))
@@ -1860,4 +1861,27 @@ func parseInt(s string, def int) int {
 		return def
 	}
 	return v
+}
+
+func parseInt32(s string, def int32) int32 {
+	if s == "" {
+		return def
+	}
+	v, err := strconv.ParseInt(s, 10, 32)
+	if err != nil {
+		return def
+	}
+	return int32(v) // #nosec G115 -- safe cast since parsed size is capped to 32 bits
+}
+
+func envInt32(key string, def int32) int32 {
+	s := os.Getenv(key)
+	if s == "" {
+		return def
+	}
+	v, err := strconv.ParseInt(s, 10, 32)
+	if err != nil {
+		return def
+	}
+	return int32(v) // #nosec G115 -- safe cast since parsed size is capped to 32 bits
 }

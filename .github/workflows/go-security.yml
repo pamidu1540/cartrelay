@@ -65,7 +65,7 @@ jobs:
       # High/critical severity findings will block the build (exit 1 default).
       - name: gosec — engine (SARIF)
         working-directory: engine
-        run: gosec -fmt=sarif -out=gosec-engine.sarif ./...
+        run: gosec -exclude-dir=api -fmt=sarif -out=gosec-engine.sarif ./...
 
       - name: gosec — supervisor (SARIF)
         working-directory: supervisor
