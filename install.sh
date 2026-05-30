@@ -286,11 +286,11 @@ cleanup_legacy_install() {
   info "Removing orphaned containers…"
   docker rm -f logistics_engine logistics_bot logistics_postgres 2>/dev/null || true
 
-  if [[ -d "${INSTALL_DIR}/data" ]]; then
+  if [[ -f "${INSTALL_DIR}/data/logistics.db" ]]; then
     local backup_dir="${INSTALL_DIR}.bak.$(date +%s)"
     info "Backing up legacy SQLite data to ${backup_dir}…"
     mv "${INSTALL_DIR}" "${backup_dir}"
-    ok "Legacy data safely backed up"
+    ok "Legacy SQLite data safely backed up"
   fi
 }
 
@@ -573,11 +573,38 @@ start_services() {
     last_backup=$(ls -td "${INSTALL_DIR}/backups/pre-install-"* 2>/dev/null | head -n 1 || true)
     if [[ -n "$last_backup" && -f "${last_backup}/.env" ]]; then
       warn "Automated Rollback Triggered: Reverting deployment to previous healthy snapshot…"
+      
+      # Source variables of the old backup environment to get db credentials for restore
+      set -a
+      source "${last_backup}/.env"
+      set +a
+
       cp "${last_backup}/.env" "${INSTALL_DIR}/deploy/.env"
       cp "${last_backup}/docker-compose.yml" "${INSTALL_DIR}/deploy/docker-compose.yml"
       
       # Restart compose with old environment
       ( cd "${INSTALL_DIR}/deploy" && docker compose down && docker compose up -d )
+      
+      # Restore PostgreSQL database if a SQL dump exists in backup
+      if [[ -f "${last_backup}/db_backup.sql" ]]; then
+        info "Restoring PostgreSQL database dump..."
+        # Wait up to 15s for postgres to become ready
+        local db_ready=false
+        for i in {1..5}; do
+          if docker exec logistics_postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+            db_ready=true
+            break
+          fi
+          sleep 3
+        done
+        if $db_ready; then
+          docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" logistics_postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "${last_backup}/db_backup.sql" >/dev/null 2>&1 || true
+          ok "Database successfully rolled back to pre-installation state."
+        else
+          warn "PostgreSQL container was not ready in time. Skipping db restore."
+        fi
+      fi
+
       systemctl restart "${SERVICE_NAME}"
       die "Auto-rollback completed. The new release is incompatible or failed to initialize. Please check engine container logs."
     else
@@ -595,10 +622,31 @@ backup_current_deployment() {
     # Backup .env if it exists
     if [[ -f "${INSTALL_DIR}/deploy/.env" ]]; then
       cp "${INSTALL_DIR}/deploy/.env" "${backup_path}/.env"
+      # Source environment variables to extract PostgreSQL credentials
+      set -a
+      source "${INSTALL_DIR}/deploy/.env"
+      set +a
     fi
     # Backup docker-compose.yml if it exists
     if [[ -f "${INSTALL_DIR}/deploy/docker-compose.yml" ]]; then
       cp "${INSTALL_DIR}/deploy/docker-compose.yml" "${backup_path}/docker-compose.yml"
+    fi
+
+    # Backup the active PostgreSQL database via pg_dump if container is running
+    if docker ps -q -f name=logistics_postgres >/dev/null 2>&1; then
+      info "Dumping active PostgreSQL database..."
+      if [[ -n "$POSTGRES_USER" && -n "$POSTGRES_DB" ]]; then
+        docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" logistics_postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" > "${backup_path}/db_backup.sql" 2>/dev/null || true
+        if [[ -f "${backup_path}/db_backup.sql" ]]; then
+          ok "Database dump saved to ${backup_path}/db_backup.sql"
+        else
+          warn "Database dump was empty or failed"
+        fi
+      else
+        warn "PostgreSQL credentials missing in .env, skipping db dump"
+      fi
+    else
+      info "Database container logistics_postgres is not running. Skipping db dump."
     fi
     
     ok "Pre-installation snapshot successfully saved at ${backup_path}"
