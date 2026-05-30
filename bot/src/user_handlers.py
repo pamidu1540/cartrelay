@@ -1170,21 +1170,54 @@ async def cb_profile_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="profile_edit:view")]]
         await query.edit_message_text("📱 Enter your phone number:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROFILE_PHONE
+    if field == "view":
+        user_id = update.effective_user.id
+        try:
+            profile = await pool.call(
+                "/logistics.LogisticsEngine/GetProfile",
+                lambda stub, meta: stub.GetProfile(
+                    pb.UserId(user_id=user_id), metadata=meta
+                ),
+                user_id=user_id,
+            )
+        except Exception:
+            profile = pb.CustomerProfile(user_id=user_id)
 
-    if field == "addresses":
-        await cmd_addresses(update, context)
+        name = profile.display_name or "Not set"
+        phone = profile.phone or "Not set"
+        lang = profile.language or "en"
+
+        kb = [
+            [InlineKeyboardButton("✏️ Edit Name",  callback_data="profile_edit:name")],
+            [InlineKeyboardButton("📱 Edit Phone", callback_data="profile_edit:phone")],
+            [InlineKeyboardButton("📍 Addresses",  callback_data="profile_edit:addresses")],
+        ]
+        await query.edit_message_text(
+            f"👤 *Your Profile*\n\nName: {name}\nPhone: {phone}\nLanguage: {lang}",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode=ParseMode.MARKDOWN,
+        )
         return ConversationHandler.END
+    if field == "addresses":
+        user_id = update.effective_user.id
+        await _edit_address_list(query, user_id)
+        return ConversationHandler.END
+    return ConversationHandler.END
 
 
 async def msg_profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     name = update.effective_message.text.strip()
     try:
-        profile = await pool.call(
-            "/logistics.LogisticsEngine/GetProfile",
-            lambda stub, meta: stub.GetProfile(pb.UserId(user_id=user_id), metadata=meta),
-            user_id=user_id,
-        )
+        try:
+            profile = await pool.call(
+                "/logistics.LogisticsEngine/GetProfile",
+                lambda stub, meta: stub.GetProfile(pb.UserId(user_id=user_id), metadata=meta),
+                user_id=user_id,
+            )
+        except Exception:
+            profile = pb.CustomerProfile(user_id=user_id)
+
         profile.display_name = name
         await pool.call(
             "/logistics.LogisticsEngine/UpsertProfile",
@@ -1202,11 +1235,15 @@ async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
     phone = update.effective_message.text.strip()
     try:
-        profile = await pool.call(
-            "/logistics.LogisticsEngine/GetProfile",
-            lambda stub, meta: stub.GetProfile(pb.UserId(user_id=user_id), metadata=meta),
-            user_id=user_id,
-        )
+        try:
+            profile = await pool.call(
+                "/logistics.LogisticsEngine/GetProfile",
+                lambda stub, meta: stub.GetProfile(pb.UserId(user_id=user_id), metadata=meta),
+                user_id=user_id,
+            )
+        except Exception:
+            profile = pb.CustomerProfile(user_id=user_id)
+
         profile.phone = phone
         await pool.call(
             "/logistics.LogisticsEngine/UpsertProfile",
@@ -1216,7 +1253,7 @@ async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await _safe_reply(update, "✅ Phone number updated")
         await cmd_profile(update, context)
     except Exception as e:
-        await _safe_reply(update, f"⚠️ {e}")
+        await _safe_reply(update, f"⚠️ Could not update profile: {e}")
     return ConversationHandler.END
 
 
@@ -1253,6 +1290,42 @@ async def cmd_addresses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await _safe_reply(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(kb))
 
 
+async def _edit_address_list(query, user_id: int) -> None:
+    try:
+        resp = await pool.call(
+            "/logistics.LogisticsEngine/ListSavedAddresses",
+            lambda stub, meta: stub.ListSavedAddresses(
+                pb.UserId(user_id=user_id), metadata=meta
+            ),
+            user_id=user_id,
+        )
+    except Exception:
+        await query.edit_message_text("⚠️ Could not load addresses.")
+        return
+
+    lines = ["📍 *Saved Addresses*\n"]
+    kb = []
+    if resp.addresses:
+        for a in resp.addresses:
+            label = ("⭐ " if a.is_default else "") + a.label
+            lines.append(f"• {label}: {a.address}")
+            row = [
+                InlineKeyboardButton(f"🏠 Default: {a.label}", callback_data=f"addr_default:{a.id}"),
+                InlineKeyboardButton("🗑 Delete", callback_data=f"addr_delete:{a.id}"),
+            ]
+            kb.append(row)
+    else:
+        lines.append("No saved addresses.\n\nUse /addaddress to save one.")
+
+    kb.append([InlineKeyboardButton("🔙 Back to Profile", callback_data="profile_edit:view")])
+
+    await query.edit_message_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+
 async def cb_address_default(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -1276,6 +1349,7 @@ async def cb_address_default(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 user_id=user_id,
             )
             await query.answer("✅ Default address updated", show_alert=True)
+            await _edit_address_list(query, user_id)
     except Exception as e:
         await query.answer(f"⚠️ {e}", show_alert=True)
 
@@ -1284,6 +1358,7 @@ async def cb_address_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     query = update.callback_query
     await query.answer()
     addr_id = int(query.data.split(":", 1)[1])
+    user_id = update.effective_user.id
     try:
         await pool.call(
             "/logistics.LogisticsEngine/DeleteAddress",
@@ -1292,6 +1367,7 @@ async def cb_address_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             ),
         )
         await query.answer("🗑 Address deleted", show_alert=True)
+        await _edit_address_list(query, user_id)
     except Exception as e:
         await query.answer(f"⚠️ {e}", show_alert=True)
 
@@ -1494,11 +1570,15 @@ async def cb_language_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = update.effective_user.id
 
     try:
-        profile = await pool.call(
-            "/logistics.LogisticsEngine/GetProfile",
-            lambda stub, meta: stub.GetProfile(pb.UserId(user_id=user_id), metadata=meta),
-            user_id=user_id,
-        )
+        try:
+            profile = await pool.call(
+                "/logistics.LogisticsEngine/GetProfile",
+                lambda stub, meta: stub.GetProfile(pb.UserId(user_id=user_id), metadata=meta),
+                user_id=user_id,
+            )
+        except Exception:
+            profile = pb.CustomerProfile(user_id=user_id)
+
         profile.language = lang
         await pool.call(
             "/logistics.LogisticsEngine/UpsertProfile",
@@ -1507,7 +1587,7 @@ async def cb_language_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         await query.edit_message_text(f"✅ Language set to *{lang}*", parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
-        await query.answer(f"⚠️ {e}", show_alert=True)
+        await query.answer(f"⚠️ Could not set language: {e}", show_alert=True)
 
 
 @rate_limit
@@ -1526,7 +1606,7 @@ async def cmd_delete_account(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Are you sure?",
         reply_markup=InlineKeyboardMarkup(kb),
     )
-    return STATE_CONFIRM
+    return ConversationHandler.END
 
 
 async def cb_confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1572,6 +1652,17 @@ async def cb_confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except Exception as e:
         await query.edit_message_text(f"⚠️ Could not delete account: {e}")
 
+    return ConversationHandler.END
+
+
+async def cb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Global query callback for cancelling an operation."""
+    query = update.callback_query
+    if query:
+        await query.answer()
+        await query.edit_message_text("❌ Operation cancelled.")
+    else:
+        await _safe_reply(update, "❌ Operation cancelled.")
     return ConversationHandler.END
 
 

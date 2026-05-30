@@ -161,6 +161,10 @@ from user_handlers import (
     cb_address_default,
     cb_address_delete,
     msg_new_address,
+    cmd_add_address,
+    cmd_cancel_order,
+    cmd_report_issue,
+    cb_cancel,
     # loyalty
     cmd_points,
     cb_loyalty_view,
@@ -269,7 +273,9 @@ def build_application() -> Application:
             CommandHandler("cart",    cmd_cart),
             CommandHandler("orders",  cmd_orders),
             CommandHandler("checkout",cmd_cart),
+            CommandHandler("addaddress", cmd_add_address),
             CallbackQueryHandler(cb_profile_edit, pattern=r"^profile_edit:"),
+            CallbackQueryHandler(cb_checkout, pattern=r"^checkout$"),
         ],
         states={
             STATE_ADDRESS: [
@@ -321,6 +327,7 @@ def build_application() -> Application:
             CommandHandler("bulkimport",cmd_bulk_import),
             CommandHandler("ordersearch",cmd_order_search),
             CommandHandler("addnote",   cmd_add_note),
+            CommandHandler("adjustloyalty", cmd_adjust_loyalty),
             CallbackQueryHandler(cb_wh_add_start, pattern=r"^wh_add:start$"),
             CallbackQueryHandler(cb_driver_add_start, pattern=r"^driver_add:start$"),
             CallbackQueryHandler(cb_promo_add_start, pattern=r"^promo_add:start$"),
@@ -328,6 +335,7 @@ def build_application() -> Application:
             CallbackQueryHandler(cb_set_setting_key, pattern=r"^set_key:"),
             CallbackQueryHandler(cb_item_add_start, pattern=r"^item_add:start$"),
             CallbackQueryHandler(cb_bulk_import_start, pattern=r"^bulk_import:start$"),
+            CallbackQueryHandler(cb_admin_menu, pattern=r"^admin_menu:"),
         ],
         states={
             STATE_ITEM_NAME:    [
@@ -428,10 +436,14 @@ def build_application() -> Application:
         ("audit",           cmd_audit),
         ("maintenance",     cmd_maintenance),
         ("adjustloyalty",   cmd_adjust_loyalty),
+        ("cancel_order",    cmd_cancel_order),
+        ("report_issue",    cmd_report_issue),
+        ("report",          cmd_report_issue),
     ]:
         app.add_handler(CommandHandler(cmd, handler))
 
     # Inline keyboard callbacks not covered by ConversationHandlers
+    app.add_handler(CallbackQueryHandler(cb_cancel,             pattern=r"^cancel$"))
     app.add_handler(CallbackQueryHandler(cb_catalog_page,       pattern=r"^cat_page:"))
     app.add_handler(CallbackQueryHandler(cb_category_select,    pattern=r"^cat_select:"))
     app.add_handler(CallbackQueryHandler(cb_item_detail,        pattern=r"^item_detail:"))

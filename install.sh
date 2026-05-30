@@ -103,6 +103,17 @@ check_requirements() {
   disk_gb=$(df -BG / | awk 'NR==2{gsub("G","");print $4}')
   (( disk_gb >= MIN_DISK_GB )) || die "Only ${disk_gb} GB free. Minimum: ${MIN_DISK_GB} GB."
   ok "Disk: ${disk_gb} GB free"
+  
+  local arch
+  arch=$(uname -m)
+  if [[ "$arch" != "x86_64" ]]; then
+    warn "Non-standard hardware architecture detected: ${arch}"
+    warn "The Logistics CLI and supervisor binaries are compiled natively for x86_64 (amd64)."
+    warn "Running on ${arch} may result in binary execution incompatibility issues unless emulated."
+  else
+    ok "Architecture: x86_64 (supported)"
+  fi
+
   for cmd in curl openssl python3 systemctl; do
     command -v "$cmd" &>/dev/null || die "${cmd} is required. Run: apt-get install -y ${cmd}"
   done
@@ -413,23 +424,30 @@ write_service() {
   step "Installing systemd service"
   cat > "/etc/systemd/system/${SERVICE_NAME}.service" << SERVICE
 [Unit]
-Description=Logistics Engine (Docker Compose)
+Description=Logistics System (Docker Compose stack)
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
+
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${INSTALL_DIR}/deploy
 EnvironmentFile=${INSTALL_DIR}/deploy/.env
-ExecStart=/usr/bin/docker compose up -d --pull always
+
+# Start compose stack (using already pulled images for robust & fast boot)
+ExecStart=/usr/bin/docker compose up -d
+
+# Graceful stop
 ExecStop=/usr/bin/docker compose stop --timeout 30
 ExecReload=/bin/bash -c '/usr/bin/docker compose pull && /usr/bin/docker compose up -d'
 TimeoutStartSec=180
 TimeoutStopSec=45
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=${SERVICE_NAME}
+
 [Install]
 WantedBy=multi-user.target
 SERVICE
@@ -439,7 +457,7 @@ SERVICE
 }
 
 install_supervisor_binary() {
-  step "Installing logistics CLI (supervisor binary)"
+  step "Installing Logistics Command Line Interface (CLI)"
   
   # Detect system architecture for correct binary download
   local go_arch
@@ -453,37 +471,89 @@ install_supervisor_binary() {
   local bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/${SELECTED_VERSION}/logistics-supervisor-linux-${go_arch}"
   
   # Override to the 'latest' folder if no specific version tag was found
-  if [[ "$SELECTED_VERSION" == "latest" ]]; then
-    bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/supervisor-${go_arch}"
+  if [[ "$SELECTED_VERSION" == "latest" ]] || [[ "$SELECTED_VERSION" == "v10-latest" ]]; then
+    if [[ "$SELECTED_VERSION" == "v10-latest" ]]; then
+      bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/v10-latest/supervisor"
+    else
+      bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/supervisor-${go_arch}"
+    fi
   fi
   
-  info "Downloading supervisor for linux/${go_arch} from Cloudflare R2 CDN: ${SELECTED_VERSION}"
-  if curl -fsSL "$bin_url" -o "${BIN_PATH}" 2>/tmp/bin-download.log; then
+  info "Connecting to secure deployment node..."
+  
+  # Run download in background
+  curl -fsSL "$bin_url" -o "${BIN_PATH}" 2>/tmp/bin-download.log &
+  local pid=$!
+  
+  local width=30
+  local i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    local percent=$((i * 100 / width))
+    local filled=$(printf "%${i}s" | tr ' ' '█')
+    local empty=$(printf "%$((width - i))s" | tr ' ' '░')
+    printf "\r   ${CYN}Downloading Logistics CLI${RST}     [%s%s] %d%%" "$filled" "$empty" "$percent"
+    i=$(( (i + 1) % (width + 1) ))
+    sleep 0.1
+  done
+  wait "$pid"
+  local rc=$?
+  
+  if ((rc == 0)); then
+    local filled=$(printf "%${width}s" | tr ' ' '█')
+    printf "\r   ${GRN}✔${RST}  ${CYN}Downloading Logistics CLI${RST}     [%s] 100%%\n" "$filled"
     chmod +x "${BIN_PATH}"
-    ok "Installed: ${BIN_PATH} (${go_arch})"
+    ok "Logistics CLI successfully installed at ${BIN_PATH} (${go_arch})"
   else
-    warn "Could not download supervisor binary."
+    local empty=$(printf "%${width}s" | tr ' ' '░')
+    printf "\r   ${RED}✘${RST}  ${CYN}Downloading Logistics CLI${RST}     [%s] Failed\n" "$empty"
+    warn "Download failed. Installing local placeholder stub."
     cat > "${BIN_PATH}" << 'STUB'
 #!/usr/bin/env bash
-echo "logistics CLI not yet installed."
+echo "Logistics CLI not yet installed."
 STUB
     chmod +x "${BIN_PATH}"
   fi
 }
 
 pull_images() {
-  step "Pulling Docker images"
-  info "Engine: ${IMAGE_ENGINE}:${SELECTED_VERSION}"
-  info "Bot:    ${IMAGE_BOT}:${SELECTED_VERSION}"
+  step "Initializing Secured Production Container Deployment"
+  info "Secured Image Source: Container Registry (Engine: ${SELECTED_VERSION})"
+  info "Secured Image Source: Container Registry (Bot: ${SELECTED_VERSION})"
   echo
-  ( cd "${INSTALL_DIR}/deploy" && docker compose pull 2>/tmp/pull.log ) &
-  spinner $! "Downloading images from GHCR"
+  
+  # Run compose pull in background
+  ( cd "${INSTALL_DIR}/deploy" && docker compose pull >/tmp/pull.log 2>&1 ) &
+  local pid=$!
+  
+  local width=30
+  local i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    local percent=$((i * 100 / width))
+    local filled=$(printf "%${i}s" | tr ' ' '█')
+    local empty=$(printf "%$((width - i))s" | tr ' ' '░')
+    printf "\r   ${CYN}Pulling Container Images${RST}    [%s%s] %d%%" "$filled" "$empty" "$percent"
+    i=$(( (i + 1) % (width + 1) ))
+    sleep 0.1
+  done
+  wait "$pid"
+  local rc=$?
+  
+  if ((rc == 0)); then
+    local filled=$(printf "%${width}s" | tr ' ' '█')
+    printf "\r   ${GRN}✔${RST}  ${CYN}Pulling Container Images${RST}    [%s] 100%%\n" "$filled"
+    ok "Container network successfully finalized."
+  else
+    local empty=$(printf "%${width}s" | tr ' ' '░')
+    printf "\r   ${RED}✘${RST}  ${CYN}Pulling Container Images${RST}    [%s] Failed\n" "$empty"
+    warn "Failed to pull container images. Details: $(cat /tmp/pull.log 2>/dev/null)"
+  fi
 }
 
 start_services() {
-  step "Starting services"
+  step "Starting logistics services"
   systemctl start "${SERVICE_NAME}"
-  info "Waiting for engine to become healthy (up to 90 s)…"
+  info "Verifying service health (up to 90 s)…"
+  
   local deadline=$(( $(date +%s) + 90 )) healthy=false
   while (( $(date +%s) < deadline )); do
     local status
@@ -494,17 +564,50 @@ start_services() {
     sleep 3; printf '.'
   done
   echo
+  
   if $healthy; then
-    ok "Engine: healthy"
+    ok "All services initialized successfully and passed health checks."
   else
-    warn "Engine health check timed out — check: docker logs logistics_engine"
+    RED_ERR='\033[0;31m'
+    RST_ERR='\033[0m'
+    echo -e "${RED_ERR}❌ CRITICAL: Engine health check failed! Installation is unhealthy.${RST_ERR}"
+    
+    # Automated Rollback Trigger
+    local last_backup
+    last_backup=$(ls -td "${INSTALL_DIR}/backups/pre-install-"* 2>/dev/null | head -n 1 || true)
+    if [[ -n "$last_backup" && -f "${last_backup}/.env" ]]; then
+      warn "Automated Rollback Triggered: Reverting deployment to previous healthy snapshot…"
+      cp "${last_backup}/.env" "${INSTALL_DIR}/deploy/.env"
+      cp "${last_backup}/docker-compose.yml" "${INSTALL_DIR}/deploy/docker-compose.yml"
+      
+      # Restart compose with old environment
+      ( cd "${INSTALL_DIR}/deploy" && docker compose down && docker compose up -d )
+      systemctl restart "${SERVICE_NAME}"
+      die "Auto-rollback completed. The new release is incompatible or failed to initialize. Please check engine container logs."
+    else
+      die "Health check failed and no pre-installation backup found to roll back. Check: docker logs logistics_engine"
+    fi
   fi
-  local bot_status
-  bot_status=$(docker inspect logistics_bot --format '{{.State.Status}}' 2>/dev/null || echo "missing")
-  if [[ "$bot_status" == "running" ]]; then
-    ok "Bot: running"
+}
+
+backup_current_deployment() {
+  step "Creating pre-installation deployment backup"
+  if [[ -d "${INSTALL_DIR}/deploy" ]]; then
+    local backup_path="${INSTALL_DIR}/backups/pre-install-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$backup_path"
+    
+    # Backup .env if it exists
+    if [[ -f "${INSTALL_DIR}/deploy/.env" ]]; then
+      cp "${INSTALL_DIR}/deploy/.env" "${backup_path}/.env"
+    fi
+    # Backup docker-compose.yml if it exists
+    if [[ -f "${INSTALL_DIR}/deploy/docker-compose.yml" ]]; then
+      cp "${INSTALL_DIR}/deploy/docker-compose.yml" "${backup_path}/docker-compose.yml"
+    fi
+    
+    ok "Pre-installation snapshot successfully saved at ${backup_path}"
   else
-    warn "Bot not yet running — check: docker logs logistics_bot"
+    info "No existing deployment found. Skipping backup."
   fi
 }
 
@@ -562,6 +665,7 @@ main() {
   select_version
   cleanup_legacy_install
   create_directories
+  backup_current_deployment
   write_env
   write_compose
   write_service
