@@ -75,7 +75,7 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
-async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     section = query.data.split(":", 1)[1]
@@ -92,8 +92,10 @@ async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     }
     if section in dispatch:
         await dispatch[section](update, context)
+        return ConversationHandler.END
     elif section == "main":
         await cmd_admin(update, context)
+        return ConversationHandler.END
     elif section == "catalog":
         kb = [
             [InlineKeyboardButton("➕ Add Item",    callback_data="item_add:start")],
@@ -103,6 +105,7 @@ async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         ]
         await query.edit_message_text("📦 *Catalog Management*",
             parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(kb))
+        return ConversationHandler.END
     elif section == "analytics":
         kb = [
             [InlineKeyboardButton("💰 Revenue",   callback_data="admin_menu:do_revenue")],
@@ -112,14 +115,24 @@ async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         ]
         await query.edit_message_text("📊 *Analytics*",
             parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(kb))
+        return ConversationHandler.END
     elif section == "do_revenue":
         await cmd_revenue(update, context)
+        return ConversationHandler.END
     elif section == "do_trend":
         await cmd_order_trend(update, context)
+        return ConversationHandler.END
     elif section == "do_topitems":
         await cmd_top_items(update, context)
+        return ConversationHandler.END
     elif section == "lowstock":
         await cmd_low_stock(update, context)
+        return ConversationHandler.END
+    elif section == "additem":
+        return await cmd_add_item(update, context)
+    elif section == "bulkimport":
+        return await cmd_bulk_import(update, context)
+    return ConversationHandler.END
 
 
 # ── Catalog management ────────────────────────────────────────────────────────

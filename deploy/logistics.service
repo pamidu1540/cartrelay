@@ -10,8 +10,8 @@ RemainAfterExit=yes
 WorkingDirectory=/opt/logistics-system/deploy
 EnvironmentFile=/opt/logistics-system/deploy/.env
 
-# Start — Force it to pull the newest image tag before booting
-ExecStart=/usr/bin/docker compose up -d --pull always
+# Start compose stack (using already pulled images for robust & fast boot)
+ExecStart=/usr/bin/docker compose up -d
 
 # Graceful stop
 ExecStop=/usr/bin/docker compose stop --timeout 30
