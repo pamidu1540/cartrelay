@@ -18,6 +18,9 @@ import grpc
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    KeyboardButton,
     Update,
 )
 from telegram.constants import ParseMode
@@ -41,8 +44,8 @@ logger = logging.getLogger(__name__)
     STATE_DRV_PHONE, STATE_PROMO_DEF, STATE_BROADCAST, STATE_LOYALTY_ADJ,
     STATE_NEW_ADMIN, STATE_SETTINGS_VAL, STATE_MAINT_WINDOW, STATE_RESOLVE_NOTE,
     STATE_PROFILE_NAME, STATE_PROFILE_PHONE, STATE_NEW_ADDRESS, STATE_PROMO_CODE,
-    STATE_CSV_UPLOAD,
-) = range(29)
+    STATE_CSV_UPLOAD, STATE_EDIT_ITEM_ID, STATE_EDIT_ITEM_PHOTO,
+) = range(31)
 
 PAGE_SIZE = 10  # items per catalog page
 
@@ -51,6 +54,52 @@ PAGE_SIZE = 10  # items per catalog page
 
 def _cart(context: ContextTypes.DEFAULT_TYPE) -> CartManager:
     return context.application.bot_data["cart_manager"]
+
+
+async def _update_msg(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, reply_markup=None, parse_mode=ParseMode.MARKDOWN):
+    # Try to delete the user's incoming message first to keep the chat clean
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+
+    chat_id = update.effective_chat.id
+    # Check if we have a last bot message to edit
+    last_msg_id = context.user_data.get("last_bot_msg_id")
+    if last_msg_id:
+        try:
+            # If the update has a callback query, we can edit the message directly
+            if update.callback_query:
+                msg = await update.callback_query.edit_message_text(
+                    text, reply_markup=reply_markup, parse_mode=parse_mode
+                )
+                context.user_data["last_bot_msg_id"] = msg.message_id
+                return msg
+            else:
+                msg = await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=last_msg_id,
+                    text=text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
+                return msg
+        except Exception:
+            # If editing fails, delete it and send a new one
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=last_msg_id)
+            except Exception:
+                pass
+
+    # Send a new message and save its ID
+    msg = await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+    context.user_data["last_bot_msg_id"] = msg.message_id
+    return msg
 
 
 async def _safe_reply(update: Update, text: str, **kwargs) -> None:
@@ -81,9 +130,71 @@ def _order_status_emoji(status: str) -> str:
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """BUG-030: reset any stale conversation state. BUG-016: invalidate cart cache."""
     user = update.effective_user
-    await _cart(context).invalidate_local(user.id)
+    user_id = user.id
+    await _cart(context).invalidate_local(user_id)
+    
+    # Try to delete incoming /start command message to keep chat tidy
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
 
-    # Check setup status for disclaimer
+    # 1. Check if user profile is registered
+    profile = None
+    try:
+        profile = await pool.call(
+            "/logistics.LogisticsEngine/GetProfile",
+            lambda stub, meta: stub.GetProfile(pb.UserId(user_id=user_id), metadata=meta),
+            user_id=user_id
+        )
+    except Exception:
+        pass
+
+    if not profile or not profile.display_name or not profile.phone:
+        # Prompt user to set up profile
+        context.user_data["registering"] = True
+        context.user_data["reg_profile"] = {"user_id": user_id}
+        
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="👋 *Welcome to Logistics Engine!*\n\nLet's set up your profile first.\n\n✏️ *Step 1:* Please enter your full display name:",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        context.user_data["last_bot_msg_id"] = msg.message_id
+        return STATE_PROFILE_NAME
+
+    # 2. Check if user has a default address configured
+    has_address = False
+    try:
+        addr_resp = await pool.call(
+            "/logistics.LogisticsEngine/ListSavedAddresses",
+            lambda stub, meta: stub.ListSavedAddresses(pb.UserId(user_id=user_id), metadata=meta),
+            user_id=user_id
+        )
+        if addr_resp.addresses:
+            has_address = True
+    except Exception:
+        pass
+
+    if not has_address:
+        context.user_data["registering"] = True
+        reply_kb = [
+            [KeyboardButton("📍 Share Location", request_location=True)],
+        ]
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=(
+                "📍 *Delivery Address Required*\n\n"
+                "An address is required to calculate delivery distances and browse catalog items.\n\n"
+                "👉 Please tap *Share Location* below to share your GPS location, or type your address manually:"
+            ),
+            reply_markup=ReplyKeyboardMarkup(reply_kb, resize_keyboard=True, one_time_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        context.user_data["last_bot_msg_id"] = msg.message_id
+        return STATE_NEW_ADDRESS
+
+    # 3. Both profile and address exist — load standard main menu
     disclaimer = ""
     try:
         wh_resp = await pool.call(
@@ -106,8 +217,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not has_wh or not has_cat:
         disclaimer = (
             "⚠️ *Disclaimer:* The system is currently in initial setup mode. "
-            "Admin options (such as warehouses or catalog items) have not been fully configured/enabled yet. "
-            "Some features may be limited.\n\n"
+            "Admin options (such as warehouses or catalog items) have not been fully configured yet.\n\n"
         )
 
     kb = [
@@ -118,11 +228,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
          InlineKeyboardButton("🎁 Points",    callback_data="loyalty_view")],
         [InlineKeyboardButton("❓ Help",       callback_data="help")],
     ]
-    await _safe_reply(
-        update,
-        f"{disclaimer}👋 Welcome back, *{user.first_name}*!\n\nHow can we help you today?",
+    
+    # Try deleting previous bot message before sending main menu
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+    except Exception:
+        pass
+
+    msg = await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"{disclaimer}👋 Welcome back, *{user.first_name}*!\n\nHow can we help you today?",
         reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode=ParseMode.MARKDOWN
     )
+    context.user_data["last_bot_msg_id"] = msg.message_id
     return ConversationHandler.END
 
 
@@ -158,6 +277,18 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 @check_maintenance
 async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """U-011: Show category buttons for browsing."""
+    # Try deleting incoming message
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+
+    # Try deleting previous bot message
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+    except Exception:
+        pass
+
     # Check setup status
     disclaimer = ""
     try:
@@ -178,7 +309,11 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         has_cat = len(resp.items) > 0
     except grpc.RpcError as e:
-        await _safe_reply(update, f"⚠️ Could not load catalog: {e.details()}")
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"⚠️ Could not load catalog: {e.details()}"
+        )
+        context.user_data["last_bot_msg_id"] = msg.message_id
         return
 
     if not has_wh or not has_cat:
@@ -193,11 +328,15 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     kb = [[InlineKeyboardButton(f"📂 {cat}", callback_data=f"cat_select:{cat}:0")]
           for cat in categories]
     kb.append([InlineKeyboardButton("🔍 All Items", callback_data="cat_select:all:0")])
-    await _safe_reply(
-        update,
-        f"{disclaimer}🛒 *Browse our catalog*\nChoose a category:",
+    kb.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="profile_edit:back_to_main")])
+    
+    msg = await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"{disclaimer}🛒 *Browse our catalog*\nChoose a category:",
         reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode=ParseMode.MARKDOWN,
     )
+    context.user_data["last_bot_msg_id"] = msg.message_id
 
 
 async def cb_category_select(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -222,6 +361,24 @@ async def cb_catalog_page(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def _show_catalog_page(query, cat_filter: str, page: int) -> None:
     """U-019 / BUG-019: paginated catalog, 10 items per page."""
+    # Check if the message is a photo message. If so, delete it and send a new text message.
+    if query.message and query.message.photo:
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        # Send a new text message to use as the base for the catalog page
+        query = await query.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="⌛ Loading catalog..."
+        )
+
+    # Universal edit helper
+    async def edit_msg(text, **kwargs):
+        chat_id = query.message.chat_id if hasattr(query, "message") and query.message is not None else query.chat_id
+        message_id = query.message.message_id if hasattr(query, "message") and query.message is not None else query.message_id
+        return await query.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, **kwargs)
+
     try:
         resp = await pool.call(
             "/logistics.LogisticsEngine/GetCatalog",
@@ -235,11 +392,11 @@ async def _show_catalog_page(query, cat_filter: str, page: int) -> None:
             ),
         )
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ Error: {e.details()}")
+        await edit_msg(f"⚠️ Error: {e.details()}")
         return
 
     if not resp.items:
-        await query.edit_message_text("No items found in this category.")
+        await edit_msg("No items found in this category.")
         return
 
     cat_label = cat_filter or "all"
@@ -250,7 +407,7 @@ async def _show_catalog_page(query, cat_filter: str, page: int) -> None:
         stock_label = f"({it.stock} left)" if it.stock <= 5 else ""
         lines.append(f"• {it.name}  —  LKR {it.price:.0f} {stock_label}")
         kb.append([InlineKeyboardButton(
-            f"{'🔴 ' if it.stock == 0 else ''}View: {it.name}",
+            f"{'🔴 ' if it.stock == 0 else ''}{it.name}",
             callback_data=f"item_detail:{it.id}",
         )])
 
@@ -263,9 +420,10 @@ async def _show_catalog_page(query, cat_filter: str, page: int) -> None:
         nav.append(InlineKeyboardButton("Next ➡", callback_data=f"cat_page:{cat_label}:{page + 1}"))
     if nav:
         kb.append(nav)
-    kb.append([InlineKeyboardButton("🛒 View Cart", callback_data="checkout")])
+    kb.append([InlineKeyboardButton("🔙 Back to Categories", callback_data="profile_edit:back_to_catalog")])
+    kb.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="profile_edit:back_to_main")])
 
-    await query.edit_message_text(
+    await edit_msg(
         "\n".join(lines),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup(kb),
@@ -293,11 +451,61 @@ async def cb_item_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         else "❌ Out of Stock"
     )
 
+    user_id = update.effective_user.id
+    distance_info = ""
+    try:
+        # Fetch user's default saved address
+        addr_resp = await pool.call(
+            "/logistics.LogisticsEngine/ListSavedAddresses",
+            lambda stub, meta: stub.ListSavedAddresses(pb.UserId(user_id=user_id), metadata=meta),
+            user_id=user_id
+        )
+        default_addr = next((a for a in addr_resp.addresses if a.is_default), None)
+        
+        # Fetch active warehouses
+        wh_resp = await pool.call(
+            "/logistics.LogisticsEngine/ListWarehouses",
+            lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta)
+        )
+        active_warehouses = [w for w in wh_resp.warehouses if w.is_active]
+        
+        if not default_addr:
+            distance_info = "📍 _Set up address in Profile to see delivery distance._"
+        elif default_addr.lat == 0.0 or default_addr.lon == 0.0:
+            distance_info = "📍 _Distance unavailable. Share location in Profile for exact distance._"
+        elif not active_warehouses:
+            distance_info = "📍 _No active warehouses found for delivery calculation._"
+        else:
+            import math
+            min_dist = float('inf')
+            nearest_wh = None
+            for w in active_warehouses:
+                if w.lat != 0.0 or w.lon != 0.0:
+                    R = 6371.0
+                    phi1 = math.radians(default_addr.lat)
+                    phi2 = math.radians(w.lat)
+                    delta_phi = math.radians(w.lat - default_addr.lat)
+                    delta_lambda = math.radians(w.lon - default_addr.lon)
+                    a = math.sin(delta_phi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0)**2
+                    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+                    dist = R * c
+                    if dist < min_dist:
+                        min_dist = dist
+                        nearest_wh = w
+            if nearest_wh:
+                distance_info = f"📍 *Nearest Depot:* {nearest_wh.name} ({min_dist:.1f} km)"
+            else:
+                distance_info = "📍 _Nearest Depot: Location coordinate mismatch._"
+    except Exception as e:
+        logger.error(f"Error calculating distance: {e}")
+        distance_info = "📍 _Distance calculation unavailable._"
+
     caption = (
         f"*{item.name}*\n\n"
         f"{item.description}\n\n"
         f"💰 LKR {item.price:.0f}\n"
-        f"📦 {stock_text}"
+        f"📦 {stock_text}\n"
+        f"{distance_info}"
     )
     if item.is_featured:
         caption = "⭐ *Featured*\n" + caption
@@ -314,21 +522,28 @@ async def cb_item_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             callback_data=f"stock_notify:{item_id}",
         )])
 
-    kb.append([InlineKeyboardButton("⬅ Back to Catalog", callback_data="cat_select:all:0")])
+    kb.append([InlineKeyboardButton("⬅ Back to Catalog", callback_data=f"cat_select:{item.category or 'all'}:0")])
 
     if item.photo_file_id:
-        await query.message.reply_photo(
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        msg = await context.bot.send_photo(
+            chat_id=update.effective_chat.id,
             photo=item.photo_file_id,
             caption=caption,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(kb),
         )
+        context.user_data["last_bot_msg_id"] = msg.message_id
     else:
         await query.edit_message_text(
             caption,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=InlineKeyboardMarkup(kb),
         )
+        context.user_data["last_bot_msg_id"] = query.message.message_id
 
 
 async def cb_add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -597,9 +812,21 @@ async def cb_address_select(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     addr_id = query.data.split(":", 1)[1]
 
     if addr_id == "new":
-        await query.edit_message_text(
-            "📍 Please type your delivery address:"
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+            
+        reply_kb = [
+            [KeyboardButton("📍 Share Location", request_location=True)],
+        ]
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="📍 Please tap *Share Location* below to share your GPS location, or type your delivery address manually:",
+            reply_markup=ReplyKeyboardMarkup(reply_kb, resize_keyboard=True, one_time_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
         )
+        context.user_data["last_bot_msg_id"] = msg.message_id
         return STATE_ADDRESS
 
     # Load the saved address
@@ -625,11 +852,56 @@ async def cb_address_select(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def msg_delivery_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Store typed address and proceed to quote."""
-    context.user_data["delivery_address"] = update.effective_message.text
-    # Coordinates will default to 0; Mapbox will use text geocoding in future
-    context.user_data["delivery_lat"] = float(os.environ.get("DEFAULT_LAT", "6.9271"))
-    context.user_data["delivery_lon"] = float(os.environ.get("DEFAULT_LON", "79.8612"))
+    """Store typed address/location and proceed to quote."""
+    msg = update.effective_message
+    user_id = update.effective_user.id
+    
+    # Try deleting user incoming message
+    try:
+        await msg.delete()
+    except Exception:
+        pass
+        
+    lat = float(os.environ.get("DEFAULT_LAT", "6.9271"))
+    lon = float(os.environ.get("DEFAULT_LON", "79.8612"))
+    
+    if msg.location:
+        lat = msg.location.latitude
+        lon = msg.location.longitude
+        addr_text = f"GPS: ({lat:.6f}, {lon:.6f})"
+        
+        # Save as a default address
+        try:
+            await pool.call(
+                "/logistics.LogisticsEngine/SaveAddress",
+                lambda stub, meta: stub.SaveAddress(
+                    pb.SavedAddress(
+                        user_id=user_id,
+                        label="Home",
+                        address=addr_text,
+                        lat=lat,
+                        lon=lon,
+                        is_default=True,
+                    ),
+                    metadata=meta,
+                ),
+                user_id=user_id,
+            )
+        except Exception:
+            pass
+    else:
+        addr_text = msg.text.strip()
+
+    context.user_data["delivery_address"] = addr_text
+    context.user_data["delivery_lat"] = lat
+    context.user_data["delivery_lon"] = lon
+    
+    # Remove old bot message
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+    except Exception:
+        pass
+        
     return await _proceed_to_quote(update, context)
 
 
@@ -1075,6 +1347,18 @@ async def cb_issue_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 @rate_limit
 async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Try deleting incoming message
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+
+    # Try deleting previous bot message
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+    except Exception:
+        pass
+
     user_id = update.effective_user.id
     try:
         profile = await pool.call(
@@ -1095,11 +1379,44 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         [InlineKeyboardButton("✏️ Edit Name",  callback_data="profile_edit:name")],
         [InlineKeyboardButton("📱 Edit Phone", callback_data="profile_edit:phone")],
         [InlineKeyboardButton("📍 Addresses",  callback_data="profile_edit:addresses")],
+        [InlineKeyboardButton("⬅ Back to Menu", callback_data="profile_edit:back_to_main")],
     ]
-    await _safe_reply(
-        update,
-        f"👤 *Your Profile*\n\nName: {name}\nPhone: {phone}\nLanguage: {lang}",
+    msg = await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"👤 *Your Profile*\n\nName: {name}\nPhone: {phone}\nLanguage: {lang}",
         reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    context.user_data["last_bot_msg_id"] = msg.message_id
+
+
+async def _show_catalog_categories_helper(query) -> None:
+    try:
+        resp = await pool.call(
+            "/logistics.LogisticsEngine/GetCatalog",
+            lambda stub, meta: stub.GetCatalog(
+                pb.CatalogRequest(page=0, page_size=200), metadata=meta
+            ),
+        )
+    except grpc.RpcError as e:
+        await query.edit_message_text(f"⚠️ Could not load catalog: {e.details()}")
+        return
+
+    categories = sorted({it.category for it in resp.items if it.is_available})
+    kb = [[InlineKeyboardButton(f"📂 {cat}", callback_data=f"cat_select:{cat}:0")]
+          for cat in categories]
+    kb.append([InlineKeyboardButton("🔍 All Items", callback_data="cat_select:all:0")])
+    kb.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="profile_edit:back_to_main")])
+    
+    chat_id = query.message.chat_id if hasattr(query, "message") and query.message is not None else query.chat_id
+    message_id = query.message.message_id if hasattr(query, "message") and query.message is not None else query.message_id
+    
+    await query.bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=message_id,
+        text="🛒 *Browse our catalog*\nChoose a category:",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode=ParseMode.MARKDOWN,
     )
 
 
@@ -1138,6 +1455,21 @@ async def cb_profile_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return ConversationHandler.END
 
+    if field == "back_to_catalog":
+        # Check if the message is a photo message. If so, delete it and send a new text message.
+        if query.message and query.message.photo:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+            # Send a new text message to use as the base
+            query = await query.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="⌛ Loading catalog..."
+            )
+        await _show_catalog_categories_helper(query)
+        return ConversationHandler.END
+
     if field == "back_to_main":
         disclaimer = ""
         if not pool.is_licensed():
@@ -1170,44 +1502,42 @@ async def cb_profile_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="profile_edit:view")]]
         await query.edit_message_text("📱 Enter your phone number:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROFILE_PHONE
-    if field == "view":
-        user_id = update.effective_user.id
-        try:
-            profile = await pool.call(
-                "/logistics.LogisticsEngine/GetProfile",
-                lambda stub, meta: stub.GetProfile(
-                    pb.UserId(user_id=user_id), metadata=meta
-                ),
-                user_id=user_id,
-            )
-        except Exception:
-            profile = pb.CustomerProfile(user_id=user_id)
 
-        name = profile.display_name or "Not set"
-        phone = profile.phone or "Not set"
-        lang = profile.language or "en"
-
-        kb = [
-            [InlineKeyboardButton("✏️ Edit Name",  callback_data="profile_edit:name")],
-            [InlineKeyboardButton("📱 Edit Phone", callback_data="profile_edit:phone")],
-            [InlineKeyboardButton("📍 Addresses",  callback_data="profile_edit:addresses")],
-        ]
-        await query.edit_message_text(
-            f"👤 *Your Profile*\n\nName: {name}\nPhone: {phone}\nLanguage: {lang}",
-            reply_markup=InlineKeyboardMarkup(kb),
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return ConversationHandler.END
     if field == "addresses":
         user_id = update.effective_user.id
         await _edit_address_list(query, user_id)
         return ConversationHandler.END
+
+    if field == "add_address":
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+            
+        reply_kb = [
+            [KeyboardButton("📍 Share Location", request_location=True)],
+        ]
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="📍 Please tap *Share Location* below to share your GPS location, or type your address manually:",
+            reply_markup=ReplyKeyboardMarkup(reply_kb, resize_keyboard=True, one_time_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        context.user_data["last_bot_msg_id"] = msg.message_id
+        return STATE_NEW_ADDRESS
     return ConversationHandler.END
 
 
 async def msg_profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     name = update.effective_message.text.strip()
+    
+    # Try deleting user incoming name message
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+        
     try:
         try:
             profile = await pool.call(
@@ -1224,7 +1554,29 @@ async def msg_profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             lambda stub, meta: stub.UpsertProfile(profile, metadata=meta),
             user_id=user_id,
         )
-        await _safe_reply(update, f"✅ Name updated to *{name}*")
+        
+        # Check if onboarding
+        if context.user_data.get("registering"):
+            # Update the old bot message inline to ask for phone
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=context.user_data.get("last_bot_msg_id"),
+                text=f"✅ Name saved: *{name}*\n\n📱 *Step 2:* Please enter your phone number:",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return STATE_PROFILE_PHONE
+            
+        # Standard Profile Edit
+        # Delete old bot message and send a clean updated profile
+        try:
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+        except Exception:
+            pass
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"✅ Name updated to *{name}*"
+        )
+        context.user_data["last_bot_msg_id"] = msg.message_id
         await cmd_profile(update, context)
     except Exception as e:
         await _safe_reply(update, f"⚠️ Could not update profile: {e}")
@@ -1234,6 +1586,13 @@ async def msg_profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     phone = update.effective_message.text.strip()
+    
+    # Try deleting user incoming phone message
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+        
     try:
         try:
             profile = await pool.call(
@@ -1250,7 +1609,42 @@ async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             lambda stub, meta: stub.UpsertProfile(profile, metadata=meta),
             user_id=user_id,
         )
-        await _safe_reply(update, "✅ Phone number updated")
+        
+        # Check if onboarding
+        if context.user_data.get("registering"):
+            # Update the old bot message and prompt for address with location keyboard
+            try:
+                await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+            except Exception:
+                pass
+                
+            reply_kb = [
+                [KeyboardButton("📍 Share Location", request_location=True)],
+            ]
+            msg = await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=(
+                    f"✅ Phone saved: *{phone}*\n\n"
+                    "📍 *Step 3:* Awesome! Almost done.\n\n"
+                    "An address is required to calculate delivery distances.\n\n"
+                    "👉 Please tap *Share Location* below to share your GPS location, or type your address manually:"
+                ),
+                reply_markup=ReplyKeyboardMarkup(reply_kb, resize_keyboard=True, one_time_keyboard=True),
+                parse_mode=ParseMode.MARKDOWN
+            )
+            context.user_data["last_bot_msg_id"] = msg.message_id
+            return STATE_NEW_ADDRESS
+            
+        # Standard Profile Edit
+        try:
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+        except Exception:
+            pass
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="✅ Phone number updated"
+        )
+        context.user_data["last_bot_msg_id"] = msg.message_id
         await cmd_profile(update, context)
     except Exception as e:
         await _safe_reply(update, f"⚠️ Could not update profile: {e}")
@@ -1259,6 +1653,18 @@ async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 @rate_limit
 async def cmd_addresses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Try deleting incoming message
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+
+    # Try deleting previous bot message
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+    except Exception:
+        pass
+
     user_id = update.effective_user.id
     try:
         resp = await pool.call(
@@ -1269,38 +1675,11 @@ async def cmd_addresses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             user_id=user_id,
         )
     except Exception:
-        await _safe_reply(update, "⚠️ Could not load addresses.")
-        return
-
-    if not resp.addresses:
-        await _safe_reply(update, "📍 No saved addresses.\n\nUse /addaddress to save one.")
-        return
-
-    lines = ["📍 *Saved Addresses*\n"]
-    kb = []
-    for a in resp.addresses:
-        label = ("⭐ " if a.is_default else "") + a.label
-        lines.append(f"• {label}: {a.address}")
-        row = [
-            InlineKeyboardButton(f"🏠 Default: {a.label}", callback_data=f"addr_default:{a.id}"),
-            InlineKeyboardButton("🗑 Delete", callback_data=f"addr_delete:{a.id}"),
-        ]
-        kb.append(row)
-
-    await _safe_reply(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(kb))
-
-
-async def _edit_address_list(query, user_id: int) -> None:
-    try:
-        resp = await pool.call(
-            "/logistics.LogisticsEngine/ListSavedAddresses",
-            lambda stub, meta: stub.ListSavedAddresses(
-                pb.UserId(user_id=user_id), metadata=meta
-            ),
-            user_id=user_id,
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="⚠️ Could not load addresses."
         )
-    except Exception:
-        await query.edit_message_text("⚠️ Could not load addresses.")
+        context.user_data["last_bot_msg_id"] = msg.message_id
         return
 
     lines = ["📍 *Saved Addresses*\n"]
@@ -1315,11 +1694,57 @@ async def _edit_address_list(query, user_id: int) -> None:
             ]
             kb.append(row)
     else:
-        lines.append("No saved addresses.\n\nUse /addaddress to save one.")
+        lines.append("No saved addresses.")
 
+    kb.append([InlineKeyboardButton("➕ Add Address", callback_data="profile_edit:add_address")])
     kb.append([InlineKeyboardButton("🔙 Back to Profile", callback_data="profile_edit:view")])
 
-    await query.edit_message_text(
+    msg = await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode=ParseMode.MARKDOWN,
+    )
+    context.user_data["last_bot_msg_id"] = msg.message_id
+
+
+async def _edit_address_list(query, user_id: int) -> None:
+    # Universal edit helper
+    async def edit_msg(text, **kwargs):
+        chat_id = query.message.chat_id if hasattr(query, "message") and query.message is not None else query.chat_id
+        message_id = query.message.message_id if hasattr(query, "message") and query.message is not None else query.message_id
+        return await query.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, **kwargs)
+
+    try:
+        resp = await pool.call(
+            "/logistics.LogisticsEngine/ListSavedAddresses",
+            lambda stub, meta: stub.ListSavedAddresses(
+                pb.UserId(user_id=user_id), metadata=meta
+            ),
+            user_id=user_id,
+        )
+    except Exception:
+        await edit_msg("⚠️ Could not load addresses.")
+        return
+
+    lines = ["📍 *Saved Addresses*\n"]
+    kb = []
+    if resp.addresses:
+        for a in resp.addresses:
+            label = ("⭐ " if a.is_default else "") + a.label
+            lines.append(f"• {label}: {a.address}")
+            row = [
+                InlineKeyboardButton(f"🏠 Default: {a.label}", callback_data=f"addr_default:{a.id}"),
+                InlineKeyboardButton("🗑 Delete", callback_data=f"addr_delete:{a.id}"),
+            ]
+            kb.append(row)
+    else:
+        lines.append("No saved addresses.")
+
+    kb.append([InlineKeyboardButton("➕ Add Address", callback_data="profile_edit:add_address")])
+    kb.append([InlineKeyboardButton("🔙 Back to Profile", callback_data="profile_edit:view")])
+
+    await edit_msg(
         "\n".join(lines),
         reply_markup=InlineKeyboardMarkup(kb),
         parse_mode=ParseMode.MARKDOWN
@@ -1374,13 +1799,48 @@ async def cb_address_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 @rate_limit
 async def cmd_add_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await _safe_reply(update, "📍 Type your new delivery address:")
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+        
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+    except Exception:
+        pass
+        
+    reply_kb = [
+        [KeyboardButton("📍 Share Location", request_location=True)],
+    ]
+    msg = await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="📍 Please tap *Share Location* below to share your GPS location, or type your address manually:",
+        reply_markup=ReplyKeyboardMarkup(reply_kb, resize_keyboard=True, one_time_keyboard=True),
+        parse_mode=ParseMode.MARKDOWN
+    )
+    context.user_data["last_bot_msg_id"] = msg.message_id
     return STATE_NEW_ADDRESS
 
 
 async def msg_new_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    address_text = update.effective_message.text.strip()
+    msg = update.effective_message
+    
+    # Try deleting user incoming message
+    try:
+        await msg.delete()
+    except Exception:
+        pass
+        
+    lat = 0.0
+    lon = 0.0
+    if msg.location:
+        lat = msg.location.latitude
+        lon = msg.location.longitude
+        address_text = f"GPS: ({lat:.6f}, {lon:.6f})"
+    else:
+        address_text = msg.text.strip()
+        
     try:
         await pool.call(
             "/logistics.LogisticsEngine/SaveAddress",
@@ -1389,15 +1849,65 @@ async def msg_new_address(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     user_id=user_id,
                     label="Home",
                     address=address_text,
-                    is_default=False,
+                    lat=lat,
+                    lon=lon,
+                    is_default=True,
                 ),
                 metadata=meta,
             ),
             user_id=user_id,
         )
-        await _safe_reply(update, "✅ Address saved!")
+        
+        # Remove old bot message
+        try:
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+        except Exception:
+            pass
+            
+        # Clean reply keyboard cleanly
+        try:
+            rm_msg = await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="🧹 Cleaning keyboard...",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            await rm_msg.delete()
+        except Exception:
+            pass
+
+        if context.user_data.get("registering"):
+            context.user_data.pop("registering", None)
+            
+            kb = [
+                [InlineKeyboardButton("🛒 Browse Catalog", callback_data="cat_select:all:0")],
+                [InlineKeyboardButton("🛍 My Cart",   callback_data="checkout"),
+                 InlineKeyboardButton("📋 My Orders", callback_data="order_detail:list")],
+                [InlineKeyboardButton("👤 Profile",   callback_data="profile_edit:view"),
+                 InlineKeyboardButton("🎁 Points",    callback_data="loyalty_view")],
+                [InlineKeyboardButton("❓ Help",       callback_data="help")],
+            ]
+            bot_msg = await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="🎉 *Account Setup Complete!*\n\nWelcome to Logistics Engine! Your profile and default address are now configured. You can start shopping immediately:",
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode=ParseMode.MARKDOWN
+            )
+            context.user_data["last_bot_msg_id"] = bot_msg.message_id
+        else:
+            # Standard address add success
+            bot_msg = await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="✅ Address saved successfully!",
+            )
+            # Fetch address list and edit the screen inline
+            await _edit_address_list(bot_msg, user_id)
+            
     except Exception as e:
-        await _safe_reply(update, f"⚠️ {e}")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"⚠️ {e}",
+            reply_markup=ReplyKeyboardRemove()
+        )
     return ConversationHandler.END
 
 

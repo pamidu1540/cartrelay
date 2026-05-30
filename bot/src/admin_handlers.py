@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
     STATE_DRV_PHONE, STATE_PROMO_DEF, STATE_BROADCAST, STATE_LOYALTY_ADJ,
     STATE_NEW_ADMIN, STATE_SETTINGS_VAL, STATE_MAINT_WINDOW, STATE_RESOLVE_NOTE,
     STATE_PROFILE_NAME, STATE_PROFILE_PHONE, STATE_NEW_ADDRESS, STATE_PROMO_CODE,
-    STATE_CSV_UPLOAD,
-) = range(29)
+    STATE_CSV_UPLOAD, STATE_EDIT_ITEM_ID, STATE_EDIT_ITEM_PHOTO,
+) = range(31)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -343,8 +343,98 @@ async def msg_item_description(update: Update, context: ContextTypes.DEFAULT_TYP
 
 @admin_only
 async def cmd_edit_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await _reply(update, "✏️ Enter the item ID to edit (get IDs from /lowstock or /catalog):")
-    return STATE_ITEM_NAME
+    kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+    await _reply(
+        update,
+        "✏️ *Edit Item Wizard*\n\nPlease enter the **item ID** to edit (get IDs from /catalog):",
+        reply_markup=InlineKeyboardMarkup(kb),
+    )
+    return STATE_EDIT_ITEM_ID
+
+
+@admin_only
+async def msg_edit_item_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    item_id = update.effective_message.text.strip()
+    try:
+        item = await pool.call(
+            "/logistics.LogisticsEngine/GetItem",
+            lambda stub, meta: stub.GetItem(pb.ItemId(id=item_id), metadata=meta),
+        )
+    except Exception as e:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+        await _reply(
+            update,
+            f"❌ Item not found or engine error: {e}\n\nPlease enter a valid **item ID**:",
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+        return STATE_EDIT_ITEM_ID
+
+    context.user_data["edit_item"] = item
+    
+    kb = [
+        [InlineKeyboardButton("⏩ Keep Current Photo", callback_data="edit_item_photo:keep")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
+    ]
+    await _reply(
+        update,
+        f"🔍 *Found Item:* {item.name}\n"
+        f"💰 *Current Price:* LKR {item.price:.2f}\n"
+        f"📦 *Current Stock:* {item.stock}\n\n"
+        "📸 Please send a **new photo** for this item, or click **Keep Current Photo**:",
+        reply_markup=InlineKeyboardMarkup(kb),
+    )
+    return STATE_EDIT_ITEM_PHOTO
+
+
+@admin_only
+async def msg_edit_item_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    msg = update.effective_message
+    item = context.user_data.pop("edit_item", None)
+    if not item:
+        await _reply(update, "❌ Edit session expired. Please start over with /edititem.")
+        return ConversationHandler.END
+
+    if msg.photo:
+        photo_file_id = msg.photo[-1].file_id
+        item.photo_file_id = photo_file_id
+    else:
+        # If they sent text or something else, warn them unless they clicked keep
+        kb = [
+            [InlineKeyboardButton("⏩ Keep Current Photo", callback_data="edit_item_photo:keep")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
+        ]
+        context.user_data["edit_item"] = item  # put it back
+        await _reply(
+            update,
+            "❌ Invalid input. Please upload a photo, or click the **Keep Current Photo** button below:",
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+        return STATE_EDIT_ITEM_PHOTO
+
+    try:
+        resp = await pool.call(
+            "/logistics.LogisticsEngine/EditItem",
+            lambda stub, meta: stub.EditItem(item, metadata=meta),
+            user_id=update.effective_user.id,
+        )
+        await _reply(update, f"✅ Photo for *{item.name}* updated successfully!")
+    except Exception as e:
+        await _reply(update, f"❌ Failed to edit item photo: {e}")
+
+    return ConversationHandler.END
+
+
+@admin_only
+async def cb_edit_item_photo_keep(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    item = context.user_data.pop("edit_item", None)
+    if not item:
+        await query.edit_message_text("❌ Edit session expired. Please start over with /edititem.")
+        return ConversationHandler.END
+
+    await query.edit_message_text(f"⏩ Current photo for *{item.name}* kept. No changes made.")
+    return ConversationHandler.END
 
 
 @admin_only
