@@ -37,6 +37,9 @@ from admin_handlers import (
     msg_item_description,
     cmd_edit_item,
     cmd_remove_item,
+    msg_edit_item_id,
+    msg_edit_item_photo,
+    cb_edit_item_photo_keep,
     cmd_bulk_import,
     cb_bulk_import_start,
     msg_csv_upload,
@@ -246,7 +249,10 @@ logger = logging.getLogger(__name__)
     STATE_PROMO_CODE,
     # CSV upload
     STATE_CSV_UPLOAD,
-) = range(29)
+    # Edit item flow
+    STATE_EDIT_ITEM_ID,
+    STATE_EDIT_ITEM_PHOTO,
+) = range(31)
 
 
 # ── Application factory ────────────────────────────────────────────────────────
@@ -279,7 +285,7 @@ def build_application() -> Application:
         ],
         states={
             STATE_ADDRESS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_delivery_address),
+                MessageHandler((filters.TEXT | filters.LOCATION) & ~filters.COMMAND, msg_delivery_address),
                 CallbackQueryHandler(cb_address_select, pattern=r"^addr_select:"),
             ],
             STATE_PROMO: [
@@ -301,7 +307,7 @@ def build_application() -> Application:
                 CallbackQueryHandler(cb_profile_edit, pattern=r"^profile_edit:"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, msg_profile_phone)
             ],
-            STATE_NEW_ADDRESS:   [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_new_address)],
+            STATE_NEW_ADDRESS:   [MessageHandler((filters.TEXT | filters.LOCATION) & ~filters.COMMAND, msg_new_address)],
             STATE_PROMO_CODE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_promo_code)],
         },
         fallbacks=[
@@ -395,6 +401,15 @@ def build_application() -> Application:
             STATE_MAINT_WINDOW: [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_maintenance_window)],
             STATE_RESOLVE_NOTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_resolve_note)],
             STATE_CSV_UPLOAD:   [MessageHandler(filters.Document.FileExtension("csv"), msg_csv_upload)],
+            STATE_EDIT_ITEM_ID: [
+                CallbackQueryHandler(cb_item_cancel, pattern=r"^item_add:cancel$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_edit_item_id)
+            ],
+            STATE_EDIT_ITEM_PHOTO: [
+                CallbackQueryHandler(cb_edit_item_photo_keep, pattern=r"^edit_item_photo:keep$"),
+                CallbackQueryHandler(cb_item_cancel, pattern=r"^item_add:cancel$"),
+                MessageHandler(filters.PHOTO | (filters.TEXT & ~filters.COMMAND), msg_edit_item_photo)
+            ],
         },
         fallbacks=[CommandHandler("cancel", cmd_cancel)],
         allow_reentry=True,
