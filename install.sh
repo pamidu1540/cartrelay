@@ -472,11 +472,7 @@ install_supervisor_binary() {
   
   # Override to the 'latest' folder if no specific version tag was found
   if [[ "$SELECTED_VERSION" == "latest" ]] || [[ "$SELECTED_VERSION" == "v10-latest" ]]; then
-    if [[ "$SELECTED_VERSION" == "v10-latest" ]]; then
-      bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/v10-latest/supervisor"
-    else
-      bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/supervisor-${go_arch}"
-    fi
+    bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/supervisor-${go_arch}"
   fi
   
   info "Connecting to secure deployment node..."
