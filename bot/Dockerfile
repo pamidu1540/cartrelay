@@ -33,7 +33,8 @@ RUN pip install --no-cache-dir \
         "grpcio==1.80.0" \
         "protobuf==6.31.1" \
         "anyio==4.7.0" \
-        "structlog==24.4.0"
+        "structlog==24.4.0" \
+        "ddtrace==2.12.0"
 
 COPY --from=proto-gen /out/api /app/api
 COPY bot/src/ /app/

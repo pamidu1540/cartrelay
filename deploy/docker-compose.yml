@@ -53,6 +53,10 @@ services:
       DB_MAX_CONNS:       100
       GOMEMLIMIT:         48MiB
       GOGC:               50
+      DD_AGENT_HOST:      ${DD_AGENT_HOST:-}
+      DD_ENV:             ${DEPLOY_ENV:-production}
+      DD_SERVICE:         logistics-engine
+      DD_VERSION:         ${APP_VERSION:-dev}
     volumes:
       - ./sockets:/app/sockets
       - backups:/app/backups
@@ -92,6 +96,10 @@ services:
       DEFAULT_LAT:        ${DEFAULT_LAT:-6.9271}
       DEFAULT_LON:        ${DEFAULT_LON:-79.8612}
       PYTHONMALLOC:       malloc
+      DD_AGENT_HOST:      ${DD_AGENT_HOST:-}
+      DD_ENV:             ${DEPLOY_ENV:-production}
+      DD_SERVICE:         logistics-bot
+      DD_VERSION:         ${APP_VERSION:-dev}
     volumes:
       - ./sockets:/app/sockets:ro
     depends_on:
@@ -105,6 +113,27 @@ services:
         reservations:
           cpus: "0.05"
           memory: 32M
+    networks: [backend]
+
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    container_name: datadog-agent
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+      - DD_ENV=${DEPLOY_ENV:-production}
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      - DD_APM_ENABLED=true
+      - DD_APM_NON_LOCAL_TRAFFIC=true
+      - DD_LOGS_ENABLED=true
+      - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
     networks: [backend]
 
 volumes:

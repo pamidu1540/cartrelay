@@ -18,6 +18,9 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
+	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	pb "logistics-engine/api"
 )
 
@@ -32,6 +35,17 @@ func main() {
 		AddSource: false,
 		Level:     logLevel(),
 	})))
+
+	// ── Datadog Tracer ──────────────────────────────────────────────────────
+	if os.Getenv("DD_AGENT_HOST") != "" || os.Getenv("DD_API_KEY") != "" {
+		slog.Info("starting Datadog tracer...")
+		tracer.Start(
+			tracer.WithService("logistics-engine"),
+			tracer.WithEnv(os.Getenv("DD_ENV")),
+			tracer.WithServiceVersion(Version),
+		)
+		defer tracer.Stop()
+	}
 
 	// ── Required env vars ───────────────────────────────────────────────────
 	if os.Getenv("INTERNAL_TOKEN") == "" {
@@ -120,12 +134,14 @@ func main() {
 	listener := newLoggedLimitListener(netutil.LimitListener(raw, lim), lim)
 
 	// ── gRPC server options ──────────────────────────────────────────────────
+	var chain []grpc.UnaryServerInterceptor
+	if os.Getenv("DD_AGENT_HOST") != "" || os.Getenv("DD_API_KEY") != "" {
+		chain = append(chain, grpctrace.UnaryServerInterceptor(grpctrace.WithServiceName("logistics-engine")))
+	}
+	chain = append(chain, RecoveryInterceptor, AuthInterceptor, RateLimitInterceptor)
+
 	srvOpts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(
-			RecoveryInterceptor,  // panic → Internal instead of crash
-			AuthInterceptor,
-			RateLimitInterceptor,
-		),
+		grpc.ChainUnaryInterceptor(chain...),
 		grpc.MaxConcurrentStreams(256),
 		// Unix socket: keepalive is unnecessary overhead for local communication.
 		// Kept minimal for forward-compatibility with future TCP migration.
