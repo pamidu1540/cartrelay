@@ -118,6 +118,13 @@ check_requirements() {
     command -v "$cmd" &>/dev/null || die "${cmd} is required. Run: apt-get install -y ${cmd}"
   done
   ok "Required tools present (curl, openssl, python3, systemctl)"
+
+  if python3 -c "import cryptography" &>/dev/null; then
+    ok "Python3 Cryptography library: present (AES-GCM-256 enabled)"
+  else
+    warn "Python3 Cryptography library is missing. Backup encryption will fallback to AES-256-CBC."
+    info "👉 Run: apt-get install -y python3-cryptography (to enable hardware-accelerated AES-GCM-256)"
+  fi
 }
 
 install_docker() {
@@ -249,6 +256,19 @@ collect_config() {
   echo -e "   ${DIM}Mapbox token for road-distance delivery quotes.${RST}"
   echo -e "   ${DIM}Skip to use straight-line distance × 1.3 fallback.${RST}"
   prompt_optional MAPBOX_TOKEN "Mapbox Public Token"
+  
+  echo
+  echo -e "   ${BOLD}${MAG}── Datadog Monitoring (optional) ────────────────────${RST}"
+  echo -e "   ${DIM}Integrate Datadog Pro APM, Postgres query metrics, and logs.${RST}"
+  echo -e "   ${DIM}Leave blank to disable.${RST}"
+  prompt_optional DD_API_KEY "Datadog API Key"
+  if [[ -n "${DD_API_KEY}" ]]; then
+    prompt_optional DD_SITE "Datadog Site (e.g. datadoghq.com)"
+    if [[ -z "${DD_SITE}" ]]; then
+      DD_SITE="datadoghq.com"
+    fi
+  fi
+
   INTERNAL_TOKEN=$(openssl rand -hex 32)
   ok "Internal service token auto-generated"
   
@@ -320,6 +340,9 @@ BUILD_VERSION=${SELECTED_VERSION}
 ENGINE_IMAGE=${IMAGE_ENGINE}:${SELECTED_VERSION}
 BOT_IMAGE=${IMAGE_BOT}:${SELECTED_VERSION}
 UPDATE_MANIFEST_URL="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/manifest.json"
+DD_API_KEY=${DD_API_KEY:-}
+DD_SITE=${DD_SITE:-datadoghq.com}
+DD_AGENT_HOST=$( [[ -n "${DD_API_KEY}" ]] && echo "datadog-agent" || echo "" )
 ENV
   chmod 600 "$f"
   ok "Wrote ${f}  (mode 600 — root-readable only)"
@@ -327,7 +350,36 @@ ENV
 
 write_compose() {
   step "Writing docker-compose.yml"
-  cat > "${INSTALL_DIR}/deploy/docker-compose.yml" << 'COMPOSE'
+  
+  local datadog_agent_service=""
+  if [[ -n "${DD_API_KEY}" ]]; then
+    datadog_agent_service=$(cat << 'EOF'
+
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    container_name: datadog-agent
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+      - DD_ENV=${DEPLOY_ENV:-production}
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      - DD_APM_ENABLED=true
+      - DD_APM_NON_LOCAL_TRAFFIC=true
+      - DD_LOGS_ENABLED=true
+      - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+    networks: [backend]
+EOF
+)
+  fi
+
+  cat > "${INSTALL_DIR}/deploy/docker-compose.yml" << COMPOSE
 services:
   postgres:
     init: true
@@ -338,7 +390,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -U \$\$POSTGRES_USER -d \$\$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -355,13 +407,17 @@ services:
 
   engine:
     init: true
-    image: ${ENGINE_IMAGE}
+    image: \${ENGINE_IMAGE}
     container_name: logistics_engine
     restart: unless-stopped
     env_file: .env
     environment:
       - GOMEMLIMIT=48MiB
       - GOGC=50
+      - DD_AGENT_HOST=\${DD_AGENT_HOST:-}
+      - DD_ENV=\${DEPLOY_ENV:-production}
+      - DD_SERVICE=logistics-engine
+      - DD_VERSION=\${BUILD_VERSION:-5.0.0}
     volumes:
       - sockets:/app/sockets
       - backups:/app/backups
@@ -386,13 +442,17 @@ services:
 
   bot:
     init: true
-    image: ${BOT_IMAGE}
+    image: \${BOT_IMAGE}
     container_name: logistics_bot
     restart: unless-stopped
     env_file: .env
     environment:
       - ENGINE_SOCKET=/app/sockets/logistics.sock
       - PYTHONMALLOC=malloc
+      - DD_AGENT_HOST=\${DD_AGENT_HOST:-}
+      - DD_ENV=\${DEPLOY_ENV:-production}
+      - DD_SERVICE=logistics-bot
+      - DD_VERSION=\${BUILD_VERSION:-5.0.0}
     volumes:
       - sockets:/app/sockets:ro
     depends_on:
@@ -407,6 +467,7 @@ services:
           cpus: "0.05"
           memory: 32M
     networks: [backend]
+\${datadog_agent_service}
 
 volumes:
   postgres_data: {driver: local}
@@ -588,16 +649,53 @@ start_services() {
       mkdir -p "$temp_restore_dir"
 
       local decrypted=false
+      local tmp_tar="${temp_restore_dir}/restore.tar.gz"
+
+      # Try decrypting using default keys sequentially until one succeeds
       for pass in "$current_token" "$current_bot_token" "logistics_secure_fallback_key_2026"; do
         if [[ -n "$pass" ]]; then
-          if openssl enc -d -aes-256-cbc -pbkdf2 -iter 10000 -pass pass:"$pass" -in "$last_backup" | tar -xzf - -C "$temp_restore_dir" 2>/dev/null; then
-            decrypted=true
-            break
+          # 1. Try AES-GCM-256 via Python first
+          if python3 -c "import cryptography" &>/dev/null; then
+            if python3 -c '
+import sys, hashlib
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+try:
+    pass_str, infile, outfile = sys.argv[1:4]
+    key = hashlib.pbkdf2_hmac("sha256", pass_str.encode("utf-8"), b"logistics_gcm_salt_2026", 100000, 32)
+    aesgcm = AESGCM(key)
+    with open(infile, "rb") as f:
+        file_data = f.read()
+    if len(file_data) < 12:
+        sys.exit(1)
+    nonce = file_data[:12]
+    encrypted_data = file_data[12:]
+    decrypted_data = aesgcm.decrypt(nonce, encrypted_data, None)
+    with open(outfile, "wb") as f:
+        f.write(decrypted_data)
+    sys.exit(0)
+except Exception as e:
+    sys.exit(1)
+' "$pass" "$last_backup" "$tmp_tar" &>/dev/null; then
+              decrypted=true
+              break
+            fi
+          fi
+
+          # 2. Try OpenSSL AES-256-CBC fallback if Python GCM fails/is unavailable
+          if ! $decrypted; then
+            if openssl enc -d -aes-256-cbc -pbkdf2 -iter 10000 -pass pass:"$pass" -in "$last_backup" -out "$tmp_tar" 2>/dev/null; then
+              decrypted=true
+              break
+            fi
           fi
         fi
       done
 
       if $decrypted; then
+        # Unpack decrypted tarball
+        tar -xzf "$tmp_tar" -C "$temp_restore_dir"
+        rm -f "$tmp_tar"
+
         # Successfully decrypted! Source old variables to get db credentials for restore
         set -a
         source "${temp_restore_dir}/.env"
@@ -683,13 +781,53 @@ backup_current_deployment() {
     local enc_pass="${INTERNAL_TOKEN:-$TELEGRAM_BOT_TOKEN}"
     enc_pass="${enc_pass:-logistics_secure_fallback_key_2026}"
 
-    if tar -czf - -C "$temp_backup_dir" . | openssl enc -aes-256-cbc -pbkdf2 -iter 10000 -pass pass:"$enc_pass" -out "$secure_backup_file" 2>/dev/null; then
-      ok "Pre-installation snapshot successfully encrypted and saved at ${secure_backup_file}"
-    else
-      warn "Failed to encrypt backup. Saving as standard plain tarball..."
-      tar -czf "${INSTALL_DIR}/backups/pre-install-$(date +%Y%m%d-%H%M%S).tar.gz" -C "$temp_backup_dir" .
+    # Prepare compressed tarball first (to save storage!)
+    local tmp_tar="${INSTALL_DIR}/backups/pre-install-$$.tar.gz"
+    tar -czf "$tmp_tar" -C "$temp_backup_dir" .
+
+    # Use python3 to encrypt using AES-GCM-256 if cryptography is available
+    local enc_success=false
+    if python3 -c "import cryptography" &>/dev/null; then
+      info "Encrypting deployment backup using AES-GCM-256..."
+      if python3 -c '
+import sys, hashlib, os
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+try:
+    pass_str, infile, outfile = sys.argv[1:4]
+    key = hashlib.pbkdf2_hmac("sha256", pass_str.encode("utf-8"), b"logistics_gcm_salt_2026", 100000, 32)
+    aesgcm = AESGCM(key)
+    with open(infile, "rb") as f:
+        data = f.read()
+    nonce = os.urandom(12)
+    encrypted_data = aesgcm.encrypt(nonce, data, None)
+    with open(outfile, "wb") as f:
+        f.write(nonce + encrypted_data)
+    sys.exit(0)
+except Exception as e:
+    sys.stderr.write(str(e) + "\n")
+    sys.exit(1)
+' "$enc_pass" "$tmp_tar" "$secure_backup_file"; then
+        enc_success=true
+        ok "Pre-installation snapshot successfully encrypted using AES-GCM-256 and saved at ${secure_backup_file}"
+      fi
     fi
 
+    # Fallback to openssl AES-256-CBC if GCM/cryptography is not available
+    if ! $enc_success; then
+      warn "AES-GCM-256 (python3-cryptography) is not available. Falling back to OpenSSL AES-256-CBC..."
+      if openssl enc -aes-256-cbc -pbkdf2 -iter 10000 -pass pass:"$enc_pass" -in "$tmp_tar" -out "$secure_backup_file" 2>/dev/null; then
+        enc_success=true
+        ok "Pre-installation snapshot successfully encrypted using AES-256-CBC and saved at ${secure_backup_file}"
+      fi
+    fi
+
+    if ! $enc_success; then
+      warn "Failed to encrypt backup. Saving as standard plain tarball..."
+      cp "$tmp_tar" "${INSTALL_DIR}/backups/pre-install-$(date +%Y%m%d-%H%M%S).tar.gz"
+    fi
+
+    # Clean up temp files
+    rm -f "$tmp_tar"
     rm -rf "$temp_backup_dir"
   else
     info "No existing deployment found. Skipping backup."

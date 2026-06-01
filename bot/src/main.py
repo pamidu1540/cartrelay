@@ -1,12 +1,20 @@
-"""
-main.py — logistics bot entry point
-"""
-
 from __future__ import annotations
+
+# ── Datadog Tracer Initialization ─────────────────────────────────────────────
+import os
+try:
+    if os.environ.get("DD_AGENT_HOST") or os.environ.get("DD_API_KEY"):
+        from ddtrace import patch_all, config
+        patch_all(logging=True)
+        # Configure global tags
+        config.env = os.environ.get("DD_ENV", "production")
+        config.service = os.environ.get("DD_SERVICE", "logistics-bot")
+        config.version = os.environ.get("APP_VERSION", "11.0.0")
+except ImportError:
+    pass
 
 import asyncio
 import logging
-import os
 
 from telegram import Update
 from telegram.ext import (
@@ -562,6 +570,41 @@ async def error_handler(update: object, context) -> None:
 
 def main() -> None:
     app = build_application()
+
+    # ── Datadog Telegram Update Tracing ──────────────────────────────────────
+    try:
+        from ddtrace import tracer
+        original_process_update = app.process_update
+
+        async def traced_process_update(update: Update) -> None:
+            user = update.effective_user
+            user_id = user.id if user else 0
+
+            # Determine request resource name (command or callback query data)
+            resource = "update"
+            if update.message and update.message.text:
+                resource = update.message.text.split()[0]
+            elif update.callback_query and update.callback_query.data:
+                resource = f"cb:{update.callback_query.data.split(':')[0]}"
+
+            try:
+                with tracer.trace("telegram.update", resource=resource) as span:
+                    span.set_tag("telegram.user_id", user_id)
+                    if update.message and update.message.text:
+                        span.set_tag("telegram.message_text", update.message.text[:100])
+                    if update.callback_query:
+                        span.set_tag("telegram.callback_data", update.callback_query.data)
+
+                    await original_process_update(update)
+            except Exception as exc:
+                span = tracer.current_span()
+                if span:
+                    span.set_exc_info(type(exc), exc, exc.__traceback__)
+                raise
+
+        app.process_update = traced_process_update
+    except ImportError:
+        pass
 
     # BUG-003: SIGTERM is handled by Application.run_polling's shutdown path
     # which calls post_shutdown → cart flush. No manual signal handler needed.
