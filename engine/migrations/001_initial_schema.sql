@@ -117,6 +117,8 @@ CREATE TABLE IF NOT EXISTS order_notes (
     ts        BIGINT      NOT NULL DEFAULT EXTRACT(EPOCH FROM now())::BIGINT
 );
 
+CREATE INDEX IF NOT EXISTS idx_order_notes_order_id ON order_notes(order_id, ts);
+
 -- ── Carts ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS carts (
     user_id      BIGINT      PRIMARY KEY,

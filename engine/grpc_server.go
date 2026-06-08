@@ -11,6 +11,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"golang.org/x/sync/errgroup"
+
 	pb "logistics-engine/api"
 )
 
@@ -216,25 +218,44 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 		return nil, status.Errorf(codes.FailedPrecondition, "no active warehouses available")
 	}
 
-	// Optionally refine distance via Mapbox
-	mapboxKM, err := FetchMapboxDistance(nearest.Lat, nearest.Lon, req.UserLat, req.UserLon)
-	if err == nil && mapboxKM > 0 {
+	var (
+		settings *pb.SystemSettings
+		itemMap  map[string]*pb.Item
+		mapboxKM float64
+	)
+	g, gCtx := errgroup.WithContext(ctx)
+
+	// Fetch Settings
+	g.Go(func() error {
+		var err error
+		settings, err = GetSystemSettings(gCtx)
+		return err
+	})
+
+	// Fetch Item Details
+	g.Go(func() error {
+		ids := make([]string, len(req.CartItems))
+		for i, ci := range req.CartItems {
+			ids[i] = ci.ItemId
+		}
+		var err error
+		itemMap, err = DBGetItemsByIDs(gCtx, ids)
+		return err
+	})
+
+	// Fetch Mapbox
+	g.Go(func() error {
+		mapboxKM, _ = FetchMapboxDistance(nearest.Lat, nearest.Lon, req.UserLat, req.UserLon)
+		// Mapbox errors are soft-fails (it already logged, and we'll just use Haversine distKM)
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, status.Errorf(codes.Internal, "quote dependencies: %v", err)
+	}
+
+	if mapboxKM > 0 {
 		distKM = mapboxKM
-	}
-
-	settings, err := GetSystemSettings(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "settings: %v", err)
-	}
-
-	// Fetch item details
-	ids := make([]string, len(req.CartItems))
-	for i, ci := range req.CartItems {
-		ids[i] = ci.ItemId
-	}
-	itemMap, err := DBGetItemsByIDs(ctx, ids)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "fetch items: %v", err)
 	}
 
 	var subtotal, totalVol float64

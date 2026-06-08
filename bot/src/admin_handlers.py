@@ -4,6 +4,7 @@ admin_handlers.py — all admin-facing Telegram handlers
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import logging
@@ -495,22 +496,26 @@ async def msg_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     f = await doc.get_file()
     raw = await f.download_as_bytearray()
-    reader = csv.DictReader(io.StringIO(raw.decode("utf-8", errors="replace")))
 
-    items: list[pb.Item] = []
-    for row in reader:
-        try:
-            items.append(pb.Item(
-                name=row.get("name", "").strip(),
-                price=float(row.get("price", 0)),
-                stock=int(row.get("stock", 0)),
-                category=row.get("category", "Uncategorized").strip(),
-                description=row.get("description", "").strip(),
-                is_available=True,
-                tax_rate=-1,
-            ))
-        except (ValueError, KeyError) as exc:
-            logger.warning("CSV row skip: %s", exc)
+    def _parse_csv(raw_bytes: bytearray) -> list[pb.Item]:
+        reader = csv.DictReader(io.StringIO(raw_bytes.decode("utf-8", errors="replace")))
+        items_list: list[pb.Item] = []
+        for row in reader:
+            try:
+                items_list.append(pb.Item(
+                    name=row.get("name", "").strip(),
+                    price=float(row.get("price", 0)),
+                    stock=int(row.get("stock", 0)),
+                    category=row.get("category", "Uncategorized").strip(),
+                    description=row.get("description", "").strip(),
+                    is_available=True,
+                    tax_rate=-1,
+                ))
+            except (ValueError, KeyError) as exc:
+                logger.warning("CSV row skip: %s", exc)
+        return items_list
+
+    items = await asyncio.to_thread(_parse_csv, raw)
 
     if not items:
         await _reply(update, context, "❌ No valid rows found in CSV.")

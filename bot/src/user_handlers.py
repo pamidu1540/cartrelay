@@ -198,23 +198,22 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     # 3. Both profile and address exist — load standard main menu
     disclaimer = ""
-    try:
-        wh_resp = await pool.call(
-            "/logistics.LogisticsEngine/ListWarehouses",
-            lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta)
-        )
-        has_wh = len(wh_resp.warehouses) > 0
-    except Exception:
-        has_wh = False
 
-    try:
-        cat_resp = await pool.call(
-            "/logistics.LogisticsEngine/GetCatalog",
-            lambda stub, meta: stub.GetCatalog(pb.CatalogRequest(page=0, page_size=1), metadata=meta)
-        )
-        has_cat = len(cat_resp.items) > 0
-    except Exception:
-        has_cat = False
+    async def _check_wh():
+        try:
+            r = await pool.call("/logistics.LogisticsEngine/ListWarehouses", lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta))
+            return len(r.warehouses) > 0
+        except Exception:
+            return False
+
+    async def _check_cat():
+        try:
+            r = await pool.call("/logistics.LogisticsEngine/GetCatalog", lambda stub, meta: stub.GetCatalog(pb.CatalogRequest(page=0, page_size=1), metadata=meta))
+            return len(r.items) > 0
+        except Exception:
+            return False
+
+    has_wh, has_cat = await asyncio.gather(_check_wh(), _check_cat())
 
     if not has_wh or not has_cat:
         disclaimer = (
@@ -294,22 +293,22 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # Check setup status
     disclaimer = ""
-    try:
-        wh_resp = await pool.call(
-            "/logistics.LogisticsEngine/ListWarehouses",
-            lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta)
-        )
-        has_wh = len(wh_resp.warehouses) > 0
-    except Exception:
-        has_wh = False
+
+    async def _fetch_wh():
+        try:
+            r = await pool.call("/logistics.LogisticsEngine/ListWarehouses", lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta))
+            return len(r.warehouses) > 0
+        except Exception:
+            return False
+
+    async def _fetch_cat():
+        return await pool.call("/logistics.LogisticsEngine/GetCatalog", lambda stub, meta: stub.GetCatalog(pb.CatalogRequest(page=0, page_size=200), metadata=meta))
 
     try:
-        resp = await pool.call(
-            "/logistics.LogisticsEngine/GetCatalog",
-            lambda stub, meta: stub.GetCatalog(
-                pb.CatalogRequest(page=0, page_size=200), metadata=meta
-            ),
-        )
+        wh_task = asyncio.create_task(_fetch_wh())
+        cat_task = asyncio.create_task(_fetch_cat())
+        has_wh = await wh_task
+        resp = await cat_task
         has_cat = len(resp.items) > 0
     except grpc.RpcError as e:
         msg = await context.bot.send_message(
@@ -439,11 +438,25 @@ async def cb_item_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await query.answer()
     item_id = query.data.split(":", 1)[1]
 
+    user_id = update.effective_user.id
+
+    async def _get_item():
+        return await pool.call("/logistics.LogisticsEngine/GetItem", lambda stub, meta: stub.GetItem(pb.ItemId(id=item_id), metadata=meta))
+
+    async def _get_addr():
+        try:
+            return await pool.call("/logistics.LogisticsEngine/ListSavedAddresses", lambda stub, meta: stub.ListSavedAddresses(pb.UserId(user_id=user_id), metadata=meta), user_id=user_id)
+        except Exception:
+            return None
+
+    async def _get_wh():
+        try:
+            return await pool.call("/logistics.LogisticsEngine/ListWarehouses", lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta))
+        except Exception:
+            return None
+
     try:
-        item = await pool.call(
-            "/logistics.LogisticsEngine/GetItem",
-            lambda stub, meta: stub.GetItem(pb.ItemId(id=item_id), metadata=meta),
-        )
+        item, addr_resp, wh_resp = await asyncio.gather(_get_item(), _get_addr(), _get_wh())
     except grpc.RpcError as e:
         await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
         return
@@ -454,54 +467,47 @@ async def cb_item_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         else "❌ Out of Stock"
     )
 
-    user_id = update.effective_user.id
     distance_info = ""
-    try:
-        # Fetch user's default saved address
-        addr_resp = await pool.call(
-            "/logistics.LogisticsEngine/ListSavedAddresses",
-            lambda stub, meta: stub.ListSavedAddresses(pb.UserId(user_id=user_id), metadata=meta),
-            user_id=user_id
-        )
-        default_addr = next((a for a in addr_resp.addresses if a.is_default), None)
+    # Use cached distance if available to save computation, unless they changed addresses
+    if "dist_info" in context.user_data:
+        distance_info = context.user_data["dist_info"]
+    else:
+        try:
+            default_addr = next((a for a in addr_resp.addresses if a.is_default), None) if addr_resp else None
+            active_warehouses = [w for w in wh_resp.warehouses if w.is_active] if wh_resp else []
 
-        # Fetch active warehouses
-        wh_resp = await pool.call(
-            "/logistics.LogisticsEngine/ListWarehouses",
-            lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta)
-        )
-        active_warehouses = [w for w in wh_resp.warehouses if w.is_active]
-
-        if not default_addr:
-            distance_info = "📍 _Set up address in Profile to see delivery distance._"
-        elif default_addr.lat == 0.0 or default_addr.lon == 0.0:
-            distance_info = "📍 _Distance unavailable. Share location in Profile for exact distance._"
-        elif not active_warehouses:
-            distance_info = "📍 _No active warehouses found for delivery calculation._"
-        else:
-            import math
-            min_dist = float('inf')
-            nearest_wh = None
-            for w in active_warehouses:
-                if w.lat != 0.0 or w.lon != 0.0:
-                    R = 6371.0
-                    phi1 = math.radians(default_addr.lat)
-                    phi2 = math.radians(w.lat)
-                    delta_phi = math.radians(w.lat - default_addr.lat)
-                    delta_lambda = math.radians(w.lon - default_addr.lon)
-                    a = math.sin(delta_phi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0)**2
-                    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
-                    dist = R * c
-                    if dist < min_dist:
-                        min_dist = dist
-                        nearest_wh = w
-            if nearest_wh:
-                distance_info = f"📍 *Nearest Depot:* {nearest_wh.name} ({min_dist:.1f} km)"
+            if not default_addr:
+                distance_info = "📍 _Set up address in Profile to see delivery distance._"
+            elif default_addr.lat == 0.0 or default_addr.lon == 0.0:
+                distance_info = "📍 _Distance unavailable. Share location in Profile for exact distance._"
+            elif not active_warehouses:
+                distance_info = "📍 _No active warehouses found for delivery calculation._"
             else:
-                distance_info = "📍 _Nearest Depot: Location coordinate mismatch._"
-    except Exception as e:
-        logger.error(f"Error calculating distance: {e}")
-        distance_info = "📍 _Distance calculation unavailable._"
+                import math
+                min_dist = float('inf')
+                nearest_wh = None
+                for w in active_warehouses:
+                    if w.lat != 0.0 or w.lon != 0.0:
+                        R = 6371.0
+                        phi1 = math.radians(default_addr.lat)
+                        phi2 = math.radians(w.lat)
+                        delta_phi = math.radians(w.lat - default_addr.lat)
+                        delta_lambda = math.radians(w.lon - default_addr.lon)
+                        a = math.sin(delta_phi / 2.0)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0)**2
+                        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+                        dist = R * c
+                        if dist < min_dist:
+                            min_dist = dist
+                            nearest_wh = w
+                if nearest_wh:
+                    distance_info = f"📍 *Nearest Depot:* {nearest_wh.name} ({min_dist:.1f} km)"
+                else:
+                    distance_info = "📍 _Nearest Depot: Location coordinate mismatch._"
+        except Exception as e:
+            logger.error(f"Error calculating distance: {e}")
+            distance_info = "📍 _Distance calculation unavailable._"
+
+        context.user_data["dist_info"] = distance_info
 
     caption = (
         f"*{item.name}*\n\n"
@@ -617,16 +623,17 @@ async def _show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id
         )
         return ConversationHandler.END
 
-    # Fetch item details for display
+    # Fetch specific item details instead of full catalog
     try:
-        catalog_resp = await pool.call(
-            "/logistics.LogisticsEngine/GetCatalog",
-            lambda stub, meta: stub.GetCatalog(
-                pb.CatalogRequest(page=0, page_size=200), metadata=meta
-            ),
-        )
-        item_map = {it.id: it for it in catalog_resp.items}
-    except grpc.RpcError:
+        async def _fetch_it(it_id):
+            try:
+                return await pool.call("/logistics.LogisticsEngine/GetItem", lambda stub, meta: stub.GetItem(pb.ItemId(id=it_id), metadata=meta))
+            except Exception:
+                return None
+
+        item_objs = await asyncio.gather(*(_fetch_it(ci.item_id) for ci in items))
+        item_map = {it.id: it for it in item_objs if it is not None}
+    except Exception:
         item_map = {}
 
     # U-003: Itemised cart summary
@@ -728,13 +735,14 @@ async def _refresh_cart_message(query, context, user_id: int) -> None:
         return
     # Re-use cmd_cart logic — simplified for inline edit
     try:
-        catalog_resp = await pool.call(
-            "/logistics.LogisticsEngine/GetCatalog",
-            lambda stub, meta: stub.GetCatalog(
-                pb.CatalogRequest(page=0, page_size=200), metadata=meta
-            ),
-        )
-        item_map = {it.id: it for it in catalog_resp.items}
+        async def _fetch_it(it_id):
+            try:
+                return await pool.call("/logistics.LogisticsEngine/GetItem", lambda stub, meta: stub.GetItem(pb.ItemId(id=it_id), metadata=meta))
+            except Exception:
+                return None
+
+        item_objs = await asyncio.gather(*(_fetch_it(ci.item_id) for ci in items))
+        item_map = {it.id: it for it in item_objs if it is not None}
     except Exception:
         item_map = {}
 

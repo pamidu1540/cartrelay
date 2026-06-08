@@ -3,11 +3,11 @@ package main
 // catalog_cache.go — in-memory catalog and Mapbox distance caches
 
 import (
+	"container/list"
 	"context"
 	"log/slog"
 	"math"
 	"os"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -102,14 +102,15 @@ const (
 )
 
 type mapboxEntry struct {
+	key       string
 	distKM    float64
 	expiresAt time.Time
-	insertedAt time.Time
 }
 
 var (
-	mapboxCache      map[string]*mapboxEntry
-	mapboxCacheMu    sync.Mutex
+	mapboxCache      map[string]*list.Element
+	mapboxList       *list.List
+	mapboxCacheMu    sync.RWMutex
 	mapboxMaxEntries int
 )
 
@@ -120,7 +121,8 @@ func init() {
 			mapboxMaxEntries = n
 		}
 	}
-	mapboxCache = make(map[string]*mapboxEntry)
+	mapboxCache = make(map[string]*list.Element)
+	mapboxList = list.New()
 }
 
 func mapboxCacheKey(originLat, originLon, destLat, destLon float64) string {
@@ -137,17 +139,32 @@ func quantize(v float64) float64 {
 
 func getMapboxCached(originLat, originLon, destLat, destLon float64) (float64, bool) {
 	key := mapboxCacheKey(originLat, originLon, destLat, destLon)
-	mapboxCacheMu.Lock()
-	defer mapboxCacheMu.Unlock()
+	
+	mapboxCacheMu.RLock()
+	ele, ok := mapboxCache[key]
+	mapboxCacheMu.RUnlock()
 
-	e, ok := mapboxCache[key]
 	if !ok {
 		return 0, false
 	}
+
+	e := ele.Value.(*mapboxEntry)
 	if time.Now().After(e.expiresAt) {
-		delete(mapboxCache, key)
+		mapboxCacheMu.Lock()
+		if ele2, ok := mapboxCache[key]; ok && ele2 == ele {
+			mapboxList.Remove(ele)
+			delete(mapboxCache, key)
+		}
+		mapboxCacheMu.Unlock()
 		return 0, false
 	}
+
+	mapboxCacheMu.Lock()
+	if ele3, ok := mapboxCache[key]; ok && ele3 == ele {
+		mapboxList.MoveToFront(ele)
+	}
+	mapboxCacheMu.Unlock()
+
 	return e.distKM, true
 }
 
@@ -156,44 +173,39 @@ func setMapboxCached(originLat, originLon, destLat, destLon, distKM float64) {
 	mapboxCacheMu.Lock()
 	defer mapboxCacheMu.Unlock()
 
-	if len(mapboxCache) >= mapboxMaxEntries {
-		evictOldestMapbox(mapboxMaxEntries / 2)
+	if ele, ok := mapboxCache[key]; ok {
+		mapboxList.MoveToFront(ele)
+		ele.Value.(*mapboxEntry).distKM = distKM
+		ele.Value.(*mapboxEntry).expiresAt = time.Now().Add(mapboxCacheTTL)
+		return
 	}
 
-	mapboxCache[key] = &mapboxEntry{
-		distKM:     distKM,
-		expiresAt:  time.Now().Add(mapboxCacheTTL),
-		insertedAt: time.Now(),
+	ent := &mapboxEntry{
+		key:       key,
+		distKM:    distKM,
+		expiresAt: time.Now().Add(mapboxCacheTTL),
+	}
+	ele := mapboxList.PushFront(ent)
+	mapboxCache[key] = ele
+
+	if mapboxList.Len() > mapboxMaxEntries {
+		evictOldestMapbox(mapboxMaxEntries / 2)
 	}
 }
 
-// evictOldestMapbox removes the n oldest entries by insertedAt.
+// evictOldestMapbox removes the n oldest entries using LRU list.
 // Called with mapboxCacheMu held.
 func evictOldestMapbox(n int) {
-	if n <= 0 || len(mapboxCache) == 0 {
-		return
-	}
-	type kv struct {
-		key string
-		ts  time.Time
-	}
-	entries := make([]kv, 0, len(mapboxCache))
-	for k, v := range mapboxCache {
-		entries = append(entries, kv{k, v.insertedAt})
-	}
-	// Sort to find the n oldest
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].ts.Before(entries[j].ts)
-	})
-
 	evicted := 0
-	for _, e := range entries {
-		if evicted >= n {
-			break
+	for i := 0; i < n; i++ {
+		ele := mapboxList.Back()
+		if ele != nil {
+			mapboxList.Remove(ele)
+			ent := ele.Value.(*mapboxEntry)
+			delete(mapboxCache, ent.key)
+			evicted++
 		}
-		delete(mapboxCache, e.key)
-		evicted++
 	}
-	slog.Debug("mapbox cache eviction", "evicted", evicted, "remaining", len(mapboxCache))
+	slog.Debug("mapbox cache eviction", "evicted", evicted, "remaining", mapboxList.Len())
 }
 

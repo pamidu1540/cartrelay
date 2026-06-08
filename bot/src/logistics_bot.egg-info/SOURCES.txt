@@ -3,6 +3,7 @@ src/admin_handlers.py
 src/cart_manager.py
 src/grpc_client.py
 src/main.py
+src/message_manager.py
 src/middleware.py
 src/user_handlers.py
 src/api/__init__.py
