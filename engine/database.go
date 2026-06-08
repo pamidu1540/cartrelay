@@ -734,15 +734,15 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 		}
 		ct, err := br.Exec()
 		if err != nil {
-			br.Close()
+			_ = br.Close()
 			return "", "", fmt.Errorf("stock update for %s: %w", ci.ItemId, err)
 		}
 		if ct.RowsAffected() == 0 {
-			br.Close()
+			_ = br.Close()
 			return "", "", fmt.Errorf("%w: item %s", ErrOutOfStock, ci.ItemId)
 		}
 	}
-	br.Close()
+	_ = br.Close()
 
 	// Insert order
 	var orderID string
@@ -782,11 +782,11 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 		}
 		_, err = brItems.Exec()
 		if err != nil {
-			brItems.Close()
+			_ = brItems.Close()
 			return "", "", fmt.Errorf("insert order_item: %w", err)
 		}
 	}
-	brItems.Close()
+	_ = brItems.Close()
 
 	// Insert initial status event
 	_, err = tx.Exec(ctx, `

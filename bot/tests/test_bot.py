@@ -49,10 +49,10 @@ class TestCartManager:
         cart_manager._persist = AsyncMock()
         # Manually seed local cache
         from api.logistics_pb2 import CartItem
-        cart_manager._local = {
-            1001: [CartItem(item_id="ITEM-A", quantity=1)],
-            1002: [CartItem(item_id="ITEM-B", quantity=3)],
-        }
+        from collections import OrderedDict
+        cart_manager._local = OrderedDict()
+        cart_manager._local[1001] = ([CartItem(item_id="ITEM-A", quantity=1)], time.time() + 3600)
+        cart_manager._local[1002] = ([CartItem(item_id="ITEM-B", quantity=3)], time.time() + 3600)
 
         await cart_manager.flush_all()
 
@@ -64,7 +64,7 @@ class TestCartManager:
     async def test_invalidate_local_clears_cache(self, cart_manager):
         """BUG-016: invalidate_local removes local cache without side effects."""
         from api.logistics_pb2 import CartItem
-        cart_manager._local[1001] = [CartItem(item_id="ITEM-X", quantity=1)]
+        cart_manager._local[1001] = ([CartItem(item_id="ITEM-X", quantity=1)], time.time() + 3600)
 
         await cart_manager.invalidate_local(1001)
 
