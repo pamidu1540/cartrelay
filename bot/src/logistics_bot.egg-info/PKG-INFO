@@ -5,7 +5,7 @@ Requires-Python: >=3.11
 Requires-Dist: python-telegram-bot[job-queue]>=22.7.0
 Requires-Dist: grpcio>=1.80.0
 Requires-Dist: grpcio-tools>=1.80.0
-Requires-Dist: protobuf>=7.35.0
+Requires-Dist: protobuf<7.0.0,>=6.31.1
 Requires-Dist: anyio>=4.13.0
 Requires-Dist: structlog>=25.5.0
 Provides-Extra: dev

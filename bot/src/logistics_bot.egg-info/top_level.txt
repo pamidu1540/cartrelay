@@ -3,5 +3,6 @@ api
 cart_manager
 grpc_client
 main
+message_manager
 middleware
 user_handlers

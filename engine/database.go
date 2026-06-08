@@ -456,7 +456,7 @@ func DBBulkImportItems(ctx context.Context, items []*pb.Item, actorID int64) (in
 }
 
 func scanItems(rows pgx.Rows) ([]*pb.Item, error) {
-	var items []*pb.Item
+	items := make([]*pb.Item, 0, 32)
 	for rows.Next() {
 		var it pb.Item
 		var deletedAt *int64
@@ -715,23 +715,34 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 		return existing, "", ErrDuplicateOrder
 	}
 
-	// Decrement stock for each cart item
+	// Decrement stock for each cart item via pgx.Batch
+	stockBatch := &pgx.Batch{}
 	for _, ci := range cartItems {
 		if ci.Quantity <= 0 {
 			continue
 		}
-		res, err := tx.Exec(ctx, `
+		stockBatch.Queue(`
 			UPDATE items SET stock = stock - $1
 			WHERE id=$2 AND deleted_at IS NULL AND stock >= $1`,
 			ci.Quantity, ci.ItemId,
 		)
+	}
+	br := tx.SendBatch(ctx, stockBatch)
+	for _, ci := range cartItems {
+		if ci.Quantity <= 0 {
+			continue
+		}
+		ct, err := br.Exec()
 		if err != nil {
+			br.Close()
 			return "", "", fmt.Errorf("stock update for %s: %w", ci.ItemId, err)
 		}
-		if res.RowsAffected() == 0 {
+		if ct.RowsAffected() == 0 {
+			br.Close()
 			return "", "", fmt.Errorf("%w: item %s", ErrOutOfStock, ci.ItemId)
 		}
 	}
+	br.Close()
 
 	// Insert order
 	var orderID string
@@ -753,19 +764,29 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 	}
 
 	// Insert order items (for history/reorder)
+	itemsBatch := &pgx.Batch{}
 	for _, ci := range cartItems {
 		if ci.Quantity <= 0 {
 			continue
 		}
-		_, err = tx.Exec(ctx, `
+		itemsBatch.Queue(`
 			INSERT INTO order_items (order_id, item_id, item_name, quantity, unit_price, item_note)
 			SELECT $1, id, name, $2, price, $3 FROM items WHERE id=$4`,
 			orderID, ci.Quantity, ci.Note, ci.ItemId,
 		)
+	}
+	brItems := tx.SendBatch(ctx, itemsBatch)
+	for _, ci := range cartItems {
+		if ci.Quantity <= 0 {
+			continue
+		}
+		_, err = brItems.Exec()
 		if err != nil {
+			brItems.Close()
 			return "", "", fmt.Errorf("insert order_item: %w", err)
 		}
 	}
+	brItems.Close()
 
 	// Insert initial status event
 	_, err = tx.Exec(ctx, `
@@ -956,11 +977,11 @@ func DBGetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) ([]*pb.Ord
 // DBUpdateOrderStatus enforces status machine transitions and records history.
 func DBUpdateOrderStatus(ctx context.Context, orderID, newStatus, reason string, actorID int64) (int64, error) {
 	// State machine transitions
-	allowed := map[string][]string{
-		"pending":    {"confirmed", "cancelled"},
-		"confirmed":  {"dispatched", "cancelled"},
-		"dispatched": {"delivered", "failed"},
-		"failed":     {"dispatched", "cancelled"},
+	allowed := map[string]map[string]bool{
+		"pending":    {"confirmed": true, "cancelled": true},
+		"confirmed":  {"dispatched": true, "cancelled": true},
+		"dispatched": {"delivered": true, "failed": true},
+		"failed":     {"dispatched": true, "cancelled": true},
 		// terminal states
 		"delivered": {},
 		"cancelled": {},
@@ -982,14 +1003,7 @@ func DBUpdateOrderStatus(ctx context.Context, orderID, newStatus, reason string,
 	if !ok {
 		return 0, fmt.Errorf("%w: unknown current status %q", ErrInvalidTransition, current)
 	}
-	found := false
-	for _, s := range validNext {
-		if s == newStatus {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !validNext[newStatus] {
 		return 0, fmt.Errorf("%w: %q → %q not permitted", ErrInvalidTransition, current, newStatus)
 	}
 
@@ -1124,7 +1138,7 @@ func DBResolveIssue(ctx context.Context, req *pb.ResolveIssueRequest) error {
 }
 
 func scanOrdersFlat(rows pgx.Rows) ([]*pb.Order, error) {
-	var orders []*pb.Order
+	orders := make([]*pb.Order, 0, 32)
 	for rows.Next() {
 		o := &pb.Order{}
 		if err := rows.Scan(

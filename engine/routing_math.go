@@ -14,6 +14,8 @@ import (
 	"os"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	pb "logistics-engine/api"
 )
 
@@ -23,9 +25,12 @@ const (
 	earthRadiusKM     = 6371.0
 )
 
-var httpClient = &http.Client{
-	Timeout: mapboxHTTPTimeout,
-}
+var (
+	httpClient = &http.Client{
+		Timeout: mapboxHTTPTimeout,
+	}
+	mapboxSF singleflight.Group
+)
 
 // FetchMapboxDistance returns driving distance in km between two coordinates.
 // Results are cached in the LRU cache (catalog_cache.go).
@@ -41,45 +46,58 @@ func FetchMapboxDistance(originLat, originLon, destLat, destLon float64) (float6
 		return haversineKM(originLat, originLon, destLat, destLon), nil
 	}
 
-	coords := fmt.Sprintf("%.6f,%.6f;%.6f,%.6f",
-		originLon, originLat, destLon, destLat)
-	reqURL := fmt.Sprintf("%s/%s?access_token=%s&overview=false",
-		mapboxBaseURL, coords, url.QueryEscape(token))
+	key := mapboxCacheKey(originLat, originLon, destLat, destLon)
+	v, err, _ := mapboxSF.Do(key, func() (interface{}, error) {
+		// check cache again inside singleflight in case another flight finished
+		if dist, ok := getMapboxCached(originLat, originLon, destLat, destLon); ok {
+			return dist, nil
+		}
 
-	// #nosec G704 -- reqURL is built from trusted constant, float64 coordinates, and token from env
-	resp, err := httpClient.Get(reqURL)
+		coords := fmt.Sprintf("%.6f,%.6f;%.6f,%.6f",
+			originLon, originLat, destLon, destLat)
+		reqURL := fmt.Sprintf("%s/%s?access_token=%s&overview=false",
+			mapboxBaseURL, coords, url.QueryEscape(token))
+
+		// #nosec G704 -- reqURL is built from trusted constant, float64 coordinates, and token from env
+		resp, err := httpClient.Get(reqURL)
+		if err != nil {
+			slog.Warn("mapbox request failed, falling back to haversine", "err", err)
+			return haversineKM(originLat, originLon, destLat, destLon), nil
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			slog.Warn("mapbox non-200 response, falling back to haversine",
+				"status", resp.StatusCode)
+			return haversineKM(originLat, originLon, destLat, destLon), nil
+		}
+
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		if err != nil {
+			return haversineKM(originLat, originLon, destLat, destLon), nil
+		}
+
+		var result struct {
+			Routes []struct {
+				Distance float64 `json:"distance"` // metres
+			} `json:"routes"`
+			Code string `json:"code"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil || result.Code != "Ok" || len(result.Routes) == 0 {
+			slog.Warn("mapbox parse failed, falling back to haversine",
+				"code", result.Code, "err", err)
+			return haversineKM(originLat, originLon, destLat, destLon), nil
+		}
+
+		distKM := result.Routes[0].Distance / 1000.0
+		setMapboxCached(originLat, originLon, destLat, destLon, distKM)
+		return distKM, nil
+	})
+
 	if err != nil {
-		slog.Warn("mapbox request failed, falling back to haversine", "err", err)
 		return haversineKM(originLat, originLon, destLat, destLon), nil
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		slog.Warn("mapbox non-200 response, falling back to haversine",
-			"status", resp.StatusCode)
-		return haversineKM(originLat, originLon, destLat, destLon), nil
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-	if err != nil {
-		return haversineKM(originLat, originLon, destLat, destLon), nil
-	}
-
-	var result struct {
-		Routes []struct {
-			Distance float64 `json:"distance"` // metres
-		} `json:"routes"`
-		Code string `json:"code"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil || result.Code != "Ok" || len(result.Routes) == 0 {
-		slog.Warn("mapbox parse failed, falling back to haversine",
-			"code", result.Code, "err", err)
-		return haversineKM(originLat, originLon, destLat, destLon), nil
-	}
-
-	distKM := result.Routes[0].Distance / 1000.0
-	setMapboxCached(originLat, originLon, destLat, destLon, distKM)
-	return distKM, nil
+	return v.(float64), nil
 }
 
 // nearestWarehouse returns the active warehouse closest to the given

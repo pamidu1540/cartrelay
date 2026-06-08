@@ -282,7 +282,6 @@ class ChannelPool:
         if GRPC_HOST:
             return f"{GRPC_HOST}:{GRPC_PORT}"
         return f"unix://{SOCKET_PATH}"
-
     async def _make_channel(self) -> grpc.aio.Channel:
         target = self._target()
         opts = [
@@ -292,8 +291,14 @@ class ChannelPool:
 
         # SEC-001: use TLS if cert file is configured
         if TLS_CERT_FILE and os.path.exists(TLS_CERT_FILE):
-            with open(TLS_CERT_FILE, "rb") as f:
-                creds = grpc.ssl_channel_credentials(f.read())
+            global _tls_cert_data
+            if getattr(self, '_tls_cert_data', None) is None:
+                def _read_cert():
+                    with open(TLS_CERT_FILE, "rb") as f:
+                        return f.read()
+                self._tls_cert_data = await asyncio.to_thread(_read_cert)
+
+            creds = grpc.ssl_channel_credentials(self._tls_cert_data)
             return grpc.aio.secure_channel(target, creds, options=opts)
 
         return grpc.aio.insecure_channel(target, options=opts)

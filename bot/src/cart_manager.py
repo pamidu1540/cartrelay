@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from collections import OrderedDict
 
 from api import logistics_pb2 as pb
 from grpc_client import pool
@@ -33,16 +35,41 @@ class CartManager:
     """
 
     def __init__(self) -> None:
-        self._local: dict[int, list[pb.CartItem]] = {}
+        self._local: OrderedDict[int, tuple[list[pb.CartItem], float]] = OrderedDict()
+        self._maxsize = 1000
+        self._ttl = 3600
         self._lock = asyncio.Lock()
+
+    def _get_local(self, user_id: int):
+        if user_id in self._local:
+            items, expiry = self._local[user_id]
+            if time.time() > expiry:
+                del self._local[user_id]
+                return None
+            self._local.move_to_end(user_id)
+            return list(items)
+        return None
+
+    def _set_local(self, user_id: int, items: list[pb.CartItem]):
+        self._local[user_id] = (list(items), time.time() + self._ttl)
+        self._local.move_to_end(user_id)
+        if len(self._local) > self._maxsize:
+            self._local.popitem(last=False)
+
+    def _pop_local(self, user_id: int):
+        if user_id in self._local:
+            items, _ = self._local.pop(user_id)
+            return items
+        return None
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     async def get(self, user_id: int) -> list[pb.CartItem]:
         """Return the user's current cart, loading from engine if not cached."""
         async with self._lock:
-            if user_id in self._local:
-                return list(self._local[user_id])
+            cached = self._get_local(user_id)
+            if cached is not None:
+                return cached
 
         # Load from engine
         try:
@@ -54,7 +81,7 @@ class CartManager:
                 user_id=user_id,
             )
             async with self._lock:
-                self._local[user_id] = list(resp.items)
+                self._set_local(user_id, resp.items)
             return list(resp.items)
         except Exception as exc:
             logger.warning("load cart failed for user %d: %s", user_id, exc)
@@ -63,16 +90,16 @@ class CartManager:
     async def set_items(self, user_id: int, items: list[pb.CartItem]) -> None:
         """Replace the user's cart and persist to engine immediately."""
         async with self._lock:
-            old_items = self._local.get(user_id)
-            self._local[user_id] = list(items)
+            old_items = self._get_local(user_id)
+            self._set_local(user_id, items)
         try:
             await self._persist(user_id, items)
         except Exception:
             async with self._lock:
                 if old_items is None:
-                    self._local.pop(user_id, None)
+                    self._pop_local(user_id)
                 else:
-                    self._local[user_id] = old_items
+                    self._set_local(user_id, old_items)
             raise
 
     async def add_item(self, user_id: int, item_id: str, qty: int = 1, note: str = "") -> list[pb.CartItem]:
@@ -115,7 +142,7 @@ class CartManager:
     async def clear(self, user_id: int) -> None:
         """Clear the user's cart locally and in the engine."""
         async with self._lock:
-            self._local.pop(user_id, None)
+            self._pop_local(user_id)
         try:
             await pool.call(
                 "/logistics.LogisticsEngine/ClearCart",
@@ -134,7 +161,7 @@ class CartManager:
         No background tasks to cancel — there are none.
         """
         async with self._lock:
-            self._local.pop(user_id, None)
+            self._pop_local(user_id)
 
     # ── Shutdown flush ─────────────────────────────────────────────────────────
 
@@ -144,7 +171,7 @@ class CartManager:
         Called from post_shutdown hook in main.py.
         """
         async with self._lock:
-            snapshot = dict(self._local)
+            snapshot = {uid: items for uid, (items, _) in self._local.items()}
 
         if not snapshot:
             return

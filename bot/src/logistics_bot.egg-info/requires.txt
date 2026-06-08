@@ -1,7 +1,7 @@
 python-telegram-bot[job-queue]>=22.7.0
 grpcio>=1.80.0
 grpcio-tools>=1.80.0
-protobuf>=7.35.0
+protobuf<7.0.0,>=6.31.1
 anyio>=4.13.0
 structlog>=25.5.0
 
