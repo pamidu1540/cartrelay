@@ -258,6 +258,12 @@ collect_config() {
   prompt_optional MAPBOX_TOKEN "Mapbox Public Token"
   
   echo
+  echo -e "   ${BOLD}${MAG}── GitHub Container Registry (GHCR) ────────────────${RST}"
+  echo -e "   ${DIM}Provide a GitHub Personal Access Token (PAT) with 'read:packages'${RST}"
+  echo -e "   ${DIM}scope to pull the private logistics Docker images.${RST}"
+  prompt GHCR_PAT "GitHub PAT" "" secret
+  
+  echo
   echo -e "   ${BOLD}${MAG}── Datadog Monitoring (optional) ────────────────────${RST}"
   echo -e "   ${DIM}Integrate Datadog Pro APM, Postgres query metrics, and logs.${RST}"
   echo -e "   ${DIM}Leave blank to disable.${RST}"
@@ -281,7 +287,11 @@ collect_config() {
 
 select_version() {
   step "Fetching latest release"
-  SELECTED_VERSION=$(curl -fsSL \
+  local auth_header=""
+  if [[ -n "${GHCR_PAT:-}" ]]; then
+    auth_header="-H \"Authorization: Bearer ${GHCR_PAT}\""
+  fi
+  SELECTED_VERSION=$(eval curl -fsSL $auth_header \
     "https://api.github.com/repos/${GHCR_OWNER}/${GHCR_REPO}/releases" \
     2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); tags=[r.get('tag_name') for r in d if r.get('tag_name')]; print(tags[0] if tags else 'latest')" \
     2>/dev/null || echo "latest")
@@ -578,6 +588,11 @@ pull_images() {
   info "Secured Image Source: Container Registry (Bot: ${SELECTED_VERSION})"
   echo
   
+  if [[ -n "${GHCR_PAT:-}" ]]; then
+    info "Authenticating to ghcr.io..."
+    echo "${GHCR_PAT}" | docker login ghcr.io -u "${GHCR_OWNER}" --password-stdin >/dev/null 2>&1 || warn "Failed to authenticate to GHCR. Pulls may fail if the repository is private."
+  fi
+
   # Run compose pull in background
   ( cd "${INSTALL_DIR}/deploy" && docker compose pull >/tmp/pull.log 2>&1 ) &
   local pid=$!
