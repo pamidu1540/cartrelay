@@ -1,36 +1,40 @@
 # 🚚 Logistics Engine
 
-A high-performance, containerized logistics and e-commerce platform built with Go, Python, and gRPC. It provides a Telegram-based storefront for customers and a robust CLI supervisor for zero-downtime server management.
+A high-performance, containerized logistics and e-commerce platform built with Go, Python, and gRPC. It provides a Telegram-based storefront for customers, a robust CLI supervisor for zero-downtime server management, and enterprise-grade Datadog APM tracing.
 
 ## 🏗️ Architecture
 
-The system is composed of three main microservices/components, orchestrated via Docker Compose:
+The system is composed of several microservices orchestrated via Docker Compose:
 
 1. **Engine (Go / PostgreSQL)**
    The core backend service. It exposes a highly-performant gRPC API over a Unix Domain Socket (`/app/sockets/logistics.sock`). It handles:
    - Atomic transactions for inventory management.
    - Idempotent order processing and cart state persistence.
-   - Background tasks like purging abandoned carts.
    - Dynamic map-based distance and pricing calculations via Mapbox API.
+   - **Performance Optimizations:** Utilizes `errgroup` for high-concurrency RPC processing, `singleflight` request coalescing, and LRU caching for 0-latency catalog loads and Mapbox routing.
 
 2. **Bot (Python / python-telegram-bot)**
-   The user-facing frontend. It communicates with the Engine via gRPC.
-   - **Customer Flow**: Browse the catalog, add items to a cart, share a delivery location, get live delivery quotes, and place orders.
-   - **Admin Flow**: A dedicated `/admin` dashboard for managing the catalog, updating pricing/warehouse coordinates, viewing pending orders, and dispatching/canceling shipments.
+   The user-facing frontend communicating with the Engine via gRPC. 
+   - **Customer Flow**: Browse the catalog, add items to a cart, natively share GPS delivery locations via Telegram, get live delivery quotes, and place orders.
+   - **Admin Flow**: A dedicated dashboard for managing the catalog, updating pricing/warehouse coordinates, viewing pending orders, and dispatching/canceling shipments.
+   - **SMI UX**: Built using a **Single Message Interface (SMI)**. The bot natively manages, edits, and self-cleans old messages to keep the chat history completely pristine and app-like.
 
-3. **Supervisor CLI (Go)**
-   A compiled `logistics` binary installed on the host machine (`/usr/local/bin/logistics`). It acts as a wrapper around Docker Compose and provides:
+3. **Gateway (Python / FastAPI)**
+   A high-speed FastAPI gateway designed to serve the Web UI frontend and act as an HTTP-to-gRPC bridge for future web applications.
+
+4. **Supervisor CLI (Go)**
+   A compiled `logistics` binary installed on the host machine (`/usr/local/bin/logistics`). It provides:
    - **OTA Updates**: `logistics update` securely pulls cryptographically signed tarballs from Cloudflare R2, extracts them, and restarts the stack with zero downtime.
    - **Rollbacks**: `logistics rollback` reverts to the previous version.
-   - **Monitoring**: `logistics dashboard` (TUI) and `logistics logs` for easy host management.
+   - **Monitoring**: `logistics dashboard` (TUI) and `logistics logs`.
 
 ## 🚀 Deployment & CI/CD
 
-This repository features a fully automated, hands-off continuous integration and deployment pipeline powered by **GitHub Actions**:
+This repository features a fully automated continuous integration and deployment pipeline powered by **GitHub Actions**:
 
-- **CI (`ci.yml`)**: On every push, GitHub Actions automatically runs `protoc` and `go mod tidy` and commits the generated code back to `main`. It then runs `go test`, `go vet`, `ruff`, and `govulncheck` before building the Docker images and pushing them to the GitHub Container Registry (`ghcr.io`).
-- **Release (`release.yml`)**: Triggered by pushing a version tag (e.g., `v5.1.1`). It builds the Go binaries for the Supervisor and Engine, builds the Docker images, signs the OTA update payload using Ed25519, and pushes all artifacts to a **Cloudflare R2** bucket.
-- **Security**: Includes `codeql.yml` for weekly static analysis, and `dependency-review.yml` to block PRs that introduce vulnerable packages.
+- **CI (`ci.yml`)**: On every push, GitHub Actions automatically runs `protoc` and `go mod tidy` and commits the generated code back to `main`. It then runs Go tests, `ruff` linting, and `govulncheck` before building the Docker images and pushing them to the GitHub Container Registry (`ghcr.io`).
+- **Release (`release.yml`)**: Triggered by pushing a version tag (e.g., `v5.1.1`). Builds the Go binaries, Docker images, signs the OTA update payload using Ed25519, and pushes all artifacts to a **Cloudflare R2** bucket.
+- **Security**: Includes `codeql.yml` for static analysis and `go-security.yml` to block vulnerabilities.
 
 ## 🛠️ Installation
 
@@ -44,7 +48,7 @@ sudo bash install.sh
 1. Checks system requirements (RAM, Disk).
 2. Installs Docker.
 3. Prompts for a License Key and validates it against the Cloudflare Workers License API.
-4. Prompts for Telegram Bot Token and Admin IDs.
+4. Prompts for Telegram Bot Token, Admin IDs, and Datadog API keys.
 5. Generates internal security tokens and the `docker-compose.yml`.
 6. Sets up a `systemd` service (`logistics.service`) for auto-restart on boot.
 7. Pulls the latest images and starts the stack.
@@ -74,10 +78,14 @@ To run the stack locally for development:
 - **Authentication**: gRPC calls are secured via an `INTERNAL_TOKEN` passed in the metadata.
 - **OTA Verification**: Updates are signed using Ed25519 cryptographic signatures to prevent tampering via MITM attacks on the CDN.
 
+## 📊 Observability
+The stack integrates natively with **Datadog** via a dedicated `datadog-agent` sidecar. This provides out-of-the-box Continuous Profiling for the Go Engine, Distributed APM Tracing across the gRPC boundary, and full Postgres query profiling.
+
 ## 📂 Directory Structure
 
 - `/engine/` - Go backend, gRPC server, PostgreSQL database logic.
 - `/bot/` - Python Telegram Bot, gRPC client, UI handlers.
 - `/supervisor/` - Go CLI for managing the deployed stack.
+- `/webui/gateway/` - FastAPI backend for web frontend.
 - `/.github/workflows/` - CI/CD pipelines.
 - `install.sh` - Host installation script.
