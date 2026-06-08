@@ -184,11 +184,6 @@ install_docker() {
 
 verify_license() {
   step "License verification"
-  hr
-  echo
-  echo -e "   ${DIM}Your license key was included in your purchase email.${RST}"
-  echo -e "   ${DIM}It is a key begin with ENG-XXXX-XXXX-XXXX-XXXX${RST}"
-  echo
   local key="" attempts=0
   while true; do
     (( ++attempts > 3 )) && die "Too many failed attempts. Contact support."
@@ -238,29 +233,9 @@ verify_license() {
 
 collect_config() {
   step "Configuration"
-  hr
-  echo
-  echo -e "   ${DIM}The installer only needs three values. Everything else${RST}"
-  echo -e "   ${DIM}(depot, pricing, catalog) is configured after install${RST}"
-  echo -e "   ${DIM}through the /admin panel in your Telegram bot.${RST}"
-  echo
-  echo -e "   ${BOLD}${MAG}── Telegram ──────────────────────────────────────────${RST}"
-  echo -e "   ${DIM}Create a bot at t.me/BotFather → /newbot${RST}"
-  prompt TELEGRAM_BOT_TOKEN "Bot Token" "" secret
-  echo
-  echo -e "   ${DIM}Your Telegram user ID (get it from t.me/userinfobot).${RST}"
-  echo -e "   ${DIM}Multiple admins: 123456789,987654321${RST}"
+  prompt TELEGRAM_BOT_TOKEN "Telegram Bot Token" "" secret
   prompt ADMIN_USER_IDS "Admin Telegram User ID(s)"
-  echo
-  echo -e "   ${BOLD}${MAG}── Routing (optional) ───────────────────────────────${RST}"
-  echo -e "   ${DIM}Mapbox token for road-distance delivery quotes.${RST}"
-  echo -e "   ${DIM}Skip to use straight-line distance × 1.3 fallback.${RST}"
   prompt_optional MAPBOX_TOKEN "Mapbox Public Token"
-  
-
-  echo -e "   ${BOLD}${MAG}── Datadog Monitoring (optional) ────────────────────${RST}"
-  echo -e "   ${DIM}Integrate Datadog Pro APM, Postgres query metrics, and logs.${RST}"
-  echo -e "   ${DIM}Leave blank to disable.${RST}"
   prompt_optional DD_API_KEY "Datadog API Key"
   if [[ -n "${DD_API_KEY}" ]]; then
     prompt_optional DD_SITE "Datadog Site (e.g. datadoghq.com)"
@@ -286,30 +261,6 @@ select_version() {
   ok "Version: ${SELECTED_VERSION}"
 }
 
-cleanup_legacy_install() {
-  step "Cleaning up legacy installation"
-  
-  if systemctl is-active --quiet "${SERVICE_NAME}"; then
-    info "Stopping legacy systemd service…"
-    systemctl stop "${SERVICE_NAME}"
-    systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
-  fi
-
-  if [[ -f "${INSTALL_DIR}/deploy/docker-compose.yml" ]]; then
-    info "Stopping legacy Docker Compose stack…"
-    ( cd "${INSTALL_DIR}/deploy" && docker compose down -v 2>/dev/null || true )
-  fi
-
-  info "Removing orphaned containers…"
-  docker rm -f logistics_engine logistics_bot logistics_postgres 2>/dev/null || true
-
-  if [[ -f "${INSTALL_DIR}/data/logistics.db" ]]; then
-    local backup_dir="${INSTALL_DIR}.bak.$(date +%s)"
-    info "Backing up legacy SQLite data to ${backup_dir}…"
-    mv "${INSTALL_DIR}" "${backup_dir}"
-    ok "Legacy SQLite data safely backed up"
-  fi
-}
 
 create_directories() {
   step "Creating installation directory"
@@ -835,43 +786,12 @@ except Exception as e:
 print_summary() {
   echo
   hr
+  echo -e "   ${BOLD}${GRN}🎉 INSTALLATION COMPLETE${RST}"
+  echo -e "   Customer : ${LICENSE_CUSTOMER}"
+  echo -e "   Version  : ${SELECTED_VERSION}"
+  echo -e "   Install  : ${INSTALL_DIR}"
   echo
-  echo -e "${BOLD}${CYN}╔══════════════════════════════════════════════════════╗${RST}"
-  echo -e "${BOLD}${CYN}║              🎉  INSTALLATION COMPLETE               ║${RST}"
-  echo -e "${BOLD}${CYN}╚══════════════════════════════════════════════════════╝${RST}"
-  echo
-  echo -e "   ${BOLD}Customer :${RST} ${LICENSE_CUSTOMER}"
-  echo -e "   ${BOLD}Version  :${RST} ${SELECTED_VERSION}"
-  echo -e "   ${BOLD}Admins   :${RST} ${ADMIN_USER_IDS}"
-  echo -e "   ${BOLD}Install  :${RST} ${INSTALL_DIR}"
-  echo
-  hr
-  echo
-  echo -e "   ${BOLD}${GRN}First-time setup via Telegram:${RST}"
-  echo -e "   ${DIM}1.${RST} Message your bot and send ${BOLD}/admin${RST}"
-  echo -e "   ${DIM}2.${RST} Go to ${BOLD}⚙️ Settings → 🏭 Depot Config${RST} — set your warehouse coordinates"
-  echo -e "   ${DIM}3.${RST} Go to ${BOLD}⚙️ Settings → 💰 Pricing Config${RST} — set base fare, rate/km, tax"
-  echo -e "   ${DIM}4.${RST} Go to ${BOLD}📦 Add Item${RST} — add your first catalog item"
-  echo -e "   ${DIM}5.${RST} Send ${BOLD}/start${RST} to test the customer flow"
-  echo
-  hr
-  echo
-  echo -e "   ${BOLD}${GRN}Server management (logistics CLI):${RST}"
-  echo -e "   ${DIM}logistics status${RST}          — container health snapshot"
-  echo -e "   ${DIM}logistics logs${RST}             — follow all logs"
-  echo -e "   ${DIM}logistics logs -s engine${RST}  — engine logs only"
-  echo -e "   ${DIM}logistics logs -s bot${RST}     — bot logs only"
-  echo -e "   ${DIM}logistics update${RST}           — pull latest release (zero-downtime)"
-  echo -e "   ${DIM}logistics update --dry-run${RST}— check what's available without applying"
-  echo -e "   ${DIM}logistics rollback${RST}         — revert to previous version"
-  echo -e "   ${DIM}logistics maintenance${RST}      — toggle maintenance mode"
-  echo -e "   ${DIM}logistics dashboard${RST}        — interactive TUI"
-  echo
-  hr
-  echo
-  echo -e "   ${BOLD}${GRN}Config file:${RST}"
-  echo -e "   ${DIM}nano ${INSTALL_DIR}/deploy/.env${RST}"
-  echo -e "   ${DIM}systemctl restart ${SERVICE_NAME}${RST}   ← apply changes"
+  echo -e "   Run '${BOLD}logistics status${RST}' to verify services."
   echo
 }
 
@@ -884,7 +804,6 @@ main() {
   verify_license
   collect_config
   select_version
-  cleanup_legacy_install
   create_directories
   backup_current_deployment
   write_env
