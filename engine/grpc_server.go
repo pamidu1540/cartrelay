@@ -217,7 +217,7 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 	}
 
 	// Optionally refine distance via Mapbox
-	mapboxKM, err := FetchMapboxDistance(req.UserLat, req.UserLon, nearest.Lat, nearest.Lon)
+	mapboxKM, err := FetchMapboxDistance(nearest.Lat, nearest.Lon, req.UserLat, req.UserLon)
 	if err == nil && mapboxKM > 0 {
 		distKM = mapboxKM
 	}

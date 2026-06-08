@@ -2,8 +2,9 @@
 
 # ── Stage 1: proto codegen ────────────────────────────────────────────────────
 FROM python:3.12-slim AS proto-gen
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-RUN pip install --no-cache-dir grpcio-tools==1.80.0
+RUN uv pip install --system --no-cache-dir grpcio-tools==1.80.0
 
 WORKDIR /proto
 COPY engine/api/logistics.proto ./logistics.proto
@@ -19,6 +20,7 @@ RUN mkdir -p /out && \
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 RUN useradd -m -u 1001 bot
 
@@ -28,7 +30,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir \
+RUN uv pip install --system --no-cache-dir \
         "python-telegram-bot[job-queue]==21.10" \
         "grpcio==1.80.0" \
         "protobuf==6.31.1" \

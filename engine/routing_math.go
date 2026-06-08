@@ -44,7 +44,7 @@ func FetchMapboxDistance(originLat, originLon, destLat, destLon float64) (float6
 	coords := fmt.Sprintf("%.6f,%.6f;%.6f,%.6f",
 		originLon, originLat, destLon, destLat)
 	reqURL := fmt.Sprintf("%s/%s?access_token=%s&overview=false",
-		mapboxBaseURL, url.PathEscape(coords), url.QueryEscape(token))
+		mapboxBaseURL, coords, url.QueryEscape(token))
 
 	// #nosec G704 -- reqURL is built from trusted constant, float64 coordinates, and token from env
 	resp, err := httpClient.Get(reqURL)
@@ -71,7 +71,7 @@ func FetchMapboxDistance(originLat, originLon, destLat, destLon float64) (float6
 		} `json:"routes"`
 		Code string `json:"code"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil || len(result.Routes) == 0 {
+	if err := json.Unmarshal(body, &result); err != nil || result.Code != "Ok" || len(result.Routes) == 0 {
 		slog.Warn("mapbox parse failed, falling back to haversine",
 			"code", result.Code, "err", err)
 		return haversineKM(originLat, originLon, destLat, destLon), nil

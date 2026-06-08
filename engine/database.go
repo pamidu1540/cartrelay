@@ -1491,25 +1491,23 @@ func DBUnsubscribeStock(ctx context.Context, userID int64, itemID string) error 
 }
 
 func notifyStockSubscribers(ctx context.Context, itemID string) {
-	rows, err := pool.Query(ctx,
-		"SELECT user_id FROM stock_subscriptions WHERE item_id=$1", itemID)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-
+	// Fetch item name for the notification text.
 	var name string
 	_ = pool.QueryRow(ctx, "SELECT name FROM items WHERE id=$1", itemID).Scan(&name)
+	msg := fmt.Sprintf("✅ Good news! *%s* is back in stock. Tap /start to order.", name)
 
-	for rows.Next() {
-		var uid int64
-		if err := rows.Scan(&uid); err != nil {
-			continue
-		}
-		_ = DBEnqueueNotif(ctx, uid, "stock_restored",
-			fmt.Sprintf("✅ Good news! *%s* is back in stock. Tap /start to order.", name))
-	}
-	// Remove subscriptions after notifying
+	// Bulk-insert one notification row per subscriber in a single query,
+	// eliminating the previous N+1 pattern (one INSERT per subscriber).
+	_, _ = pool.Exec(ctx, `
+		INSERT INTO pending_notifs (user_id, type, text)
+		SELECT user_id, 'stock_restored', $2
+		FROM stock_subscriptions
+		WHERE item_id = $1
+		ON CONFLICT DO NOTHING`,
+		itemID, msg,
+	)
+
+	// Remove subscriptions after notifying.
 	_, _ = pool.Exec(ctx, "DELETE FROM stock_subscriptions WHERE item_id=$1", itemID)
 }
 
