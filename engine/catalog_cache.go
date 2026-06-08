@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -180,23 +181,18 @@ func evictOldestMapbox(n int) {
 	for k, v := range mapboxCache {
 		entries = append(entries, kv{k, v.insertedAt})
 	}
-	// Partial sort: find the n oldest
+	// Sort to find the n oldest
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].ts.Before(entries[j].ts)
+	})
+
 	evicted := 0
-	var oldest time.Time
-	for _, e := range entries {
-		if oldest.IsZero() || e.ts.Before(oldest) {
-			oldest = e.ts
-		}
-	}
-	threshold := oldest.Add(mapboxCacheTTL / 2)
 	for _, e := range entries {
 		if evicted >= n {
 			break
 		}
-		if e.ts.Before(threshold) {
-			delete(mapboxCache, e.key)
-			evicted++
-		}
+		delete(mapboxCache, e.key)
+		evicted++
 	}
 	slog.Debug("mapbox cache eviction", "evicted", evicted, "remaining", len(mapboxCache))
 }

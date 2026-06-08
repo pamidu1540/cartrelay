@@ -10,9 +10,10 @@ import logging
 import time
 
 import grpc
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, ConversationHandler
+from message_manager import send_or_edit_main_menu, delete_user_message
 
 from api import logistics_pb2 as pb
 from grpc_client import pool
@@ -35,23 +36,24 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _reply(update: Update, text: str, **kwargs) -> None:
+async def _reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs) -> None:
     msg = update.effective_message
     if not msg:
         return
     if len(text) > 4096:
         text = text[:4090] + "\n…"
-    await msg.reply_text(text, parse_mode=ParseMode.MARKDOWN, **kwargs)
+    await send_or_edit_main_menu(update, context, text, parse_mode=ParseMode.MARKDOWN, **kwargs)
 
 
-async def _rpc_error(update: Update, exc: grpc.RpcError) -> None:
-    await _reply(update, f"⚠️ Engine error: {exc.details()}")
+async def _rpc_error(update: Update, context: ContextTypes.DEFAULT_TYPE, exc: grpc.RpcError) -> None:
+    await _reply(update, context, context, f"⚠️ Engine error: {exc.details()}")
 
 
 # ── Main admin panel ──────────────────────────────────────────────────────────
 
 @admin_only
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     kb = [
         [InlineKeyboardButton("📦 Catalog",    callback_data="admin_menu:catalog"),
          InlineKeyboardButton("📋 Orders",     callback_data="admin_menu:orders")],
@@ -71,7 +73,7 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             reply_markup=InlineKeyboardMarkup(kb)
         )
     else:
-        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, text, reply_markup=InlineKeyboardMarkup(kb))
     return ConversationHandler.END
 
 
@@ -141,18 +143,19 @@ async def cb_item_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     if query:
         await query.answer()
-        await query.edit_message_text("❌ Operation cancelled.")
+        await send_or_edit_main_menu(update, context, "❌ Operation cancelled.")
     else:
-        await _reply(update, "❌ Operation cancelled.")
+        await _reply(update, context, "❌ Operation cancelled.")
     context.user_data.pop("new_item", None)
     return ConversationHandler.END
 
 
 @admin_only
 async def cmd_add_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     context.user_data["new_item"] = {}
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
-    await _reply(update, "➕ *Add New Item Wizard*\n\nStep 1/6 — Enter the item *name*:", reply_markup=InlineKeyboardMarkup(kb))
+    await _reply(update, context, "➕ *Add New Item Wizard*\n\nStep 1/6 — Enter the item *name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_NAME
 
 
@@ -161,40 +164,43 @@ async def cb_item_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await query.answer()
     context.user_data["new_item"] = {}
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
-    await query.edit_message_text("➕ *Add New Item Wizard*\n\nStep 1/6 — Enter the item *name*:", reply_markup=InlineKeyboardMarkup(kb))
+    await send_or_edit_main_menu(update, context, "➕ *Add New Item Wizard*\n\nStep 1/6 — Enter the item *name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_NAME
 
 
 async def msg_item_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     context.user_data.setdefault("new_item", {})["name"] = update.effective_message.text.strip()
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
-    await _reply(update, "Step 2/6 — Enter the *price* (LKR, numbers only):", reply_markup=InlineKeyboardMarkup(kb))
+    await _reply(update, context, "Step 2/6 — Enter the *price* (LKR, numbers only):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_PRICE
 
 
 async def msg_item_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     try:
         price = float(update.effective_message.text.strip())
         if price < 0:
             raise ValueError("negative price")
     except ValueError:
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
-        await _reply(update, "❌ Please enter a valid positive number for price:", reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, "❌ Please enter a valid positive number for price:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_ITEM_PRICE
     context.user_data["new_item"]["price"] = price
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
-    await _reply(update, "Step 3/6 — Enter initial *stock* quantity:", reply_markup=InlineKeyboardMarkup(kb))
+    await _reply(update, context, "Step 3/6 — Enter initial *stock* quantity:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_STOCK
 
 
 async def msg_item_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     try:
         stock = int(update.effective_message.text.strip())
         if stock < 0:
             raise ValueError("negative stock")
     except ValueError:
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
-        await _reply(update, "❌ Please enter a valid non-negative integer for stock:", reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, "❌ Please enter a valid non-negative integer for stock:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_ITEM_STOCK
     context.user_data["new_item"]["stock"] = stock
 
@@ -216,7 +222,7 @@ async def msg_item_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     kb.append([InlineKeyboardButton("➕ Type New Category", callback_data="item_cat_select:type_new")])
     kb.append([InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")])
 
-    await _reply(update, "Step 4/6 — Choose a category below or type a new one:", reply_markup=InlineKeyboardMarkup(kb))
+    await _reply(update, context, "Step 4/6 — Choose a category below or type a new one:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_CATEGORY
 
 
@@ -227,24 +233,25 @@ async def cb_item_category_callback(update: Update, context: ContextTypes.DEFAUL
 
     if cat == "type_new":
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
-        await query.edit_message_text("✏️ Please type the new category name:", reply_markup=InlineKeyboardMarkup(kb))
+        await send_or_edit_main_menu(update, context, "✏️ Please type the new category name:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_ITEM_CATEGORY
 
     if len(cat) > 50:
         cat = cat[:50]
 
     context.user_data.setdefault("new_item", {})["category"] = cat
-    await query.edit_message_text(f"✅ Category set to: *{cat}*")
+    await send_or_edit_main_menu(update, context, f"✅ Category set to: *{cat}*")
 
     kb = [
         [InlineKeyboardButton("⏩ Skip Photo", callback_data="item_photo_skip")],
         [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
     ]
-    await query.message.reply_text("Step 5/6 — Send the item *photo* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
+    await send_or_edit_main_menu(update, context, "Step 5/6 — Send the item *photo* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_PHOTO
 
 
 async def msg_item_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     cat = update.effective_message.text.strip()
     if len(cat) > 50:
         cat = cat[:50]
@@ -253,24 +260,25 @@ async def msg_item_category(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         [InlineKeyboardButton("⏩ Skip Photo", callback_data="item_photo_skip")],
         [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
     ]
-    await _reply(update, "Step 5/6 — Send the item *photo* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
+    await _reply(update, context, "Step 5/6 — Send the item *photo* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_PHOTO
 
 
 async def cb_item_photo_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("⏩ Photo skipped.")
+    await send_or_edit_main_menu(update, context, "⏩ Photo skipped.")
 
     kb = [
         [InlineKeyboardButton("⏩ Skip Description", callback_data="item_desc_skip")],
         [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
     ]
-    await query.message.reply_text("Step 6/6 — Enter the item *description* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
+    await send_or_edit_main_menu(update, context, "Step 6/6 — Enter the item *description* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_DESC
 
 
 async def msg_item_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     msg = update.effective_message
     if msg.photo:
         context.user_data.setdefault("new_item", {})["photo_file_id"] = msg.photo[-1].file_id
@@ -281,14 +289,14 @@ async def msg_item_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         [InlineKeyboardButton("⏩ Skip Description", callback_data="item_desc_skip")],
         [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
     ]
-    await _reply(update, "Step 6/6 — Enter the item *description* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
+    await _reply(update, context, "Step 6/6 — Enter the item *description* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_DESC
 
 
 async def cb_item_desc_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("⏩ Description skipped.")
+    await send_or_edit_main_menu(update, context, "⏩ Description skipped.")
 
     d = context.user_data.pop("new_item", {})
     item = pb.Item(
@@ -307,13 +315,14 @@ async def cb_item_desc_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             lambda stub, meta: stub.AddItem(item, metadata=meta),
             user_id=update.effective_user.id,
         )
-        await query.message.reply_text(f"✅ *{item.name}* added successfully! ID: `{resp.entity_id}`", parse_mode=ParseMode.MARKDOWN)
+        await send_or_edit_main_menu(update, context, f"✅ *{item.name}* added successfully! ID: `{resp.entity_id}`", parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
-        await query.message.reply_text(f"❌ Failed to add item: {e}")
+        await send_or_edit_main_menu(update, context, f"❌ Failed to add item: {e}")
     return ConversationHandler.END
 
 
 async def msg_item_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     text = update.effective_message.text.strip()
     if text.lower() != "skip":
         context.user_data.setdefault("new_item", {})["description"] = text
@@ -335,17 +344,17 @@ async def msg_item_description(update: Update, context: ContextTypes.DEFAULT_TYP
             lambda stub, meta: stub.AddItem(item, metadata=meta),
             user_id=update.effective_user.id,
         )
-        await _reply(update, f"✅ *{item.name}* added! ID: `{resp.entity_id}`")
+        await _reply(update, context, f"✅ *{item.name}* added! ID: `{resp.entity_id}`")
     except Exception as e:
-        await _reply(update, f"❌ Failed to add item: {e}")
+        await _reply(update, context, f"❌ Failed to add item: {e}")
     return ConversationHandler.END
 
 
 @admin_only
 async def cmd_edit_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
-    await _reply(
-        update,
+    await _reply(update, context,
         "✏️ *Edit Item Wizard*\n\nPlease enter the **item ID** to edit (get IDs from /catalog):",
         reply_markup=InlineKeyboardMarkup(kb),
     )
@@ -354,6 +363,7 @@ async def cmd_edit_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 @admin_only
 async def msg_edit_item_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     item_id = update.effective_message.text.strip()
     try:
         item = await pool.call(
@@ -362,21 +372,19 @@ async def msg_edit_item_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
     except Exception as e:
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
-        await _reply(
-            update,
+        await _reply(update, context,
             f"❌ Item not found or engine error: {e}\n\nPlease enter a valid **item ID**:",
             reply_markup=InlineKeyboardMarkup(kb),
         )
         return STATE_EDIT_ITEM_ID
 
     context.user_data["edit_item"] = item
-    
+
     kb = [
         [InlineKeyboardButton("⏩ Keep Current Photo", callback_data="edit_item_photo:keep")],
         [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
     ]
-    await _reply(
-        update,
+    await _reply(update, context,
         f"🔍 *Found Item:* {item.name}\n"
         f"💰 *Current Price:* LKR {item.price:.2f}\n"
         f"📦 *Current Stock:* {item.stock}\n\n"
@@ -388,10 +396,11 @@ async def msg_edit_item_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 @admin_only
 async def msg_edit_item_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     msg = update.effective_message
     item = context.user_data.pop("edit_item", None)
     if not item:
-        await _reply(update, "❌ Edit session expired. Please start over with /edititem.")
+        await _reply(update, context, "❌ Edit session expired. Please start over with /edititem.")
         return ConversationHandler.END
 
     if msg.photo:
@@ -404,22 +413,21 @@ async def msg_edit_item_photo(update: Update, context: ContextTypes.DEFAULT_TYPE
             [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]
         ]
         context.user_data["edit_item"] = item  # put it back
-        await _reply(
-            update,
+        await _reply(update, context,
             "❌ Invalid input. Please upload a photo, or click the **Keep Current Photo** button below:",
             reply_markup=InlineKeyboardMarkup(kb),
         )
         return STATE_EDIT_ITEM_PHOTO
 
     try:
-        resp = await pool.call(
+        await pool.call(
             "/logistics.LogisticsEngine/EditItem",
             lambda stub, meta: stub.EditItem(item, metadata=meta),
             user_id=update.effective_user.id,
         )
-        await _reply(update, f"✅ Photo for *{item.name}* updated successfully!")
+        await _reply(update, context, f"✅ Photo for *{item.name}* updated successfully!")
     except Exception as e:
-        await _reply(update, f"❌ Failed to edit item photo: {e}")
+        await _reply(update, context, f"❌ Failed to edit item photo: {e}")
 
     return ConversationHandler.END
 
@@ -430,10 +438,10 @@ async def cb_edit_item_photo_keep(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
     item = context.user_data.pop("edit_item", None)
     if not item:
-        await query.edit_message_text("❌ Edit session expired. Please start over with /edititem.")
+        await send_or_edit_main_menu(update, context, "❌ Edit session expired. Please start over with /edititem.")
         return ConversationHandler.END
 
-    await query.edit_message_text(f"⏩ Current photo for *{item.name}* kept. No changes made.")
+    await send_or_edit_main_menu(update, context, f"⏩ Current photo for *{item.name}* kept. No changes made.")
     return ConversationHandler.END
 
 
@@ -441,7 +449,7 @@ async def cb_edit_item_photo_keep(update: Update, context: ContextTypes.DEFAULT_
 async def cmd_remove_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args
     if not args:
-        await _reply(update, "Usage: `/removeitem <item_id>`")
+        await _reply(update, context, "Usage: `/removeitem <item_id>`")
         return
     try:
         resp = await pool.call(
@@ -449,15 +457,15 @@ async def cmd_remove_item(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             lambda stub, meta: stub.RemoveItem(pb.ItemId(id=args[0]), metadata=meta),
             user_id=update.effective_user.id,
         )
-        await _reply(update, "✅ Item removed." if resp.success else f"❌ {resp.message}")
+        await _reply(update, context, "✅ Item removed." if resp.success else f"❌ {resp.message}")
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
 
 
 @admin_only
 async def cmd_bulk_import(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await _reply(
-        update,
+    await delete_user_message(update, context)
+    await _reply(update, context,
         "📥 *Bulk Import Items*\n\n"
         "Upload a CSV with columns:\n"
         "`name, price, stock, category, description`\n\n"
@@ -479,9 +487,10 @@ async def cb_bulk_import_start(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def msg_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     doc = update.effective_message.document
     if not doc:
-        await _reply(update, "❌ Please send a CSV file.")
+        await _reply(update, context, "❌ Please send a CSV file.")
         return STATE_CSV_UPLOAD
 
     f = await doc.get_file()
@@ -504,7 +513,7 @@ async def msg_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             logger.warning("CSV row skip: %s", exc)
 
     if not items:
-        await _reply(update, "❌ No valid rows found in CSV.")
+        await _reply(update, context, "❌ No valid rows found in CSV.")
         return ConversationHandler.END
 
     try:
@@ -518,9 +527,9 @@ async def msg_csv_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         msg = f"✅ Import done — created: {resp.created}, updated: {resp.updated}"
         if resp.errors:
             msg += f"\nErrors ({len(resp.errors)}):\n" + "\n".join(resp.errors[:5])
-        await _reply(update, msg)
+        await _reply(update, context, msg)
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
     return ConversationHandler.END
 
 
@@ -542,11 +551,11 @@ async def cmd_all_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             user_id=update.effective_user.id,
         )
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
         return
 
     if not resp.orders:
-        await _reply(update, "📋 No orders found.")
+        await _reply(update, context, "📋 No orders found.")
         return
 
     STATUS_EMOJI = {
@@ -602,7 +611,7 @@ async def cb_admin_order_detail(update: Update, context: ContextTypes.DEFAULT_TY
             user_id=update.effective_user.id,
         )
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
         return
 
     lines = [
@@ -680,6 +689,7 @@ async def cb_admin_update_status(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def msg_status_reason(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     order_id  = context.user_data.pop("pending_status_order", "")
     new_status = context.user_data.pop("pending_status_value", "")
     reason    = update.effective_message.text.strip()
@@ -699,12 +709,11 @@ async def msg_status_reason(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             ),
             user_id=actor_id,
         )
-        await _reply(
-            update,
+        await _reply(update, context,
             f"✅ Order moved to *{new_status}*" if resp.success else f"❌ {resp.message}",
         )
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
     return ConversationHandler.END
 
 
@@ -724,11 +733,11 @@ async def cb_admin_assign_driver(update: Update, context: ContextTypes.DEFAULT_T
             user_id=update.effective_user.id,
         )
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
         return
 
     if not resp.drivers:
-        await query.edit_message_text("⚠️ No available drivers right now.")
+        await send_or_edit_main_menu(update, context, "⚠️ No available drivers right now.")
         return
 
     kb = [[InlineKeyboardButton(
@@ -745,12 +754,14 @@ async def cb_admin_assign_driver(update: Update, context: ContextTypes.DEFAULT_T
 
 @admin_only
 async def cmd_order_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     """A-025: Search orders by customer or order ID."""
-    await _reply(update, "🔍 Enter customer @username, name, or order number to search:")
+    await _reply(update, context, "🔍 Enter customer @username, name, or order number to search:")
     return STATE_ORDER_SEARCH
 
 
 async def msg_order_search_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     q = update.effective_message.text.strip().lower()
     try:
         resp = await pool.call(
@@ -767,30 +778,32 @@ async def msg_order_search_query(update: Update, context: ContextTypes.DEFAULT_T
             or q in o.order_id.lower()
         ]
         if not matches:
-            await _reply(update, f"No orders found matching `{q}`")
+            await _reply(update, context, f"No orders found matching `{q}`")
         else:
             lines = [f"🔍 *Results for* `{q}`:\n"]
             for o in matches[:10]:
                 lines.append(f"• {o.human_ref} @{o.username} — {o.status}")
-            await _reply(update, "\n".join(lines))
+            await _reply(update, context, "\n".join(lines))
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
     return ConversationHandler.END
 
 
 @admin_only
 async def cmd_add_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     """A-020: Add internal admin note to an order."""
     args = context.args
     if not args:
-        await _reply(update, "Usage: `/addnote <order_id>`")
+        await _reply(update, context, "Usage: `/addnote <order_id>`")
         return ConversationHandler.END
     context.user_data["note_order_id"] = args[0]
-    await _reply(update, f"📝 Enter your internal note for order `{args[0]}`:")
+    await _reply(update, context, f"📝 Enter your internal note for order `{args[0]}`:")
     return STATE_NOTE_TEXT
 
 
 async def msg_note_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     order_id = context.user_data.pop("note_order_id", "")
     text     = update.effective_message.text.strip()
     actor_id = update.effective_user.id
@@ -803,9 +816,9 @@ async def msg_note_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ),
             user_id=actor_id,
         )
-        await _reply(update, "✅ Note added.")
+        await _reply(update, context, "✅ Note added.")
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
     return ConversationHandler.END
 
 
@@ -830,6 +843,7 @@ async def cb_resolve_issue(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def msg_resolve_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     # Plain-text resolution note path (inline buttons are the primary path)
     return ConversationHandler.END
 
@@ -846,7 +860,7 @@ async def cmd_warehouses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             user_id=update.effective_user.id,
         )
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
         return
 
     lines = ["🏭 *Warehouses*\n"]
@@ -875,7 +889,7 @@ async def cmd_warehouses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=InlineKeyboardMarkup(kb)
         )
     else:
-        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, text, reply_markup=InlineKeyboardMarkup(kb))
 
 
 async def cb_wh_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -901,9 +915,9 @@ async def cb_wh_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     query = update.callback_query
     if query:
         await query.answer()
-        await query.edit_message_text("❌ Operation cancelled.")
+        await send_or_edit_main_menu(update, context, "❌ Operation cancelled.")
     else:
-        await _reply(update, "❌ Operation cancelled.")
+        await _reply(update, context, "❌ Operation cancelled.")
     context.user_data.pop("new_wh_flow", None)
     context.user_data.pop("new_wh", None)
     return ConversationHandler.END
@@ -914,19 +928,21 @@ async def cb_wh_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.answer()
     context.user_data["new_wh_flow"] = {}
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
-    await query.edit_message_text("🏭 *Add Warehouse Wizard*\n\nStep 1/3 — Enter the warehouse *name*:", reply_markup=InlineKeyboardMarkup(kb))
+    await send_or_edit_main_menu(update, context, "🏭 *Add Warehouse Wizard*\n\nStep 1/3 — Enter the warehouse *name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_WH_NAME
 
 
 @admin_only
 async def cmd_add_warehouse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     context.user_data["new_wh_flow"] = {}
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
-    await _reply(update, "🏭 *Add Warehouse Wizard*\n\nStep 1/3 — Enter the warehouse *name*:", reply_markup=InlineKeyboardMarkup(kb))
+    await _reply(update, context, "🏭 *Add Warehouse Wizard*\n\nStep 1/3 — Enter the warehouse *name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_WH_NAME
 
 
 async def msg_warehouse_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     flow = context.user_data.get("new_wh_flow")
     if flow is None:
         # Fallback to old format if they typed "Name | Address"
@@ -935,7 +951,7 @@ async def msg_warehouse_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
             name, addr = text.split("|", 1)
             context.user_data["new_wh"] = {"name": name.strip(), "address": addr.strip()}
             kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
-            await _reply(update, "Step 2/2 — Enter `latitude,longitude`:", reply_markup=InlineKeyboardMarkup(kb))
+            await _reply(update, context, "Step 2/2 — Enter `latitude,longitude`:", reply_markup=InlineKeyboardMarkup(kb))
             return STATE_WH_COORDS
         flow = {}
         context.user_data["new_wh_flow"] = flow
@@ -944,17 +960,26 @@ async def msg_warehouse_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
     if "name" not in flow:
         flow["name"] = text
-        await _reply(update, "Step 2/3 — Enter the *full street address* of the warehouse:", reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, "Step 2/3 — Enter the *full street address* of the warehouse:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_WH_NAME
 
     if "address" not in flow:
         flow["address"] = text
-        await _reply(update, "Step 3/3 — 📍 Please share the warehouse *location* (tap the 📎 attachment icon and select Location, or share a live/static location, or type `latitude,longitude`):", reply_markup=InlineKeyboardMarkup(kb))
+        reply_kb = [[KeyboardButton("📍 Share Location", request_location=True)]]
+
+        # We need to send a new message for ReplyKeyboardMarkup
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Step 3/3 — 📍 Please share the warehouse *location* (tap the button below, or share a live/static location, or type `latitude,longitude`):",
+            reply_markup=ReplyKeyboardMarkup(reply_kb, resize_keyboard=True, one_time_keyboard=True),
+            parse_mode=ParseMode.MARKDOWN
+        )
         return STATE_WH_COORDS
     return STATE_WH_COORDS
 
 
 async def msg_warehouse_coords(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     msg = update.effective_message
     flow = context.user_data.pop("new_wh_flow", None)
     if flow is None:
@@ -973,7 +998,7 @@ async def msg_warehouse_coords(update: Update, context: ContextTypes.DEFAULT_TYP
             # Put flow back
             context.user_data["new_wh_flow"] = flow
             kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
-            await _reply(update, "❌ Please send a location attachment or enter in `lat,lon` format:", reply_markup=InlineKeyboardMarkup(kb))
+            await _reply(update, context, "❌ Please send a location attachment or enter in `lat,lon` format:", reply_markup=InlineKeyboardMarkup(kb))
             return STATE_WH_COORDS
 
     try:
@@ -991,9 +1016,9 @@ async def msg_warehouse_coords(update: Update, context: ContextTypes.DEFAULT_TYP
             ),
             user_id=update.effective_user.id,
         )
-        await _reply(update, f"✅ Warehouse *{flow.get('name')}* added successfully!\nID: `{resp.entity_id}`")
+        await _reply(update, context, f"✅ Warehouse *{flow.get('name')}* added successfully!\nID: `{resp.entity_id}`")
     except Exception as e:
-        await _reply(update, f"❌ Failed to add warehouse: {e}")
+        await _reply(update, context, f"❌ Failed to add warehouse: {e}")
     return ConversationHandler.END
 
 
@@ -1001,7 +1026,7 @@ async def msg_warehouse_coords(update: Update, context: ContextTypes.DEFAULT_TYP
 async def cmd_remove_warehouse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args
     if not args:
-        await _reply(update, "Usage: `/removewh <warehouse_id>`")
+        await _reply(update, context, "Usage: `/removewh <warehouse_id>`")
         return
     try:
         resp = await pool.call(
@@ -1009,9 +1034,9 @@ async def cmd_remove_warehouse(update: Update, context: ContextTypes.DEFAULT_TYP
             lambda stub, meta: stub.RemoveWarehouse(pb.WarehouseId(id=args[0]), metadata=meta),
             user_id=update.effective_user.id,
         )
-        await _reply(update, "✅ Warehouse removed." if resp.success else f"❌ {resp.message}")
+        await _reply(update, context, "✅ Warehouse removed." if resp.success else f"❌ {resp.message}")
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
 
 
 # ── Driver management ─────────────────────────────────────────────────────────
@@ -1028,7 +1053,7 @@ async def cmd_drivers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             user_id=update.effective_user.id,
         )
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
         return
 
     lines = ["🚗 *Drivers*\n"]
@@ -1055,7 +1080,7 @@ async def cmd_drivers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             reply_markup=InlineKeyboardMarkup(kb)
         )
     else:
-        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, text, reply_markup=InlineKeyboardMarkup(kb))
 
 
 async def cb_driver_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1081,9 +1106,9 @@ async def cb_driver_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     if query:
         await query.answer()
-        await query.edit_message_text("❌ Operation cancelled.")
+        await send_or_edit_main_menu(update, context, "❌ Operation cancelled.")
     else:
-        await _reply(update, "❌ Operation cancelled.")
+        await _reply(update, context, "❌ Operation cancelled.")
     context.user_data.pop("new_driver_flow", None)
     context.user_data.pop("new_driver", None)
     return ConversationHandler.END
@@ -1094,32 +1119,35 @@ async def cb_driver_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     context.user_data["new_driver_flow"] = {}
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")]]
-    await query.edit_message_text("🚗 *Add Driver Wizard*\n\nStep 1/3 — Enter driver's *full name*:", reply_markup=InlineKeyboardMarkup(kb))
+    await send_or_edit_main_menu(update, context, "🚗 *Add Driver Wizard*\n\nStep 1/3 — Enter driver's *full name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_DRV_NAME
 
 
 @admin_only
 async def cmd_add_driver(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     context.user_data["new_driver_flow"] = {}
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")]]
-    await _reply(update, "🚗 *Add Driver Wizard*\n\nStep 1/3 — Enter driver's *full name*:", reply_markup=InlineKeyboardMarkup(kb))
+    await _reply(update, context, "🚗 *Add Driver Wizard*\n\nStep 1/3 — Enter driver's *full name*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_DRV_NAME
 
 
 async def msg_driver_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     flow = context.user_data.get("new_driver_flow")
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")]]
     if flow is None:
         context.user_data.setdefault("new_driver", {})["name"] = update.effective_message.text.strip()
-        await _reply(update, "Enter driver's *phone number*:", reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, "Enter driver's *phone number*:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_DRV_PHONE
 
     flow["name"] = update.effective_message.text.strip()
-    await _reply(update, "Step 2/3 — Enter driver's *phone number*:", reply_markup=InlineKeyboardMarkup(kb))
+    await _reply(update, context, "Step 2/3 — Enter driver's *phone number*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_DRV_PHONE
 
 
 async def msg_driver_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     flow = context.user_data.get("new_driver_flow")
     if flow is None:
         context.user_data["new_driver"]["phone"] = update.effective_message.text.strip()
@@ -1139,7 +1167,7 @@ async def msg_driver_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")
         ]
     ]
-    await _reply(update, "Step 3/3 — Choose driver's *vehicle type*:", reply_markup=InlineKeyboardMarkup(kb))
+    await _reply(update, context, "Step 3/3 — Choose driver's *vehicle type*:", reply_markup=InlineKeyboardMarkup(kb))
     return ConversationHandler.END
 
 
@@ -1167,9 +1195,9 @@ async def cb_driver_add_vehicle(update: Update, context: ContextTypes.DEFAULT_TY
             ),
             user_id=update.effective_user.id,
         )
-        await query.edit_message_text(f"✅ Driver *{name}* added successfully!\nID: `{resp.entity_id}`")
+        await send_or_edit_main_menu(update, context, f"✅ Driver *{name}* added successfully!\nID: `{resp.entity_id}`")
     except Exception as e:
-        await query.edit_message_text(f"❌ Failed to add driver: {e}")
+        await send_or_edit_main_menu(update, context, f"❌ Failed to add driver: {e}")
 
     await cmd_drivers(update, context)
     return ConversationHandler.END
@@ -1179,7 +1207,7 @@ async def cb_driver_add_vehicle(update: Update, context: ContextTypes.DEFAULT_TY
 async def cmd_remove_driver(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args
     if not args:
-        await _reply(update, "Usage: `/removedriver <driver_id>`")
+        await _reply(update, context, "Usage: `/removedriver <driver_id>`")
         return
     try:
         resp = await pool.call(
@@ -1187,19 +1215,21 @@ async def cmd_remove_driver(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             lambda stub, meta: stub.RemoveDriver(pb.DriverId(id=args[0]), metadata=meta),
             user_id=update.effective_user.id,
         )
-        await _reply(update, "✅ Driver deactivated." if resp.success else f"❌ {resp.message}")
+        await _reply(update, context, "✅ Driver deactivated." if resp.success else f"❌ {resp.message}")
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
 
 
 @admin_only
 async def cmd_broadcast_drivers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     """A-030: Broadcast message to all on-duty drivers."""
-    await _reply(update, "📢 Enter the message to broadcast to all on-duty drivers:")
+    await _reply(update, context, "📢 Enter the message to broadcast to all on-duty drivers:")
     return STATE_BROADCAST
 
 
 async def msg_broadcast_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     text = update.effective_message.text.strip()
     try:
         resp = await pool.call(
@@ -1209,9 +1239,9 @@ async def msg_broadcast_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
             ),
             user_id=update.effective_user.id,
         )
-        await _reply(update, f"✅ {resp.message}")
+        await _reply(update, context, f"✅ {resp.message}")
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
     return ConversationHandler.END
 
 
@@ -1227,7 +1257,7 @@ async def cmd_promos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             user_id=update.effective_user.id,
         )
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
         return
 
     lines = ["🏷 *Promotions*\n"]
@@ -1257,7 +1287,7 @@ async def cmd_promos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             reply_markup=InlineKeyboardMarkup(kb)
         )
     else:
-        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, text, reply_markup=InlineKeyboardMarkup(kb))
 
 
 async def cb_promo_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1302,10 +1332,10 @@ async def cb_promo_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 @admin_only
 async def cmd_add_promo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     context.user_data["new_promo_flow"] = {}
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
-    await _reply(
-        update,
+    await _reply(update, context,
         "🏷 *Create Promo Code Wizard*\n\nStep 1/4 — Enter the *Promo Code* (e.g. SAVE10):",
         reply_markup=InlineKeyboardMarkup(kb)
     )
@@ -1319,7 +1349,7 @@ async def cb_promo_flow_type(update: Update, context: ContextTypes.DEFAULT_TYPE)
     flow = context.user_data.get("new_promo_flow")
 
     if not flow or "code" not in flow:
-        await query.edit_message_text("❌ Session expired.")
+        await send_or_edit_main_menu(update, context, "❌ Session expired.")
         return ConversationHandler.END
 
     flow["discount_type"] = dtype
@@ -1333,6 +1363,7 @@ async def cb_promo_flow_type(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     flow = context.user_data.get("new_promo_flow")
     if flow is None:
         text = update.effective_message.text.strip()
@@ -1366,9 +1397,9 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                         ),
                         user_id=update.effective_user.id,
                     )
-                    await _reply(update, f"✅ Promo *{code}* created!")
+                    await _reply(update, context, f"✅ Promo *{code}* created!")
                 except Exception as e:
-                    await _reply(update, f"❌ Failed: {e}")
+                    await _reply(update, context, f"❌ Failed: {e}")
                 return ConversationHandler.END
         flow = {}
         context.user_data["new_promo_flow"] = flow
@@ -1378,7 +1409,7 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         code = text.upper()
         if not code.isalnum():
             kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
-            await _reply(update, "❌ Promo code must be alphanumeric (letters and numbers only). Please enter again:", reply_markup=InlineKeyboardMarkup(kb))
+            await _reply(update, context, "❌ Promo code must be alphanumeric (letters and numbers only). Please enter again:", reply_markup=InlineKeyboardMarkup(kb))
             return STATE_PROMO_DEF
         flow["code"] = code
         kb = [
@@ -1388,12 +1419,12 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ],
             [InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]
         ]
-        await _reply(update, f"Step 2/4 — Choose discount type for *{flow['code']}*:", reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, f"Step 2/4 — Choose discount type for *{flow['code']}*:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROMO_DEF
 
     if "discount_type" not in flow:
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
-        await _reply(update, "❌ Please choose a discount type using the buttons above.", reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, "❌ Please choose a discount type using the buttons above.", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROMO_DEF
 
     if "value" not in flow:
@@ -1404,19 +1435,19 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
             if flow.get("discount_type") == "percent" and val > 100:
                 kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
-                await _reply(update, "❌ Percentage discount cannot exceed 100%. Please enter a valid percentage (1-100):", reply_markup=InlineKeyboardMarkup(kb))
+                await _reply(update, context, "❌ Percentage discount cannot exceed 100%. Please enter a valid percentage (1-100):", reply_markup=InlineKeyboardMarkup(kb))
                 return STATE_PROMO_DEF
 
             flow["value"] = val
             kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
-            await _reply(update, "Step 4/4 — Enter the *minimum order value* required to apply this promo (LKR, or 0 for none):", reply_markup=InlineKeyboardMarkup(kb))
+            await _reply(update, context, "Step 4/4 — Enter the *minimum order value* required to apply this promo (LKR, or 0 for none):", reply_markup=InlineKeyboardMarkup(kb))
             return STATE_PROMO_DEF
         except ValueError:
             kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
             if flow.get("discount_type") == "percent":
-                await _reply(update, "❌ Please enter a valid percentage (1-100):", reply_markup=InlineKeyboardMarkup(kb))
+                await _reply(update, context, "❌ Please enter a valid percentage (1-100):", reply_markup=InlineKeyboardMarkup(kb))
             else:
-                await _reply(update, "❌ Please enter a valid positive number for LKR discount amount:", reply_markup=InlineKeyboardMarkup(kb))
+                await _reply(update, context, "❌ Please enter a valid positive number for LKR discount amount:", reply_markup=InlineKeyboardMarkup(kb))
             return STATE_PROMO_DEF
 
     try:
@@ -1440,13 +1471,13 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ),
             user_id=update.effective_user.id,
         )
-        await _reply(update, f"✅ Promo *{code}* created successfully!\nID: `{resp.entity_id}`")
+        await _reply(update, context, f"✅ Promo *{code}* created successfully!\nID: `{resp.entity_id}`")
     except ValueError:
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
-        await _reply(update, "❌ Please enter a valid non-negative number for minimum order value:", reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, "❌ Please enter a valid non-negative number for minimum order value:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROMO_DEF
     except Exception as e:
-        await _reply(update, f"❌ Failed to create promo: {e}")
+        await _reply(update, context, f"❌ Failed to create promo: {e}")
 
     await cmd_promos(update, context)
     return ConversationHandler.END
@@ -1456,7 +1487,7 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def cmd_remove_promo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args
     if not args:
-        await _reply(update, "Usage: `/removepromo <promo_id>`")
+        await _reply(update, context, "Usage: `/removepromo <promo_id>`")
         return
     try:
         resp = await pool.call(
@@ -1464,17 +1495,17 @@ async def cmd_remove_promo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             lambda stub, meta: stub.RemovePromo(pb.PromoId(id=args[0]), metadata=meta),
             user_id=update.effective_user.id,
         )
-        await _reply(update, "✅ Promo removed." if resp.success else f"❌ {resp.message}")
+        await _reply(update, context, "✅ Promo removed." if resp.success else f"❌ {resp.message}")
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
 
 
 # ── Loyalty admin ─────────────────────────────────────────────────────────────
 
 @admin_only
 async def cmd_adjust_loyalty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await _reply(
-        update,
+    await delete_user_message(update, context)
+    await _reply(update, context,
         "🏅 *Adjust Loyalty Points*\n\n"
         "Format: `user_id | delta | reason`\n"
         "Example: `123456789 | 100 | Compensation for delay`",
@@ -1483,9 +1514,10 @@ async def cmd_adjust_loyalty(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def msg_loyalty_adjustment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     parts = [p.strip() for p in update.effective_message.text.split("|")]
     if len(parts) < 3:
-        await _reply(update, "❌ Format: `user_id | delta | reason`")
+        await _reply(update, context, "❌ Format: `user_id | delta | reason`")
         return STATE_LOYALTY_ADJ
     try:
         uid    = int(parts[0])
@@ -1503,12 +1535,12 @@ async def msg_loyalty_adjustment(update: Update, context: ContextTypes.DEFAULT_T
             user_id=update.effective_user.id,
         )
         sign = "+" if delta >= 0 else ""
-        await _reply(update,
+        await _reply(update, context,
             f"✅ {sign}{delta} pts for user `{uid}`\nReason: {reason}")
     except (ValueError, IndexError):
-        await _reply(update, "❌ Invalid input.")
+        await _reply(update, context, "❌ Invalid input.")
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
     return ConversationHandler.END
 
 
@@ -1524,7 +1556,7 @@ async def cmd_admins(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             user_id=update.effective_user.id,
         )
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
         return
 
     lines = ["👥 *Admin Users*\n"]
@@ -1544,7 +1576,7 @@ async def cmd_admins(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             reply_markup=InlineKeyboardMarkup(kb)
         )
     else:
-        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, text, reply_markup=InlineKeyboardMarkup(kb))
 
 
 async def cb_admin_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1572,18 +1604,20 @@ async def cb_admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     context.user_data["new_admin_flow"] = {}
-    await query.edit_message_text("👥 *Add Admin Wizard*\n\nStep 1/3 — Please enter the Telegram User ID of the new admin:")
+    await send_or_edit_main_menu(update, context, "👥 *Add Admin Wizard*\n\nStep 1/3 — Please enter the Telegram User ID of the new admin:")
     return STATE_NEW_ADMIN
 
 
 @admin_only
 async def cmd_add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     context.user_data["new_admin_flow"] = {}
-    await _reply(update, "👥 *Add Admin Wizard*\n\nStep 1/3 — Please enter the Telegram User ID of the new admin:")
+    await _reply(update, context, "👥 *Add Admin Wizard*\n\nStep 1/3 — Please enter the Telegram User ID of the new admin:")
     return STATE_NEW_ADMIN
 
 
 async def msg_new_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     flow = context.user_data.get("new_admin_flow")
     if flow is None:
         text = update.effective_message.text.strip()
@@ -1605,9 +1639,9 @@ async def msg_new_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                         ),
                         user_id=update.effective_user.id,
                     )
-                    await _reply(update, f"✅ Admin @{username} added with role *{role}*")
+                    await _reply(update, context, f"✅ Admin @{username} added with role *{role}*")
                 except Exception as e:
-                    await _reply(update, f"❌ Failed: {e}")
+                    await _reply(update, context, f"❌ Failed: {e}")
                 return ConversationHandler.END
         flow = {}
         context.user_data["new_admin_flow"] = flow
@@ -1617,10 +1651,10 @@ async def msg_new_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         try:
             tg_id = int(text)
             flow["telegram_id"] = tg_id
-            await _reply(update, "Step 2/3 — Enter their Telegram username (with or without @):")
+            await _reply(update, context, "Step 2/3 — Enter their Telegram username (with or without @):")
             return STATE_NEW_ADMIN
         except ValueError:
-            await _reply(update, "❌ User ID must be a number. Please enter a valid Telegram User ID:")
+            await _reply(update, context, "❌ User ID must be a number. Please enter a valid Telegram User ID:")
             return STATE_NEW_ADMIN
 
     if "username" not in flow:
@@ -1636,7 +1670,7 @@ async def msg_new_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ],
             [InlineKeyboardButton("❌ Cancel", callback_data="admin_menu:admins")]
         ]
-        await _reply(update, "Step 3/3 — Choose their admin role:", reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, "Step 3/3 — Choose their admin role:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_NEW_ADMIN
     return STATE_NEW_ADMIN
 
@@ -1648,7 +1682,7 @@ async def cb_admin_add_role(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     flow = context.user_data.pop("new_admin_flow", None)
 
     if not flow or "telegram_id" not in flow or "username" not in flow:
-        await query.edit_message_text("❌ Session expired.")
+        await send_or_edit_main_menu(update, context, "❌ Session expired.")
         return ConversationHandler.END
 
     tg_id = flow["telegram_id"]
@@ -1666,9 +1700,9 @@ async def cb_admin_add_role(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             ),
             user_id=update.effective_user.id,
         )
-        await query.edit_message_text(f"✅ Admin @{username} added successfully with role *{role}*!", parse_mode=ParseMode.MARKDOWN)
+        await send_or_edit_main_menu(update, context, f"✅ Admin @{username} added successfully with role *{role}*!", parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
-        await query.edit_message_text(f"❌ Failed to add admin: {e}")
+        await send_or_edit_main_menu(update, context, f"❌ Failed to add admin: {e}")
 
     await cmd_admins(update, context)
     return ConversationHandler.END
@@ -1678,7 +1712,7 @@ async def cb_admin_add_role(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def cmd_remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args
     if not args:
-        await _reply(update, "Usage: `/removeadmin <telegram_id>`")
+        await _reply(update, context, "Usage: `/removeadmin <telegram_id>`")
         return
     try:
         tg_id = int(args[0])
@@ -1689,10 +1723,10 @@ async def cmd_remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             ),
             user_id=update.effective_user.id,
         )
-        await _reply(update,
+        await _reply(update, context,
             "✅ Admin removed." if resp.success else f"❌ {resp.message}")
     except (ValueError, grpc.RpcError) as e:
-        await _reply(update, f"⚠️ {e}")
+        await _reply(update, context, f"⚠️ {e}")
 
 
 # ── System settings ───────────────────────────────────────────────────────────
@@ -1707,7 +1741,7 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             user_id=update.effective_user.id,
         )
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
         return
 
     text = (
@@ -1751,7 +1785,7 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             reply_markup=InlineKeyboardMarkup(kb)
         )
     else:
-        await _reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+        await _reply(update, context, text, reply_markup=InlineKeyboardMarkup(kb))
 
 
 async def cb_set_setting_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1772,14 +1806,15 @@ async def cb_set_setting_key(update: Update, context: ContextTypes.DEFAULT_TYPE)
     }
 
     friendly = friendly_names.get(key, key)
-    await query.edit_message_text(f"✏️ *Editing System Setting*\n\nPlease enter the new value for *{friendly}*:")
+    await send_or_edit_main_menu(update, context, f"✏️ *Editing System Setting*\n\nPlease enter the new value for *{friendly}*:")
     return STATE_SETTINGS_VAL
 
 
 async def msg_settings_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     key = context.user_data.pop("editing_setting_key", None)
     if not key:
-        await _reply(update, "❌ Setting session expired.")
+        await _reply(update, context, "❌ Setting session expired.")
         return ConversationHandler.END
 
     val_text = update.effective_message.text.strip()
@@ -1790,7 +1825,7 @@ async def msg_settings_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
             user_id=update.effective_user.id,
         )
     except Exception as e:
-        await _reply(update, f"❌ Failed to fetch current settings: {e}")
+        await _reply(update, context, f"❌ Failed to fetch current settings: {e}")
         return ConversationHandler.END
 
     try:
@@ -1813,7 +1848,7 @@ async def msg_settings_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 raise ValueError("Value cannot be negative.")
             setattr(s, key, val)
     except ValueError as e:
-        await _reply(update, f"❌ Invalid value: {e}. Please try again.")
+        await _reply(update, context, f"❌ Invalid value: {e}. Please try again.")
         context.user_data["editing_setting_key"] = key
         return STATE_SETTINGS_VAL
 
@@ -1823,9 +1858,9 @@ async def msg_settings_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
             lambda stub, meta: stub.SetSystemSettings(s, metadata=meta),
             user_id=update.effective_user.id,
         )
-        await _reply(update, f"✅ Setting *{key}* updated successfully!")
+        await _reply(update, context, f"✅ Setting *{key}* updated successfully!")
     except Exception as e:
-        await _reply(update, f"❌ Failed to save settings: {e}")
+        await _reply(update, context, f"❌ Failed to save settings: {e}")
 
     await cmd_settings(update, context)
     return ConversationHandler.END
@@ -1846,15 +1881,14 @@ async def cmd_revenue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             ),
             user_id=update.effective_user.id,
         )
-        await _reply(
-            update,
+        await _reply(update, context,
             "💰 *Revenue — Last 30 Days*\n\n"
             f"Total:        LKR {resp.total_revenue:,.0f}\n"
             f"Orders:       {resp.order_count}\n"
             f"Avg order:    LKR {resp.avg_order_value:,.0f}",
         )
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
 
 
 @admin_only
@@ -1871,7 +1905,7 @@ async def cmd_top_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             user_id=update.effective_user.id,
         )
         if not resp.items:
-            await _reply(update, "No delivery data yet.")
+            await _reply(update, context, "No delivery data yet.")
             return
 
         lines = ["🏆 *Top Items — Last 30 Days*\n"]
@@ -1880,9 +1914,9 @@ async def cmd_top_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 f"{i}. *{it.name}*\n"
                 f"   {it.units_sold} units — LKR {it.revenue:,.0f}"
             )
-        await _reply(update, "\n\n".join(lines))
+        await _reply(update, context, "\n\n".join(lines))
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
 
 
 @admin_only
@@ -1903,9 +1937,9 @@ async def cmd_order_trend(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             day = time.strftime("%a %d %b", time.gmtime(p.date_ts))
             bar = "█" * min(p.count, 30)
             lines.append(f"`{day}`: {bar} {p.count}")
-        await _reply(update, "\n".join(lines))
+        await _reply(update, context, "\n".join(lines))
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
 
 
 @admin_only
@@ -1920,7 +1954,7 @@ async def cmd_low_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             user_id=update.effective_user.id,
         )
         if not resp.items:
-            await _reply(update, "✅ All items adequately stocked (above threshold 10).")
+            await _reply(update, context, "✅ All items adequately stocked (above threshold 10).")
             return
 
         lines = ["📉 *Low Stock Report*\n"]
@@ -1931,9 +1965,9 @@ async def cmd_low_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 f"   Stock: {it.stock}   Threshold: {it.threshold}\n"
                 f"   ID: `{it.item_id}`"
             )
-        await _reply(update, "\n\n".join(lines))
+        await _reply(update, context, "\n\n".join(lines))
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
 
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
@@ -1955,7 +1989,7 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             user_id=update.effective_user.id,
         )
         if not resp.entries:
-            await _reply(update, "📜 No audit events in the last 24 hours.")
+            await _reply(update, context, "📜 No audit events in the last 24 hours.")
             return
 
         lines = [f"📜 *Audit Log* (last 24h — {resp.total_count} total)\n"]
@@ -1965,9 +1999,9 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 f"`{ts}` *{e.action}* → `{e.target_id}`\n"
                 f"   {e.detail[:80]}"
             )
-        await _reply(update, "\n\n".join(lines))
+        await _reply(update, context, "\n\n".join(lines))
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
 
 
 # ── Maintenance ───────────────────────────────────────────────────────────────
@@ -1981,16 +2015,16 @@ async def cmd_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             lambda stub, meta: stub.ToggleMaintenance(pb.Empty(), metadata=meta),
             user_id=update.effective_user.id,
         )
-        await _reply(update, f"🔒 {resp.message}")
+        await _reply(update, context, f"🔒 {resp.message}")
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
 
 
 @admin_only
 async def cmd_schedule_maintenance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     """A-059: Schedule a future maintenance window."""
-    await _reply(
-        update,
+    await _reply(update, context,
         "🔒 *Schedule Maintenance Window*\n\n"
         "Format: `YYYY-MM-DD HH:MM | YYYY-MM-DD HH:MM | reason`\n\n"
         "Example:\n`2026-05-20 02:00 | 2026-05-20 04:00 | Database upgrade`",
@@ -1999,11 +2033,12 @@ async def cmd_schedule_maintenance(update: Update, context: ContextTypes.DEFAULT
 
 
 async def msg_maintenance_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     import datetime
     text  = update.effective_message.text.strip()
     parts = [p.strip() for p in text.split("|")]
     if len(parts) < 2:
-        await _reply(update, "❌ Format: `start | end | reason`")
+        await _reply(update, context, "❌ Format: `start | end | reason`")
         return STATE_MAINT_WINDOW
 
     FMT = "%Y-%m-%d %H:%M"
@@ -2022,12 +2057,12 @@ async def msg_maintenance_window(update: Update, context: ContextTypes.DEFAULT_T
             ),
             user_id=update.effective_user.id,
         )
-        await _reply(update, f"✅ {resp.message}")
+        await _reply(update, context, f"✅ {resp.message}")
     except ValueError:
-        await _reply(update, "❌ Date format error. Use: `YYYY-MM-DD HH:MM`")
+        await _reply(update, context, "❌ Date format error. Use: `YYYY-MM-DD HH:MM`")
         return STATE_MAINT_WINDOW
     except grpc.RpcError as e:
-        await _rpc_error(update, e)
+        await _rpc_error(update, context, e)
     return ConversationHandler.END
 
 
@@ -2064,9 +2099,9 @@ async def cb_do_assign(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             ),
             user_id=update.effective_user.id,
         )
-        await query.edit_message_text(f"✅ Driver {driver_id} assigned to order {order_id}")
+        await send_or_edit_main_menu(update, context, f"✅ Driver {driver_id} assigned to order {order_id}")
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
 
 
 async def cb_do_resolve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -2084,7 +2119,7 @@ async def cb_do_resolve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             ),
             user_id=update.effective_user.id,
         )
-        await query.edit_message_text(f"✅ Issue resolved: {resolution}")
+        await send_or_edit_main_menu(update, context, f"✅ Issue resolved: {resolution}")
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
     return ConversationHandler.END

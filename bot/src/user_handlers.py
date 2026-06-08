@@ -25,6 +25,7 @@ from telegram import (
 )
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, ConversationHandler
+from message_manager import send_or_edit_main_menu, delete_user_message
 
 from api import logistics_pb2 as pb
 from grpc_client import pool
@@ -102,14 +103,14 @@ async def _update_msg(update: Update, context: ContextTypes.DEFAULT_TYPE, text: 
     return msg
 
 
-async def _safe_reply(update: Update, text: str, **kwargs) -> None:
+async def _safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs) -> None:
     """Reply with parse_mode=Markdown, gracefully handle long messages."""
     msg = update.effective_message
     if not msg:
         return
     if len(text) > 4096:
         text = text[:4090] + "\n…"
-    await msg.reply_text(text, parse_mode=ParseMode.MARKDOWN, **kwargs)
+    await send_or_edit_main_menu(update, context, text, parse_mode=ParseMode.MARKDOWN, **kwargs)
 
 
 def _order_status_emoji(status: str) -> str:
@@ -128,11 +129,12 @@ def _order_status_emoji(status: str) -> str:
 @rate_limit
 @check_maintenance
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     """BUG-030: reset any stale conversation state. BUG-016: invalidate cart cache."""
     user = update.effective_user
     user_id = user.id
     await _cart(context).invalidate_local(user_id)
-    
+
     # Try to delete incoming /start command message to keep chat tidy
     try:
         await update.effective_message.delete()
@@ -154,7 +156,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         # Prompt user to set up profile
         context.user_data["registering"] = True
         context.user_data["reg_profile"] = {"user_id": user_id}
-        
+
         msg = await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text="👋 *Welcome to Logistics Engine!*\n\nLet's set up your profile first.\n\n✏️ *Step 1:* Please enter your full display name:",
@@ -228,7 +230,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
          InlineKeyboardButton("🎁 Points",    callback_data="loyalty_view")],
         [InlineKeyboardButton("❓ Help",       callback_data="help")],
     ]
-    
+
     # Try deleting previous bot message before sending main menu
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
@@ -263,11 +265,12 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "*Loyalty points*\n"
         "Earn points on every order. Check your balance with /points."
     )
-    await _safe_reply(update, text)
+    await send_or_edit_main_menu(update, context, text)
 
 
 async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await _safe_reply(update, "Operation cancelled.")
+    await delete_user_message(update, context)
+    await send_or_edit_main_menu(update, context, "Operation cancelled.")
     return ConversationHandler.END
 
 
@@ -329,7 +332,7 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
           for cat in categories]
     kb.append([InlineKeyboardButton("🔍 All Items", callback_data="cat_select:all:0")])
     kb.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="profile_edit:back_to_main")])
-    
+
     msg = await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=f"{disclaimer}🛒 *Browse our catalog*\nChoose a category:",
@@ -442,7 +445,7 @@ async def cb_item_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             lambda stub, meta: stub.GetItem(pb.ItemId(id=item_id), metadata=meta),
         )
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
         return
 
     stock_text = (
@@ -461,14 +464,14 @@ async def cb_item_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             user_id=user_id
         )
         default_addr = next((a for a in addr_resp.addresses if a.is_default), None)
-        
+
         # Fetch active warehouses
         wh_resp = await pool.call(
             "/logistics.LogisticsEngine/ListWarehouses",
             lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta)
         )
         active_warehouses = [w for w in wh_resp.warehouses if w.is_active]
-        
+
         if not default_addr:
             distance_info = "📍 _Set up address in Profile to see delivery distance._"
         elif default_addr.lat == 0.0 or default_addr.lon == 0.0:
@@ -599,6 +602,7 @@ async def cb_stock_notify(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 @rate_limit
 @check_maintenance
 async def cmd_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     """Show cart with +/− buttons and checkout option."""
     user_id = update.effective_user.id
     return await _show_cart(update, context, user_id)
@@ -608,8 +612,7 @@ async def _show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id
     items = await _cart(context).get(user_id)
 
     if not items:
-        await _safe_reply(
-            update,
+        await _safe_reply(update, context,
             "🛒 Your cart is empty.\n\nUse /catalog to browse items.",
         )
         return ConversationHandler.END
@@ -714,7 +717,7 @@ async def cb_clear_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     query = update.callback_query
     await query.answer()
     await _cart(context).clear(update.effective_user.id)
-    await query.edit_message_text("🛒 Cart cleared.")
+    await send_or_edit_main_menu(update, context, "🛒 Cart cleared.")
 
 
 async def _refresh_cart_message(query, context, user_id: int) -> None:
@@ -773,7 +776,7 @@ async def cb_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     items = await _cart(context).get(user_id)
     if not items:
-        await query.edit_message_text("🛒 Your cart is empty. Use /catalog to add items.")
+        await send_or_edit_main_menu(update, context, "🛒 Your cart is empty. Use /catalog to add items.")
         return ConversationHandler.END
 
     # U-030: load saved addresses
@@ -816,7 +819,7 @@ async def cb_address_select(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await query.message.delete()
         except Exception:
             pass
-            
+
         reply_kb = [
             [KeyboardButton("📍 Share Location", request_location=True)],
         ]
@@ -852,24 +855,25 @@ async def cb_address_select(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def msg_delivery_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     """Store typed address/location and proceed to quote."""
     msg = update.effective_message
     user_id = update.effective_user.id
-    
+
     # Try deleting user incoming message
     try:
         await msg.delete()
     except Exception:
         pass
-        
+
     lat = float(os.environ.get("DEFAULT_LAT", "6.9271"))
     lon = float(os.environ.get("DEFAULT_LON", "79.8612"))
-    
+
     if msg.location:
         lat = msg.location.latitude
         lon = msg.location.longitude
         addr_text = f"GPS: ({lat:.6f}, {lon:.6f})"
-        
+
         # Save as a default address
         try:
             await pool.call(
@@ -895,13 +899,18 @@ async def msg_delivery_address(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data["delivery_address"] = addr_text
     context.user_data["delivery_lat"] = lat
     context.user_data["delivery_lon"] = lon
-    
-    # Remove old bot message
+
+    # Clean reply keyboard cleanly
     try:
-        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
+        rm_msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="📍 Location recorded.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=rm_msg.message_id)
     except Exception:
         pass
-        
+
     return await _proceed_to_quote(update, context)
 
 
@@ -925,7 +934,7 @@ async def _proceed_to_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             user_id=user_id,
         )
     except grpc.RpcError as e:
-        await _safe_reply(update, f"⚠️ Could not calculate quote: {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ Could not calculate quote: {e.details()}")
         return ConversationHandler.END
 
     context.user_data["quote"] = quote
@@ -957,7 +966,7 @@ async def _proceed_to_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         + f"\n\n📍 Delivering to: {context.user_data.get('delivery_address', 'N/A')}"
         + f"\n🕐 Est. delivery: ~{int(quote.distance_km * 3 + 15)} min"  # U-052: ETA estimate
     )
-    await _safe_reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+    await send_or_edit_main_menu(update, context, text, reply_markup=InlineKeyboardMarkup(kb))
     return STATE_PROMO
 
 
@@ -966,7 +975,7 @@ async def cb_use_promo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await query.answer()
 
     if query.data == "promo:enter":
-        await query.edit_message_text("🏷 Enter your promo code:")
+        await send_or_edit_main_menu(update, context, "🏷 Enter your promo code:")
         return STATE_PROMO_CODE
 
     if query.data.startswith("promo:loyalty:"):
@@ -978,6 +987,7 @@ async def cb_use_promo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def msg_promo_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     code = update.effective_message.text.strip().upper()
     user_id = update.effective_user.id
     items = await _cart(context).get(user_id)
@@ -1002,12 +1012,12 @@ async def msg_promo_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if quote.promo_applied:
             context.user_data["quote"] = quote
             context.user_data["promo_code"] = code
-            await _safe_reply(update,
+            await _safe_reply(update, context,
                 f"✅ Promo *{code}* applied! You save LKR {quote.promo_discount:.0f}")
         else:
-            await _safe_reply(update, "❌ Invalid or expired promo code.")
+            await send_or_edit_main_menu(update, context, "❌ Invalid or expired promo code.")
     except grpc.RpcError as e:
-        await _safe_reply(update, f"⚠️ {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
 
     return await _show_time_slots(update, context)
 
@@ -1031,7 +1041,7 @@ async def _show_time_slots(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             f"🕐 {label}",
             callback_data=f"slot:{start}:{end}",
         )])
-    await _safe_reply(update, "🕐 *Choose a delivery time:*",
+    await _safe_reply(update, context, "🕐 *Choose a delivery time:*",
                       reply_markup=InlineKeyboardMarkup(kb))
     return STATE_SLOT
 
@@ -1049,7 +1059,7 @@ async def _show_order_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Show final confirmation with contactless option."""
     quote: pb.QuoteResponse = context.user_data.get("quote")
     if not quote:
-        await _safe_reply(update, "⚠️ Session expired. Please start checkout again.")
+        await send_or_edit_main_menu(update, context, "⚠️ Session expired. Please start checkout again.")
         return ConversationHandler.END
 
     kb = [
@@ -1068,7 +1078,7 @@ async def _show_order_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=InlineKeyboardMarkup(kb),
         )
     else:
-        await _safe_reply(update, text, reply_markup=InlineKeyboardMarkup(kb))
+        await send_or_edit_main_menu(update, context, text, reply_markup=InlineKeyboardMarkup(kb))
     return STATE_CONFIRM
 
 
@@ -1081,7 +1091,7 @@ async def cb_confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     quote: pb.QuoteResponse = context.user_data.get("quote")
 
     if not quote or not items:
-        await query.edit_message_text("⚠️ Session expired. Please start checkout again with /cart")
+        await send_or_edit_main_menu(update, context, "⚠️ Session expired. Please start checkout again with /cart")
         return ConversationHandler.END
 
     contactless = query.data == "confirm_order_contactless"
@@ -1107,7 +1117,7 @@ async def cb_confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             user_id=user.id,
         )
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ Could not place order: {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ Could not place order: {e.details()}")
         return ConversationHandler.END
 
     await _cart(context).clear(user.id)
@@ -1123,7 +1133,7 @@ async def cb_confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if quote.loyalty_points_earned > 0:
         confirmation += f"\n\n🏅 You earned *{quote.loyalty_points_earned} loyalty points!*"
 
-    await query.edit_message_text(confirmation, parse_mode=ParseMode.MARKDOWN)
+    await send_or_edit_main_menu(update, context, confirmation, parse_mode=ParseMode.MARKDOWN)
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -1146,11 +1156,11 @@ async def cmd_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             user_id=user_id,
         )
     except grpc.RpcError as e:
-        await _safe_reply(update, f"⚠️ Could not load orders: {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ Could not load orders: {e.details()}")
         return
 
     if not resp.orders:
-        await _safe_reply(update, "📋 You have no orders yet.\n\nUse /catalog to place your first order!")
+        await send_or_edit_main_menu(update, context, "📋 You have no orders yet.\n\nUse /catalog to place your first order!")
         return
 
     lines = [f"📋 *My Orders* (page {page + 1})\n"]
@@ -1173,7 +1183,7 @@ async def cmd_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if nav:
         kb.append(nav)
 
-    await _safe_reply(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(kb))
+    await send_or_edit_main_menu(update, context, "\n".join(lines), reply_markup=InlineKeyboardMarkup(kb))
 
 
 async def cb_order_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1190,7 +1200,7 @@ async def cb_order_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             ),
         )
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
         return
 
     emoji = _order_status_emoji(order.status)
@@ -1291,7 +1301,7 @@ async def cb_reorder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 @rate_limit
 async def cmd_cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _safe_reply(update, "Please use /orders to find and cancel an order.")
+    await send_or_edit_main_menu(update, context, "Please use /orders to find and cancel an order.")
 
 
 async def cb_confirm_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1317,11 +1327,11 @@ async def cb_confirm_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             f"✅ {resp.message}" if resp.success else f"❌ {resp.message}"
         )
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
 
 
 async def cmd_report_issue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _safe_reply(update, "Please use /orders, tap the delivered order, then tap ⚠️ Report Issue.")
+    await send_or_edit_main_menu(update, context, "Please use /orders, tap the delivered order, then tap ⚠️ Report Issue.")
 
 
 async def cb_issue_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1407,10 +1417,10 @@ async def _show_catalog_categories_helper(query) -> None:
           for cat in categories]
     kb.append([InlineKeyboardButton("🔍 All Items", callback_data="cat_select:all:0")])
     kb.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="profile_edit:back_to_main")])
-    
+
     chat_id = query.message.chat_id if hasattr(query, "message") and query.message is not None else query.chat_id
     message_id = query.message.message_id if hasattr(query, "message") and query.message is not None else query.message_id
-    
+
     await query.bot.edit_message_text(
         chat_id=chat_id,
         message_id=message_id,
@@ -1495,12 +1505,12 @@ async def cb_profile_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if field == "name":
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="profile_edit:view")]]
-        await query.edit_message_text("✏️ Enter your new display name:", reply_markup=InlineKeyboardMarkup(kb))
+        await send_or_edit_main_menu(update, context, "✏️ Enter your new display name:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROFILE_NAME
 
     if field == "phone":
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="profile_edit:view")]]
-        await query.edit_message_text("📱 Enter your phone number:", reply_markup=InlineKeyboardMarkup(kb))
+        await send_or_edit_main_menu(update, context, "📱 Enter your phone number:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROFILE_PHONE
 
     if field == "addresses":
@@ -1513,7 +1523,7 @@ async def cb_profile_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.message.delete()
         except Exception:
             pass
-            
+
         reply_kb = [
             [KeyboardButton("📍 Share Location", request_location=True)],
         ]
@@ -1529,15 +1539,16 @@ async def cb_profile_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def msg_profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     user_id = update.effective_user.id
     name = update.effective_message.text.strip()
-    
+
     # Try deleting user incoming name message
     try:
         await update.effective_message.delete()
     except Exception:
         pass
-        
+
     try:
         try:
             profile = await pool.call(
@@ -1554,7 +1565,7 @@ async def msg_profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             lambda stub, meta: stub.UpsertProfile(profile, metadata=meta),
             user_id=user_id,
         )
-        
+
         # Check if onboarding
         if context.user_data.get("registering"):
             # Update the old bot message inline to ask for phone
@@ -1565,7 +1576,7 @@ async def msg_profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 parse_mode=ParseMode.MARKDOWN
             )
             return STATE_PROFILE_PHONE
-            
+
         # Standard Profile Edit
         # Delete old bot message and send a clean updated profile
         try:
@@ -1579,20 +1590,21 @@ async def msg_profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         context.user_data["last_bot_msg_id"] = msg.message_id
         await cmd_profile(update, context)
     except Exception as e:
-        await _safe_reply(update, f"⚠️ Could not update profile: {e}")
+        await send_or_edit_main_menu(update, context, f"⚠️ Could not update profile: {e}")
     return ConversationHandler.END
 
 
 async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     user_id = update.effective_user.id
     phone = update.effective_message.text.strip()
-    
+
     # Try deleting user incoming phone message
     try:
         await update.effective_message.delete()
     except Exception:
         pass
-        
+
     try:
         try:
             profile = await pool.call(
@@ -1609,7 +1621,7 @@ async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             lambda stub, meta: stub.UpsertProfile(profile, metadata=meta),
             user_id=user_id,
         )
-        
+
         # Check if onboarding
         if context.user_data.get("registering"):
             # Update the old bot message and prompt for address with location keyboard
@@ -1617,7 +1629,7 @@ async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
             except Exception:
                 pass
-                
+
             reply_kb = [
                 [KeyboardButton("📍 Share Location", request_location=True)],
             ]
@@ -1634,7 +1646,7 @@ async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             )
             context.user_data["last_bot_msg_id"] = msg.message_id
             return STATE_NEW_ADDRESS
-            
+
         # Standard Profile Edit
         try:
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
@@ -1647,7 +1659,7 @@ async def msg_profile_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context.user_data["last_bot_msg_id"] = msg.message_id
         await cmd_profile(update, context)
     except Exception as e:
-        await _safe_reply(update, f"⚠️ Could not update profile: {e}")
+        await send_or_edit_main_menu(update, context, f"⚠️ Could not update profile: {e}")
     return ConversationHandler.END
 
 
@@ -1799,16 +1811,17 @@ async def cb_address_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 @rate_limit
 async def cmd_add_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     try:
         await update.effective_message.delete()
     except Exception:
         pass
-        
+
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
     except Exception:
         pass
-        
+
     reply_kb = [
         [KeyboardButton("📍 Share Location", request_location=True)],
     ]
@@ -1823,15 +1836,16 @@ async def cmd_add_address(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def msg_new_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     user_id = update.effective_user.id
     msg = update.effective_message
-    
+
     # Try deleting user incoming message
     try:
         await msg.delete()
     except Exception:
         pass
-        
+
     lat = 0.0
     lon = 0.0
     if msg.location:
@@ -1840,7 +1854,7 @@ async def msg_new_address(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         address_text = f"GPS: ({lat:.6f}, {lon:.6f})"
     else:
         address_text = msg.text.strip()
-        
+
     try:
         await pool.call(
             "/logistics.LogisticsEngine/SaveAddress",
@@ -1857,13 +1871,13 @@ async def msg_new_address(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             ),
             user_id=user_id,
         )
-        
+
         # Remove old bot message
         try:
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=context.user_data.get("last_bot_msg_id", 0))
         except Exception:
             pass
-            
+
         # Clean reply keyboard cleanly
         try:
             rm_msg = await context.bot.send_message(
@@ -1877,7 +1891,7 @@ async def msg_new_address(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         if context.user_data.get("registering"):
             context.user_data.pop("registering", None)
-            
+
             kb = [
                 [InlineKeyboardButton("🛒 Browse Catalog", callback_data="cat_select:all:0")],
                 [InlineKeyboardButton("🛍 My Cart",   callback_data="checkout"),
@@ -1901,7 +1915,7 @@ async def msg_new_address(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
             # Fetch address list and edit the screen inline
             await _edit_address_list(bot_msg, user_id)
-            
+
     except Exception as e:
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -1924,15 +1938,14 @@ async def cmd_points(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             ),
             user_id=user_id,
         )
-        await _safe_reply(
-            update,
+        await _safe_reply(update, context,
             f"🏅 *Loyalty Points*\n\n"
             f"Balance: *{bal.points} points*\n"
             f"Tier: {bal.tier.title()}\n\n"
             f"Earn more points by placing orders!",
         )
     except Exception as e:
-        await _safe_reply(update, f"⚠️ {e}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e}")
 
 
 @rate_limit
@@ -1956,7 +1969,7 @@ async def cb_loyalty_view(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             parse_mode=ParseMode.MARKDOWN,
         )
     except Exception as e:
-        await query.edit_message_text(f"⚠️ Could not load points: {e}")
+        await send_or_edit_main_menu(update, context, f"⚠️ Could not load points: {e}")
 
 
 @rate_limit
@@ -1964,8 +1977,7 @@ async def cmd_refer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """U-041: Referral code."""
     user_id = update.effective_user.id
     code = f"REF{user_id}"
-    await _safe_reply(
-        update,
+    await _safe_reply(update, context,
         f"🎁 *Refer a Friend*\n\n"
         f"Share your code: `{code}`\n\n"
         f"When a friend places their first order using your code, "
@@ -1993,15 +2005,14 @@ async def cmd_spending(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         total = sum(o.total for o in resp.orders if o.timestamp >= month_start)
         count = sum(1 for o in resp.orders if o.timestamp >= month_start)
-        await _safe_reply(
-            update,
+        await _safe_reply(update, context,
             f"💰 *This Month's Spending*\n\n"
             f"Orders: {count}\n"
             f"Total spent: LKR {total:.0f}\n"
             f"Average order: LKR {total / count:.0f}" if count else "No orders this month.",
         )
     except Exception as e:
-        await _safe_reply(update, f"⚠️ {e}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e}")
 
 
 @rate_limit
@@ -2030,7 +2041,7 @@ async def cmd_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         [toggle_btn("Flash Deals",    "flash_deals",    prefs.flash_deals)],
         [toggle_btn("System Alerts",  "system_alerts",  prefs.system_alerts)],
     ]
-    await _safe_reply(update, "🔔 *Notification Preferences*\nTap to toggle:",
+    await _safe_reply(update, context, "🔔 *Notification Preferences*\nTap to toggle:",
                       reply_markup=InlineKeyboardMarkup(kb))
 
 
@@ -2069,7 +2080,7 @@ async def cmd_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         [InlineKeyboardButton("🇱🇰 සිංහල",  callback_data="lang_select:si")],
         [InlineKeyboardButton("🇱🇰 தமிழ்",   callback_data="lang_select:ta")],
     ]
-    await _safe_reply(update, "🌐 *Select your language:*",
+    await _safe_reply(update, context, "🌐 *Select your language:*",
                       reply_markup=InlineKeyboardMarkup(kb))
 
 
@@ -2095,20 +2106,20 @@ async def cb_language_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
             lambda stub, meta: stub.UpsertProfile(profile, metadata=meta),
             user_id=user_id,
         )
-        await query.edit_message_text(f"✅ Language set to *{lang}*", parse_mode=ParseMode.MARKDOWN)
+        await send_or_edit_main_menu(update, context, f"✅ Language set to *{lang}*", parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
         await query.answer(f"⚠️ Could not set language: {e}", show_alert=True)
 
 
 @rate_limit
 async def cmd_delete_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await delete_user_message(update, context)
     """U-036: GDPR data deletion request."""
     kb = [
         [InlineKeyboardButton("⚠️ Yes, delete my data", callback_data="confirm_delete")],
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
     ]
-    await _safe_reply(
-        update,
+    await _safe_reply(update, context,
         "⚠️ *Delete Account*\n\n"
         "This will anonymise all your personal data (name, phone, addresses).\n"
         "Your order history will be retained for legal/accounting purposes but "
@@ -2160,7 +2171,7 @@ async def cb_confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             "✅ Your personal data has been removed. Thank you for using our service."
         )
     except Exception as e:
-        await query.edit_message_text(f"⚠️ Could not delete account: {e}")
+        await send_or_edit_main_menu(update, context, f"⚠️ Could not delete account: {e}")
 
     return ConversationHandler.END
 
@@ -2170,17 +2181,16 @@ async def cb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     if query:
         await query.answer()
-        await query.edit_message_text("❌ Operation cancelled.")
+        await send_or_edit_main_menu(update, context, "❌ Operation cancelled.")
     else:
-        await _safe_reply(update, "❌ Operation cancelled.")
+        await send_or_edit_main_menu(update, context, "❌ Operation cancelled.")
     return ConversationHandler.END
 
 
 @rate_limit
 async def cmd_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """U-046: Live support command."""
-    await _safe_reply(
-        update,
+    await _safe_reply(update, context,
         "🆘 *Support*\n\n"
         "Our support team will be with you shortly.\n\n"
         "Please describe your issue and include your order number if applicable "
@@ -2267,9 +2277,9 @@ async def cb_issue_submit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             ),
             user_id=update.effective_user.id,
         )
-        await query.edit_message_text(f"✅ Issue reported ({issue_type}). Our support team will contact you shortly.")
+        await send_or_edit_main_menu(update, context, f"✅ Issue reported ({issue_type}). Our support team will contact you shortly.")
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ {e.details()}")
+        await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
 
 
 async def cb_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2291,5 +2301,5 @@ async def cb_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "*Loyalty points*\n"
         "Earn points on every order. Check your balance with /points."
     )
-    await query.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await send_or_edit_main_menu(update, context, text, parse_mode=ParseMode.MARKDOWN)
 
