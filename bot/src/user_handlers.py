@@ -9,6 +9,7 @@ import logging
 import os
 import time
 import uuid
+import hashlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -1114,7 +1115,7 @@ async def cb_confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     quote_data=quote.quote_data,
                     expected_total=quote.grand_total,
                     receipt_text=quote.formatted_receipt,
-                    idempotency_key=str(uuid.uuid4()),  # BUG-012
+                    idempotency_key=hashlib.sha256(quote.quote_data).hexdigest(),  # BUG-012 fixed
                     delivery_address=context.user_data.get("delivery_address", ""),
                     scheduled_for=context.user_data.get("slot_start", 0),
                     contactless=contactless,
@@ -2225,7 +2226,8 @@ async def poll_notifications(app) -> None:
                 "/logistics.LogisticsEngine/ListAdmins",
                 lambda stub, meta: stub.ListAdmins(pb.Empty(), metadata=meta),
             )
-            user_ids = [a.telegram_id for a in admin_resp.admins]
+            user_ids = {a.telegram_id for a in admin_resp.admins}
+            user_ids.update(app.user_data.keys())
 
             for uid in user_ids:
                 try:
@@ -2276,7 +2278,7 @@ async def cb_issue_submit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await pool.call(
             "/logistics.LogisticsEngine/UpdateOrderStatus",
             lambda stub, meta: stub.UpdateOrderStatus(
-                pb.UpdateOrderStatusRequest(
+                pb.UpdateStatusRequest(
                     order_id=order_id,
                     status="issue",
                     reason=f"Customer reported issue: {issue_type}"

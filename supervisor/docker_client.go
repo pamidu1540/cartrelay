@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -209,13 +212,21 @@ func GRPCToggleMaintenance() (bool, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("x-internal-token", token))
+
+	method := "/logistics.LogisticsEngine/ToggleMaintenance"
+	timestamp := time.Now().Unix()
+	msg := fmt.Sprintf("%s:%d", method, timestamp)
+	mac := hmac.New(sha256.New, []byte(token))
+	mac.Write([]byte(msg))
+	signedToken := hex.EncodeToString(mac.Sum(nil))
+
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("x-auth-token", signedToken))
 
 	req   := &emptypb.Empty{}
 	reply := &statusResponse{}
 
 	if err := conn.Invoke(ctx,
-		"/logistics.LogisticsEngine/ToggleMaintenance",
+		method,
 		req, reply,
 	); err != nil {
 		return false, fmt.Errorf("RPC: %w", err)

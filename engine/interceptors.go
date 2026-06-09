@@ -37,11 +37,11 @@ func actorFromCtx(ctx context.Context) int64 {
 }
 
 // AuthInterceptor validates each request via HMAC-SHA256 over the method name +
-// unix-minute timestamp using the shared INTERNAL_TOKEN as the key.
-// Tokens older than ±2 minutes are rejected for replay protection.
+// unix timestamp using the shared INTERNAL_TOKEN as the key.
+// Tokens older than ±5 seconds are rejected for replay protection.
 //
 // Header format:
-//   x-auth-token:    <hex(HMAC-SHA256(key=INTERNAL_TOKEN, msg="method:minute"))>
+//   x-auth-token:    <hex(HMAC-SHA256(key=INTERNAL_TOKEN, msg="method:timestamp"))>
 //   x-actor-id:      <telegram_user_id>   (set by bot; validated against admin_users)
 //   x-actor-role:    <role>               (informational; enforced server-side)
 
@@ -92,14 +92,14 @@ func AuthInterceptor(
 	return handler(newCtx, req)
 }
 
-// validateHMACToken checks the HMAC for the current and adjacent minutes
-// to tolerate clock skew between bot and engine.
+// validateHMACToken checks the HMAC for the current and adjacent seconds
+// to tolerate clock skew (±5 seconds) between bot and engine.
 func validateHMACToken(token, method string) bool {
 	secret := []byte(os.Getenv("INTERNAL_TOKEN"))
-	now := time.Now().Unix() / 60 // current minute
+	now := time.Now().Unix()
 
-	for _, minute := range []int64{now - 1, now, now + 1} {
-		msg := fmt.Sprintf("%s:%d", method, minute)
+	for offset := int64(-5); offset <= 5; offset++ {
+		msg := fmt.Sprintf("%s:%d", method, now+offset)
 		mac := hmac.New(sha256.New, secret)
 		mac.Write([]byte(msg))
 		expected := hex.EncodeToString(mac.Sum(nil))
@@ -233,6 +233,25 @@ var (
 	rateBuckets   = make(map[int64]*tokenBucket)
 	rateBucketsMu sync.Mutex
 )
+
+func init() {
+	go func() {
+		for {
+			time.Sleep(10 * time.Minute)
+			rateBucketsMu.Lock()
+			now := time.Now()
+			for id, b := range rateBuckets {
+				b.mu.Lock()
+				lastFill := b.lastFill
+				b.mu.Unlock()
+				if now.Sub(lastFill) > 1*time.Hour {
+					delete(rateBuckets, id)
+				}
+			}
+			rateBucketsMu.Unlock()
+		}
+	}()
+}
 
 func getBucket(actorID int64) *tokenBucket {
 	rateBucketsMu.Lock()

@@ -293,7 +293,36 @@ DD_SITE=${DD_SITE:-datadoghq.com}
 DD_AGENT_HOST=$( [[ -n "${DD_API_KEY}" ]] && echo "datadog-agent" || echo "" )
 ENV
   chmod 600 "$f"
-  ok "Wrote ${f}  (mode 600 — root-readable only)"
+  
+  # Encrypt .env using /etc/machine-id as the hardware-bound key
+  python3 -c '
+import os, sys, hashlib
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+try:
+    infile = sys.argv[1]
+    outfile = infile + ".enc"
+    with open("/etc/machine-id", "r") as m:
+        machine_id = m.read().strip()
+    key = hashlib.sha256(machine_id.encode()).digest()[:16]
+    aesgcm = AESGCM(key)
+    with open(infile, "rb") as d:
+        data = d.read()
+    nonce = os.urandom(12)
+    encrypted_data = aesgcm.encrypt(nonce, data, None)
+    with open(outfile, "wb") as w:
+        w.write(nonce + encrypted_data)
+    os.remove(infile)
+    os.chmod(outfile, 0o600)
+    sys.exit(0)
+except Exception as e:
+    sys.stderr.write("Failed to encrypt .env: " + str(e) + "\n")
+    sys.exit(1)
+' "$f"
+  if [ $? -eq 0 ]; then
+    ok "Wrote and encrypted ${f}.enc (mode 600) using hardware-bound AES-128-GCM"
+  else
+    warn "Failed to encrypt ${f}, leaving as plaintext"
+  fi
 }
 
 write_compose() {
@@ -307,7 +336,6 @@ write_compose() {
     image: gcr.io/datadoghq/agent:7
     container_name: datadog-agent
     restart: unless-stopped
-    env_file: .env
     environment:
       - DD_API_KEY=${DD_API_KEY}
       - DD_SITE=${DD_SITE:-datadoghq.com}
@@ -334,7 +362,10 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=8MB", "-c", "effective_cache_size=64MB"]
-    env_file: .env
+    environment:
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -358,8 +389,12 @@ services:
     image: \${ENGINE_IMAGE}
     container_name: logistics_engine
     restart: unless-stopped
-    env_file: .env
     environment:
+      - DATABASE_URL
+      - INTERNAL_TOKEN
+      - MAPBOX_TOKEN
+      - ADMIN_USER_IDS
+      - LICENSE_PUBLIC_KEY
       - GOMEMLIMIT=48MiB
       - GOGC=50
       - DD_AGENT_HOST=\${DD_AGENT_HOST:-}
@@ -393,8 +428,9 @@ services:
     image: \${BOT_IMAGE}
     container_name: logistics_bot
     restart: unless-stopped
-    env_file: .env
     environment:
+      - TELEGRAM_BOT_TOKEN
+      - INTERNAL_TOKEN
       - ENGINE_SOCKET=/app/sockets/logistics.sock
       - PYTHONMALLOC=malloc
       - DD_AGENT_HOST=\${DD_AGENT_HOST:-}
@@ -442,14 +478,13 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${INSTALL_DIR}/deploy
-EnvironmentFile=${INSTALL_DIR}/deploy/.env
 
-# Start compose stack (using already pulled images for robust & fast boot)
-ExecStart=/usr/bin/docker compose up -d
+# Start compose stack via supervisor (which decrypts .env.enc in-memory)
+ExecStart=/usr/local/bin/logistics start
 
 # Graceful stop
-ExecStop=/usr/bin/docker compose stop --timeout 30
-ExecReload=/bin/bash -c '/usr/bin/docker compose pull && /usr/bin/docker compose up -d'
+ExecStop=/usr/local/bin/logistics stop
+ExecReload=/usr/local/bin/logistics restart
 TimeoutStartSec=180
 TimeoutStopSec=45
 
@@ -610,14 +645,15 @@ import sys, hashlib
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 try:
     pass_str, infile, outfile = sys.argv[1:4]
-    key = hashlib.pbkdf2_hmac("sha256", pass_str.encode("utf-8"), b"logistics_gcm_salt_2026", 100000, 32)
-    aesgcm = AESGCM(key)
     with open(infile, "rb") as f:
         file_data = f.read()
-    if len(file_data) < 12:
+    if len(file_data) < 28:
         sys.exit(1)
-    nonce = file_data[:12]
-    encrypted_data = file_data[12:]
+    salt = file_data[:16]
+    nonce = file_data[16:28]
+    encrypted_data = file_data[28:]
+    key = hashlib.pbkdf2_hmac("sha256", pass_str.encode("utf-8"), salt, 100000, 16)
+    aesgcm = AESGCM(key)
     decrypted_data = aesgcm.decrypt(nonce, encrypted_data, None)
     with open(outfile, "wb") as f:
         f.write(decrypted_data)
@@ -630,9 +666,9 @@ except Exception as e:
             fi
           fi
 
-          # 2. Try OpenSSL AES-256-CBC fallback if Python GCM fails/is unavailable
+          # 2. Try OpenSSL AES-128-CBC fallback if Python GCM fails/is unavailable
           if ! $decrypted; then
-            if openssl enc -d -aes-256-cbc -pbkdf2 -iter 10000 -pass pass:"$pass" -in "$last_backup" -out "$tmp_tar" 2>/dev/null; then
+            if openssl enc -d -aes-128-cbc -pbkdf2 -iter 10000 -pass pass:"$pass" -in "$last_backup" -out "$tmp_tar" 2>/dev/null; then
               decrypted=true
               break
             fi
@@ -743,14 +779,15 @@ import sys, hashlib, os
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 try:
     pass_str, infile, outfile = sys.argv[1:4]
-    key = hashlib.pbkdf2_hmac("sha256", pass_str.encode("utf-8"), b"logistics_gcm_salt_2026", 100000, 32)
+    salt = os.urandom(16)
+    key = hashlib.pbkdf2_hmac("sha256", pass_str.encode("utf-8"), salt, 100000, 16)
     aesgcm = AESGCM(key)
     with open(infile, "rb") as f:
         data = f.read()
     nonce = os.urandom(12)
     encrypted_data = aesgcm.encrypt(nonce, data, None)
     with open(outfile, "wb") as f:
-        f.write(nonce + encrypted_data)
+        f.write(salt + nonce + encrypted_data)
     sys.exit(0)
 except Exception as e:
     sys.stderr.write(str(e) + "\n")
@@ -761,12 +798,12 @@ except Exception as e:
       fi
     fi
 
-    # Fallback to openssl AES-256-CBC if GCM/cryptography is not available
+    # Fallback to openssl AES-128-CBC if GCM/cryptography is not available
     if ! $enc_success; then
-      warn "AES-GCM-256 (python3-cryptography) is not available. Falling back to OpenSSL AES-256-CBC..."
-      if openssl enc -aes-256-cbc -pbkdf2 -iter 10000 -pass pass:"$enc_pass" -in "$tmp_tar" -out "$secure_backup_file" 2>/dev/null; then
+      warn "AES-GCM-128 (python3-cryptography) is not available. Falling back to OpenSSL AES-128-CBC..."
+      if openssl enc -aes-128-cbc -pbkdf2 -iter 10000 -pass pass:"$enc_pass" -in "$tmp_tar" -out "$secure_backup_file" 2>/dev/null; then
         enc_success=true
-        ok "Pre-installation snapshot successfully encrypted using AES-256-CBC and saved at ${secure_backup_file}"
+        ok "Pre-installation snapshot successfully encrypted using AES-128-CBC and saved at ${secure_backup_file}"
       fi
     fi
 

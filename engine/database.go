@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"embed"
 	"errors"
 	"fmt"
@@ -672,8 +674,25 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 		return "", "", ErrQuoteMissing
 	}
 
+	// Verify HMAC signature of QuoteData
+	if len(req.QuoteData) < 32 {
+		return "", "", ErrQuoteMissing
+	}
+	qdLen := len(req.QuoteData) - 32
+	qd := req.QuoteData[:qdLen]
+	sig := req.QuoteData[qdLen:]
+	
+	mac := hmac.New(sha256.New, []byte(os.Getenv("INTERNAL_TOKEN")))
+	mac.Write(qd)
+	expectedSig := mac.Sum(nil)
+	
+	if !hmac.Equal(sig, expectedSig) {
+		slog.Warn("quote signature invalid", "user", req.UserId)
+		return "", "", ErrPriceMismatch
+	}
+
 	var quote pb.QuoteResponse
-	if err := unmarshalProto(req.QuoteData, &quote); err == nil {
+	if err := unmarshalProto(qd, &quote); err == nil {
 		const tolerance = 0.02
 		diff := quote.GrandTotal - req.ExpectedTotal
 		if diff > tolerance || diff < -tolerance {
@@ -787,6 +806,18 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 		}
 	}
 	_ = brItems.Close()
+	
+	// Track promo usage if one was applied
+	if quote.PromoApplied != "" {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO promo_usage (promo_id, user_id, order_id)
+			SELECT id, $1, $2 FROM promos WHERE code=$3`,
+			req.UserId, orderID, quote.PromoApplied,
+		)
+		if err != nil {
+			slog.Warn("failed to track promo usage", "order", orderID, "promo", quote.PromoApplied, "err", err)
+		}
+	}
 
 	// Insert initial status event
 	_, err = tx.Exec(ctx, `

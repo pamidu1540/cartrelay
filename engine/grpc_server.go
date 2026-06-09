@@ -4,8 +4,11 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -343,7 +346,11 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "marshal quote: %v", err)
 	}
-	resp.QuoteData = qd
+	
+	// Secure the quote with HMAC-SHA256
+	mac := hmac.New(sha256.New, []byte(os.Getenv("INTERNAL_TOKEN")))
+	mac.Write(qd)
+	resp.QuoteData = append(qd, mac.Sum(nil)...)
 
 	return resp, nil
 }

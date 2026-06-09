@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 from api import logistics_pb2 as pb
 from grpc_client import pool
@@ -39,6 +39,7 @@ class CartManager:
         self._maxsize = 1000
         self._ttl = 3600
         self._lock = asyncio.Lock()
+        self._user_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     def _get_local(self, user_id: int):
         if user_id in self._local:
@@ -104,40 +105,43 @@ class CartManager:
 
     async def add_item(self, user_id: int, item_id: str, qty: int = 1, note: str = "") -> list[pb.CartItem]:
         """Add qty of item_id to the cart. Returns updated cart."""
-        items = await self.get(user_id)
-        for ci in items:
-            if ci.item_id == item_id:
-                ci.quantity += qty
-                if ci.quantity <= 0:
-                    items = [i for i in items if i.item_id != item_id]
-                await self.set_items(user_id, items)
-                return items
-        if qty > 0:
-            items.append(pb.CartItem(item_id=item_id, quantity=qty, note=note))
-        await self.set_items(user_id, items)
-        return items
+        async with self._user_locks[user_id]:
+            items = await self.get(user_id)
+            for ci in items:
+                if ci.item_id == item_id:
+                    ci.quantity += qty
+                    if ci.quantity <= 0:
+                        items = [i for i in items if i.item_id != item_id]
+                    await self.set_items(user_id, items)
+                    return items
+            if qty > 0:
+                items.append(pb.CartItem(item_id=item_id, quantity=qty, note=note))
+            await self.set_items(user_id, items)
+            return items
 
     async def remove_item(self, user_id: int, item_id: str) -> list[pb.CartItem]:
         """Remove item_id entirely from the cart."""
-        items = await self.get(user_id)
-        items = [ci for ci in items if ci.item_id != item_id]
-        await self.set_items(user_id, items)
-        return items
+        async with self._user_locks[user_id]:
+            items = await self.get(user_id)
+            items = [ci for ci in items if ci.item_id != item_id]
+            await self.set_items(user_id, items)
+            return items
 
     async def set_quantity(self, user_id: int, item_id: str, qty: int) -> list[pb.CartItem]:
         """Set the quantity of item_id. qty <= 0 removes the item."""
-        items = await self.get(user_id)
-        if qty <= 0:
-            items = [ci for ci in items if ci.item_id != item_id]
-        else:
-            for ci in items:
-                if ci.item_id == item_id:
-                    ci.quantity = qty
-                    break
+        async with self._user_locks[user_id]:
+            items = await self.get(user_id)
+            if qty <= 0:
+                items = [ci for ci in items if ci.item_id != item_id]
             else:
-                items.append(pb.CartItem(item_id=item_id, quantity=qty))
-        await self.set_items(user_id, items)
-        return items
+                for ci in items:
+                    if ci.item_id == item_id:
+                        ci.quantity = qty
+                        break
+                else:
+                    items.append(pb.CartItem(item_id=item_id, quantity=qty))
+            await self.set_items(user_id, items)
+            return items
 
     async def clear(self, user_id: int) -> None:
         """Clear the user's cart locally and in the engine."""

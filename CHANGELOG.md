@@ -28,3 +28,9 @@ All notable changes to this project will be documented in this file.
 
 ### 🛡 Security & CI/CD
 - Completed rigorous audits resulting in clean, green builds across native Python `ruff` linting, Python `pytest` suites, `gosec` static security scanning, CodeQL, and Engine Go integration tests.
+- **Hardware-Bound .env Encryption**: Replaced plaintext `deploy/.env` with `.env.enc`. The `supervisor` now dynamically decrypts configurations in-memory during startup using a key derived from the server's `/etc/machine-id`, nullifying disk-theft attacks.
+
+### 💻 Developer Experience
+- **Taskfile CI/CD Pipeline**: Deprecated fragmented PowerShell scripts (`setup-dev.ps1`) in favor of a robust `Taskfile.yml` framework. 
+- **Toolchain Isolation**: `task setup` natively bootstraps `uv`, `golangci-lint`, and `gosec` securely into a `.tools/bin` directory to completely avoid global OS pollution.
+- **AV Bypass**: Implemented `init-dev.ps1` to compile the `task` runner natively from source using Go, completely bypassing false-positive dropper heuristics from Windows Defender.

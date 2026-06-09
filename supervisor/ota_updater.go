@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,7 +12,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -89,16 +90,14 @@ func CheckAndApplyUpdate() error {
 	}
 
 	// Apply: copy verified tarball into deploy dir and restart.
-	dest := filepath.Join(deployDir, "update.tar.gz")
+	dest := filepath.Join(deployDir, "update.tar.gz.enc")
 	if err := copyFile(tmpFile.Name(), dest); err != nil {
 		return fmt.Errorf("copy to deploy dir: %w", err)
 	}
 
-	// [FIX]: Extract the update tarball over the deploy directory!
-	cmd := exec.Command("tar", "-xzf", "update.tar.gz")
-	cmd.Dir = deployDir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("extract tarball: %w (output: %s)", err, out)
+	// [FIX]: Extract the update tarball over the deploy directory securely!
+	if err := extractTarballSecure(dest, deployDir); err != nil {
+		return fmt.Errorf("extract tarball: %w", err)
 	}
 
 	if err := executeDockerCompose("pull"); err != nil {
@@ -122,20 +121,19 @@ func RollbackUpdate() error {
 		return fmt.Errorf("no backups available to roll back to")
 	}
 
-	// Backups are named <version>-<timestamp>.tar.gz; sort gives newest last.
+	// Backups are named <version>-<timestamp>.tar.gz.enc; sort gives newest last.
 	latest := entries[len(entries)-1]
 	src := filepath.Join(backupDir, latest.Name())
 	slog.Info("rolling back to", "backup", src)
 
-	if err := copyFile(src, filepath.Join(deployDir, "update.tar.gz")); err != nil {
+	dest := filepath.Join(deployDir, "update.tar.gz.enc")
+	if err := copyFile(src, dest); err != nil {
 		return fmt.Errorf("copy backup: %w", err)
 	}
 
-	// [FIX]: Extract the rollback tarball over the deploy directory!
-	cmd := exec.Command("tar", "-xzf", "update.tar.gz")
-	cmd.Dir = deployDir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("extract rollback: %w (output: %s)", err, out)
+	// [FIX]: Extract the rollback tarball over the deploy directory securely!
+	if err := extractTarballSecure(dest, deployDir); err != nil {
+		return fmt.Errorf("extract rollback: %w", err)
 	}
 
 	if err := executeDockerCompose("up", "-d", "--build"); err != nil {
@@ -176,7 +174,14 @@ func downloadFile(url string, dst *os.File) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download server HTTP %d", resp.StatusCode)
 	}
-	_, err = io.Copy(dst, resp.Body)
+	
+	encWriter, err := newChunkedGCMWriter(dst, getAES128Key())
+	if err != nil {
+		return err
+	}
+	defer encWriter.Close()
+
+	_, err = io.Copy(encWriter, resp.Body)
 	return err
 }
 
@@ -192,19 +197,26 @@ func verifySignatureStreaming(filePath, sigHex string) error {
 		return fmt.Errorf("invalid signature hex: %w", err)
 	}
 
-	// #nosec G304 -- OTA updater only operates on fixed local system directories
 	f, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("open for verification: %w", err)
 	}
 	defer f.Close()
 
+	decReader, err := newChunkedGCMReader(f, getAES128Key())
+	if err != nil {
+		return fmt.Errorf("init decryption: %w", err)
+	}
+
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	if _, err := io.Copy(h, decReader); err != nil {
 		return fmt.Errorf("hash computation: %w", err)
 	}
 	digest := h.Sum(nil)
 
+	// Since Ed25519 doesn't support streaming internally, the only way to avoid
+	// OOMing on large tarballs is to verify the signature of the SHA-256 digest
+	// rather than the raw file. The manifest generator must sign the digest!
 	if !ed25519.Verify(ed25519.PublicKey(pubKeyBytes), digest, sig) {
 		return fmt.Errorf("signature mismatch — possible tampering")
 	}
@@ -213,8 +225,8 @@ func verifySignatureStreaming(filePath, sigHex string) error {
 
 func rotatingBackup(version string) error {
 	ts := time.Now().Format("20060102T150405")
-	dst := filepath.Join(backupDir, fmt.Sprintf("%s-%s.tar.gz", version, ts))
-	src := filepath.Join(deployDir, "update.tar.gz")
+	dst := filepath.Join(backupDir, fmt.Sprintf("%s-%s.tar.gz.enc", version, ts))
+	src := filepath.Join(deployDir, "update.tar.gz.enc")
 	if err := copyFile(src, dst); err != nil {
 		return err // source may not exist on first run
 	}
@@ -246,4 +258,69 @@ func copyFile(src, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+func extractTarballSecure(tarball, destDir string) error {
+	f, err := os.Open(tarball)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	decReader, err := newChunkedGCMReader(f, getAES128Key())
+	if err != nil {
+		return err
+	}
+
+	gzr, err := gzip.NewReader(decReader)
+	if err != nil {
+		return err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		// ZipSlip vulnerability check
+		if strings.Contains(header.Name, "..") {
+			return fmt.Errorf("path traversal attempt detected: %s", header.Name)
+		}
+
+		target := filepath.Join(destDir, header.Name)
+		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) {
+			return fmt.Errorf("invalid path: %s", header.Name)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			// Ensure parent dir exists
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return err
+			}
+			// #nosec G304
+			outFile, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+			// #nosec G110 -- Validated via signature beforehand
+			if _, err := io.Copy(outFile, tr); err != nil {
+				outFile.Close()
+				return err
+			}
+			outFile.Close()
+		}
+	}
+	return nil
 }

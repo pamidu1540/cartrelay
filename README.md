@@ -55,22 +55,22 @@ sudo bash install.sh
 
 ## 💻 Development Setup
 
-To run the stack locally for development:
+We use a fully automated, cross-platform `Taskfile.yml` framework to guarantee identical CI/CD workflows both locally and on GitHub Actions, isolated inside a hidden `.tools/` directory to prevent global OS pollution.
 
-1. Copy `.env.example` to `.env` and fill in your Bot Token and Admin ID.
-2. Generate the gRPC protobuf files (if making changes to `logistics.proto`):
-   *(Note: CI handles this automatically when pushing to GitHub)*
-   ```bash
-   # Engine
-   protoc --proto_path=engine/api --go_out=engine/api --go_opt=paths=source_relative --go-grpc_out=engine/api --go-grpc_opt=paths=source_relative engine/api/logistics.proto
-   
-   # Bot
-   python -m grpc_tools.protoc -Iengine/api --python_out=bot/src/api --grpc_python_out=bot/src/api engine/api/logistics.proto
-   ```
-3. Run the stack using Docker Compose:
-   ```bash
-   docker compose up --build
-   ```
+### 1. Bootstrap the Toolchain
+On Windows, run the initialization script to compile the task runner and bootstrap all dependencies (`uv`, `golangci-lint`, `gosec`, `ruff`, `pytest`) into an isolated virtual environment:
+```powershell
+.\init-dev.ps1
+```
+*(This automatically adds `.tools\bin` to your session PATH).*
+
+### 2. Orchestration Commands
+- `task env` - Interactively generates your `local_test/.env` configuration.
+- `task up` - Starts the full Docker Compose stack with Datadog locally.
+- `task down` - Stops the local stack.
+- `task lint` - Runs Go and Python static analysis.
+- `task test` - Runs Go and Python unit tests.
+- `task build` - Compiles the `engine` and `supervisor` binaries.
 
 ## 🔒 Security Posture
 
