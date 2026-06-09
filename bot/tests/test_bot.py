@@ -12,7 +12,6 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -106,7 +105,6 @@ class TestChannelPoolRetry:
         mock_slot.in_flight = 0
         mock_slot.healthy = True
 
-        from unittest.mock import AsyncMock as AM
         from contextlib import asynccontextmanager
 
         @asynccontextmanager
@@ -115,7 +113,7 @@ class TestChannelPoolRetry:
             try:
                 yield mock_slot
                 await pool._circuit_breaker.record_success()
-            except grpc.RpcError as e:
+            except grpc.RpcError:
                 mock_slot.healthy = False
                 await pool._circuit_breaker.record_failure()
                 raise
@@ -250,7 +248,8 @@ class TestHMACToken:
         assert t1 != t2
 
     def test_token_hex_format(self):
-        import os, re
+        import os
+        import re
         os.environ.setdefault("INTERNAL_TOKEN", "test-secret-for-ci")
 
         from grpc_client import make_auth_token

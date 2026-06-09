@@ -419,7 +419,10 @@ def build_application() -> Application:
                 MessageHandler(filters.PHOTO | (filters.TEXT & ~filters.COMMAND), msg_edit_item_photo)
             ],
         },
-        fallbacks=[CommandHandler("cancel", cmd_cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cmd_cancel),
+            MessageHandler(filters.COMMAND, cmd_cancel)
+        ],
         allow_reentry=True,
         per_message=False,
     )
@@ -591,7 +594,7 @@ def main() -> None:
                 with tracer.trace("telegram.update", resource=resource) as span:
                     span.set_tag("telegram.user_id", user_id)
                     if update.message and update.message.text:
-                        span.set_tag("telegram.message_text", update.message.text[:100])
+                        span.set_tag("telegram.message_length", len(update.message.text))
                     if update.callback_query:
                         span.set_tag("telegram.callback_data", update.callback_query.data)
 

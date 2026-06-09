@@ -119,7 +119,6 @@ services:
     image: gcr.io/datadoghq/agent:7
     container_name: datadog-agent
     restart: unless-stopped
-    env_file: .env
     environment:
       - DD_API_KEY=${DD_API_KEY}
       - DD_SITE=${DD_SITE:-datadoghq.com}

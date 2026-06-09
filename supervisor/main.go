@@ -13,10 +13,23 @@ import (
 var Version = "dev"
 
 func loadEnv() {
-	content, err := os.ReadFile("/opt/logistics-system/deploy/.env")
-	if err != nil {
-		return
+	var content []byte
+	var err error
+
+	encPath := "/opt/logistics-system/deploy/.env.enc"
+	if _, statErr := os.Stat(encPath); statErr == nil {
+		content, err = decryptEnvFile(encPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to decrypt .env.enc: %v\n", err)
+			return
+		}
+	} else {
+		content, err = os.ReadFile("/opt/logistics-system/deploy/.env")
+		if err != nil {
+			return
+		}
 	}
+
 	lines := strings.Split(string(content), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)

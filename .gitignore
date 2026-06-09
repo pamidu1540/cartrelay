@@ -3,6 +3,15 @@
 __pycache__/
 *.pyc
 .venv/
+.tools/
+local_test/.gocache/
+local_test/.uv_cache/
+local_test/.venv/
+local_test/bin/
+local_test/postgres_data/
+local_test/sockets/
+local_test/backups/
+local_test/.gopath/
 
 # Databases and Sockets
 *.sock
