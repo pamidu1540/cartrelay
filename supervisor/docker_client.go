@@ -170,14 +170,17 @@ func ensureSocketPermissions() {
 	}
 
 	// 2. Fix the docker volume permissions using a transient helper container.
+	// We run it with user '0' (root) so it has privileges to modify root-owned volumes.
 	// Since the database container image (postgres:16-alpine) is guaranteed to be present on the host,
-	// we use it to run a chown command on the named volume mount.
+	// we use it to run chown and clean up any stale root-owned socket file.
 	// #nosec G204
-	cmd := exec.Command("docker", "run", "--rm",
+	cmd := exec.Command("docker", "run", "--rm", "-u", "0",
 		"-v", "deploy_sockets:/app/sockets",
 		"postgres:16-alpine",
-		"chown", "-R", "65532:65532", "/app/sockets",
+		"sh", "-c", "chown -R 65532:65532 /app/sockets && rm -f /app/sockets/logistics.sock",
 	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	_ = cmd.Run()
 }
 
