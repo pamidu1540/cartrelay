@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v12.5.0] - 2026-06-12
+## [v12.5.1] - 2026-06-12
 
 ### 🚀 Advanced Performance & Concurrency
 - **Go Engine Optimization:** Replaced sequential database operations with efficient `pgx.Batch` INSERTs and bulk SQL queries to eliminate N+1 loops. Window functions now handle dynamic pagination gracefully.

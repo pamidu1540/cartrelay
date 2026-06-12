@@ -33,7 +33,7 @@ The system is composed of several microservices orchestrated via Docker Compose:
 This repository features a fully automated continuous integration and deployment pipeline powered by **GitHub Actions**:
 
 - **CI (`ci.yml`)**: On every push, GitHub Actions automatically runs `protoc` and `go mod tidy` and commits the generated code back to `main`. It then runs Go tests, `ruff` linting, and `govulncheck` before building the Docker images and pushing them to the GitHub Container Registry (`ghcr.io`).
-- **Release (`release.yml`)**: Triggered by pushing a version tag (e.g., `v12.5.0`). Builds the Go binaries, Docker images, signs the OTA update payload using Ed25519, and pushes all artifacts to a **Cloudflare R2** bucket.
+- **Release (`release.yml`)**: Triggered by pushing a version tag (e.g., `v12.5.1`). Builds the Go binaries, Docker images, signs the OTA update payload using Ed25519, and pushes all artifacts to a **Cloudflare R2** bucket.
 - **Security**: Includes `codeql.yml` for static analysis and `go-security.yml` to block vulnerabilities.
 
 ## 🛠️ Installation
