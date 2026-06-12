@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v12.5.6] - 2026-06-12
+
+### 🐛 Permissions & Volume Mount Fixes
+- **Host Path Auto-Healing:** Fixed a bug in `v12.5.5` where the supervisor's `ensureSocketPermissions()` docker execution was binding to a named volume (`deploy_sockets`) instead of the actual absolute host path (`/opt/logistics-system/deploy/sockets`) used by Docker Compose. The helper container now correctly targets the absolute host path, successfully changing ownership and removing stale socket files for `nonroot` execution.
+
 ## [v12.5.5] - 2026-06-12
 
 ### 🐛 Permissions & Volume Mount Fixes

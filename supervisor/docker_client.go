@@ -175,7 +175,7 @@ func ensureSocketPermissions() {
 	// we use it to run chown and clean up any stale root-owned socket file.
 	// #nosec G204
 	cmd := exec.Command("docker", "run", "--rm", "-u", "0",
-		"-v", "deploy_sockets:/app/sockets",
+		"-v", "/opt/logistics-system/deploy/sockets:/app/sockets",
 		"postgres:16-alpine",
 		"sh", "-c", "chown -R 65532:65532 /app/sockets && rm -f /app/sockets/logistics.sock",
 	)
