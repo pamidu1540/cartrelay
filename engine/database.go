@@ -1901,16 +1901,7 @@ func parseFloat(s string, def float64) float64 {
 	return v
 }
 
-func parseInt(s string, def int) int {
-	if s == "" {
-		return def
-	}
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		return def
-	}
-	return v
-}
+
 
 func parseInt32(s string, def int32) int32 {
 	if s == "" {
