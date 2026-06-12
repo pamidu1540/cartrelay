@@ -161,30 +161,8 @@ func RestartContainers() error {
 	return nil
 }
 
-func ensureSocketPermissions() {
-	// Fix the docker volume permissions using a transient helper container.
-	// We run it with user '0' (root) so it has privileges to modify root-owned volumes.
-	// We mount the exact named volume 'deploy_sockets' that docker-compose uses.
-	// Since the database container image (postgres:16-alpine) is guaranteed to be present on the host,
-	// we use it to run chown and clean up any stale root-owned socket file.
-	// #nosec G204
-	cmd := exec.Command("docker", "run", "--rm", "-u", "0",
-		"-v", "deploy_sockets:/app/sockets",
-		"postgres:16-alpine",
-		"sh", "-c", "chown -R 65532:65532 /app/sockets && rm -f /app/sockets/logistics.sock",
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	_ = cmd.Run()
-}
 
 func executeDockerCompose(args ...string) error {
-	for _, arg := range args {
-		if arg == "up" {
-			ensureSocketPermissions()
-			break
-		}
-	}
 	base := []string{"compose", "-f", "/opt/logistics-system/deploy/docker-compose.yml"}
 	// #nosec G204 -- admin CLI arguments are inherently trusted
 	cmd := exec.Command("docker", append(base, args...)...)
