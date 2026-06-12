@@ -455,7 +455,12 @@ ${datadog_agent_service}
 
 volumes:
   postgres_data: {driver: local}
-  sockets:       {driver: local}
+  sockets:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/logistics-system/deploy/sockets
   backups:       {driver: local}
 
 networks:
