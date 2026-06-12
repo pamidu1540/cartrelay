@@ -39,7 +39,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     mkdir -p /app/sockets
 
 # ── Stage 3: runtime ──────────────────────────────────────────────────────────
-FROM gcr.io/distroless/static-debian12:latest AS runtime
+FROM alpine:3.19 AS runtime
 
 # TLS certificates from host (mounted at runtime via volume or secret)
 COPY --from=builder /engine /engine
