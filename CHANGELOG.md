@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v12.5.5] - 2026-06-12
+
+### 🐛 Permissions & Volume Mount Fixes
+- **Root-Privileged Auto-Healing:** Upgraded the supervisor's socket permissions helper container to execute with administrative root privileges (`-u 0`) and automatically wipe any stale root-owned `logistics.sock` files. This ensures permissions are successfully modified even if the volume or its contents were originally created by root, preventing persistent `bind: permission denied` crashes on existing system upgrades.
+
 ## [v12.5.4] - 2026-06-12
 
 ### 🐛 Permissions & Volume Mount Fixes
