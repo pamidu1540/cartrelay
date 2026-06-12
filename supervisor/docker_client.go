@@ -161,7 +161,33 @@ func RestartContainers() error {
 	return nil
 }
 
+func ensureSocketPermissions() {
+	// 1. If it's a bind mount directory on host, chown it to nonroot (65532:65532)
+	bindPath := "/opt/logistics-system/deploy/sockets"
+	if _, err := os.Stat(bindPath); err == nil {
+		_ = os.Chown(bindPath, 65532, 65532)
+		_ = os.Chmod(bindPath, 0770) // #nosec G302
+	}
+
+	// 2. Fix the docker volume permissions using a transient helper container.
+	// Since the database container image (postgres:16-alpine) is guaranteed to be present on the host,
+	// we use it to run a chown command on the named volume mount.
+	// #nosec G204
+	cmd := exec.Command("docker", "run", "--rm",
+		"-v", "deploy_sockets:/app/sockets",
+		"postgres:16-alpine",
+		"chown", "-R", "65532:65532", "/app/sockets",
+	)
+	_ = cmd.Run()
+}
+
 func executeDockerCompose(args ...string) error {
+	for _, arg := range args {
+		if arg == "up" {
+			ensureSocketPermissions()
+			break
+		}
+	}
 	base := []string{"compose", "-f", "/opt/logistics-system/deploy/docker-compose.yml"}
 	// #nosec G204 -- admin CLI arguments are inherently trusted
 	cmd := exec.Command("docker", append(base, args...)...)

@@ -35,7 +35,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build \
       -ldflags="-s -w -X main.Version=${VERSION}" \
       -o /engine \
-      .
+      . && \
+    mkdir -p /app/sockets
 
 # ── Stage 3: runtime ──────────────────────────────────────────────────────────
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
@@ -44,6 +45,7 @@ USER nonroot:nonroot
 
 # TLS certificates from host (mounted at runtime via volume or secret)
 COPY --from=builder /engine /engine
+COPY --from=builder --chown=nonroot:nonroot /app/sockets /app/sockets
 
 EXPOSE 50051
 

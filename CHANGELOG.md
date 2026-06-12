@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v12.5.4] - 2026-06-12
+
+### 🐛 Permissions & Volume Mount Fixes
+- **Non-Root Socket Permissions:** Resolved container startup `bind: permission denied` crashes on `/app/sockets/logistics.sock`. The engine Dockerfile now pre-creates `/app/sockets` owned by the `nonroot` user.
+- **Supervisor Auto-Healing:** Added an automatic socket permissions helper inside the supervisor CLI. Whenever `docker compose up` is triggered by the supervisor, it automatically fixes Unix socket volume ownership (`chown -R 65532:65532`) via a transient helper container to heal existing system installations without requiring manual user intervention.
+
 ## [v12.5.3] - 2026-06-12
 
 ### 🐛 Docker Build Fixes
