@@ -162,8 +162,12 @@ func RestartContainers() error {
 }
 
 func ensureSocketPermissions() {
-	// 1. If it's a bind mount directory on host, chown it to nonroot (65532:65532)
 	bindPath := "/opt/logistics-system/deploy/sockets"
+	
+	// 1. Ensure the directory exists on the host before anything else
+	_ = os.MkdirAll(bindPath, 0o755)
+
+	// 2. If it's a bind mount directory on host, chown it to nonroot (65532:65532)
 	if _, err := os.Stat(bindPath); err == nil {
 		_ = os.Chown(bindPath, 65532, 65532)
 		_ = os.Chmod(bindPath, 0770) // #nosec G302
