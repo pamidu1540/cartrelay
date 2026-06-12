@@ -44,8 +44,8 @@ tasks:
   build:
     desc: "Build Engine and Supervisor"
     cmds:
-      - go build -o bin/engine.exe ./engine
-      - go build -o bin/logistics.exe ./supervisor
+      - cd engine && go build -o ../bin/engine.exe .
+      - cd supervisor && go build -o ../bin/logistics.exe .
 
   env:
     desc: "Generate local_test/.env interactively"

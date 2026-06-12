@@ -45,7 +45,7 @@ async def _check_rate(user_id: int) -> bool:
     async with _bucket_lock:
         now = time.monotonic()
         # Evict old buckets periodically
-        if len(_buckets) > 1000 and random.random() < 0.01:
+        if len(_buckets) > 1000 and random.random() < 0.01:  # noqa: S311
             to_del = [k for k, v in _buckets.items() if now - v["last"] > 3600]
             for k in to_del:
                 del _buckets[k]
