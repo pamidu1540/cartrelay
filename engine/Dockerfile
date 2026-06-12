@@ -4,14 +4,13 @@
 # Stage 3: minimal runtime image
 
 # ── Stage 1: proto codegen ────────────────────────────────────────────────────
-FROM golang:1.25-bookworm AS proto-gen
+FROM golang:1.24-bookworm AS proto-gen
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         protobuf-compiler=3.21.* \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.3 && \
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+    && rm -rf /var/lib/apt/lists/* \
+    && go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.3 \
+    && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
 
 WORKDIR /src
 COPY engine/go.mod engine/go.sum ./
@@ -26,7 +25,7 @@ RUN mkdir -p api/generated && \
       api/logistics.proto
 
 # ── Stage 2: build ────────────────────────────────────────────────────────────
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.24-bookworm AS builder
 
 WORKDIR /src
 COPY --from=proto-gen /src/ .
@@ -39,10 +38,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
       .
 
 # ── Stage 3: runtime ──────────────────────────────────────────────────────────
-FROM alpine:3.20 AS runtime
+FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 
-# ca-certificates is needed for HTTPS calls
-RUN apk add --no-cache ca-certificates
+USER nonroot:nonroot
 
 # TLS certificates from host (mounted at runtime via volume or secret)
 COPY --from=builder /engine /engine

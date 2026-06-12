@@ -85,22 +85,25 @@ func main() {
 	}
 
 	// ── Background tasks ─────────────────────────────────────────────────────
-	go runEvery(6*time.Hour, "cart-expiry", func() {
+	// ── Background tasks ─────────────────────────────────────────────────────
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+
+	go runEvery(bgCtx, 6*time.Hour, "cart-expiry", func() {
 		if err := DBExpireCarts(context.Background(), 48); err != nil {
 			slog.Warn("cart expiry failed", "err", err)
 		}
 	})
-	go runEvery(24*time.Hour, "birthday-rewards", func() {
+	go runEvery(bgCtx, 24*time.Hour, "birthday-rewards", func() {
 		if err := IssueBirthdayRewards(context.Background()); err != nil {
 			slog.Warn("birthday rewards failed", "err", err)
 		}
 	})
-	go runEvery(1*time.Hour, "low-stock-alerts", func() {
+	go runEvery(bgCtx, 1*time.Hour, "low-stock-alerts", func() {
 		if err := CheckLowStockAndAlert(context.Background()); err != nil {
 			slog.Warn("low-stock alert check failed", "err", err)
 		}
 	})
-	go runEvery(15*time.Minute, "scheduled-maintenance", func() {
+	go runEvery(bgCtx, 15*time.Minute, "scheduled-maintenance", func() {
 		if err := EnforceScheduledMaintenance(context.Background()); err != nil {
 			slog.Warn("scheduled maintenance check failed", "err", err)
 		}
@@ -175,6 +178,7 @@ func main() {
 	// ── Graceful shutdown ────────────────────────────────────────────────────
 	shutdown := func() {
 		slog.Info("graceful shutdown initiated")
+		bgCancel()
 		srv.GracefulStop()
 	}
 
@@ -218,12 +222,18 @@ func logLevel() slog.Level {
 	return slog.LevelInfo
 }
 
-func runEvery(d time.Duration, name string, fn func()) {
+func runEvery(ctx context.Context, d time.Duration, name string, fn func()) {
 	ticker := time.NewTicker(d)
 	defer ticker.Stop()
-	for range ticker.C {
-		slog.Debug("background task running", "task", name)
-		fn()
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Debug("background task stopped", "task", name)
+			return
+		case <-ticker.C:
+			slog.Debug("background task running", "task", name)
+			fn()
+		}
 	}
 }
 

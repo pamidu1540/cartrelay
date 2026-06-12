@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v12.5.0] - 2026-06-12
+
+### 🚀 Advanced Performance & Concurrency
+- **Go Engine Optimization:** Replaced sequential database operations with efficient `pgx.Batch` INSERTs and bulk SQL queries to eliminate N+1 loops. Window functions now handle dynamic pagination gracefully.
+- **Background Processes:** Moved heavy tasks (audit logging, admin notifications, auto dispatching) to asynchronous goroutines with proper context timeouts, ensuring critical pathways remain extremely low-latency.
+- **Python Bot Optimization:** Centralized and cached gRPC stub connections, implemented `asyncio.wait_for` gRPC timeouts globally to avoid event loop stalls, and adopted `asyncio.gather` for simultaneous fetching of dependencies.
+- **Intelligent Caching:** Implemented `singleflight` for catalog cache thundering herd prevention, alongside TTL eviction strategies for the Python bot's token buckets, user sessions, and admin role caching.
+
+### 🛡 Security & Infrastructure
+- **Dependency Hardening:** Pinned specific Go (`1.24`) and Python (`uv`) versions across all Dockerfiles for predictable, deterministic multi-stage builds.
+- **Privilege Dropping:** Dropped root permissions in final engine runtime images (`distroless:nonroot`) to shrink attack surface.
+- **Bug Fixes:** Rectified fatal out-of-bounds panics, unclosed contexts, incorrect RPC exception mapping, and unhandled 64KB backing array retention issues during hardware decryption.
+
 ## [v12.0.0] - 2026-06-08
 
 ### 🚀 Major Performance Optimizations

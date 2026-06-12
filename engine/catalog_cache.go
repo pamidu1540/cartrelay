@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	pb "logistics-engine/api"
 )
 
@@ -31,6 +32,7 @@ var (
 	catalogCache   map[string]*catalogCacheEntry // key = "cat:search:page:size"
 	catalogCacheMu sync.RWMutex
 	catalogMaxItems int
+	catalogGroup    singleflight.Group
 )
 
 func init() {
@@ -55,26 +57,31 @@ func GetCachedCatalog(ctx context.Context, cat, search string, page, pageSize in
 		return entry.resp, nil
 	}
 
-	// Cache miss — fetch from DB
-	items, total, err := FetchCatalogItems(ctx, cat, search, page, pageSize)
+	// Use singleflight to prevent thundering herd on cache miss
+	val, err, _ := catalogGroup.Do(key, func() (any, error) {
+		items, total, err := FetchCatalogItems(ctx, cat, search, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		resp := &pb.CatalogResponse{Items: items, TotalCount: total}
+
+		catalogCacheMu.Lock()
+		if len(catalogCache) >= catalogMaxItems {
+			slog.Info("catalog cache eviction", "entries", len(catalogCache))
+			catalogCache = make(map[string]*catalogCacheEntry)
+		}
+		catalogCache[key] = &catalogCacheEntry{
+			resp:      resp,
+			expiresAt: time.Now().Add(catalogTTL),
+		}
+		catalogCacheMu.Unlock()
+		return resp, nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-	resp := &pb.CatalogResponse{Items: items, TotalCount: total}
-
-	catalogCacheMu.Lock()
-	// Evict if over cap (simple: clear all — LRU would be overkill for catalog)
-	if len(catalogCache) >= catalogMaxItems {
-		slog.Info("catalog cache eviction", "entries", len(catalogCache))
-		catalogCache = make(map[string]*catalogCacheEntry)
-	}
-	catalogCache[key] = &catalogCacheEntry{
-		resp:      resp,
-		expiresAt: time.Now().Add(catalogTTL),
-	}
-	catalogCacheMu.Unlock()
-
-	return resp, nil
+	return val.(*pb.CatalogResponse), nil
 }
 
 // InvalidateCatalogCache clears the entire catalog cache.
@@ -132,9 +139,10 @@ func mapboxCacheKey(originLat, originLon, destLat, destLon float64) string {
 		strconv.FormatFloat(quantize(destLon), 'f', quantizePrecision, 64)
 }
 
+const quantizeFactor = 1000.0 // math.Pow10(3)
+
 func quantize(v float64) float64 {
-	factor := math.Pow10(quantizePrecision)
-	return math.Round(v*factor) / factor
+	return math.Round(v*quantizeFactor) / quantizeFactor
 }
 
 func getMapboxCached(originLat, originLon, destLat, destLon float64) (float64, bool) {

@@ -42,8 +42,14 @@ _bucket_lock = asyncio.Lock()
 
 async def _check_rate(user_id: int) -> bool:
     async with _bucket_lock:
-        b = _buckets[user_id]
         now = time.monotonic()
+        # Evict old buckets periodically
+        if len(_buckets) > 1000 and random.random() < 0.01:
+            to_del = [k for k, v in _buckets.items() if now - v["last"] > 3600]
+            for k in to_del:
+                del _buckets[k]
+
+        b = _buckets[user_id]
         elapsed = now - b["last"]
         b["tokens"] = min(_RATE_CAPACITY, b["tokens"] + elapsed * _RATE_REFILL)
         b["last"] = now
@@ -80,12 +86,18 @@ def admin_only(func: Callable) -> Callable:
             return
 
         try:
-            resp = await pool.call(
-                "/logistics.LogisticsEngine/ListAdmins",
-                lambda stub, meta: stub.ListAdmins(pb.Empty(), metadata=meta),
-                user_id=user.id,
-            )
-            admin_ids = {a.telegram_id for a in resp.admins}
+            now = time.time()
+            if now - context.bot_data.get('_admins_time', 0.0) < 60:
+                admin_ids = context.bot_data['_admins_list']
+            else:
+                resp = await pool.call(
+                    "/logistics.LogisticsEngine/ListAdmins",
+                    lambda stub, meta: stub.ListAdmins(pb.Empty(), metadata=meta),
+                    user_id=user.id,
+                )
+                admin_ids = {a.telegram_id for a in resp.admins}
+                context.bot_data['_admins_time'] = now
+                context.bot_data['_admins_list'] = admin_ids
         except Exception as exc:
             logger.error("admin check failed: %s", exc)
             await update.effective_message.reply_text("⚠️ Could not verify admin status.")
@@ -108,12 +120,18 @@ def role_required(*roles: str) -> Callable:
             if not user:
                 return
             try:
-                resp = await pool.call(
-                    "/logistics.LogisticsEngine/ListAdmins",
-                    lambda stub, meta: stub.ListAdmins(pb.Empty(), metadata=meta),
-                    user_id=user.id,
-                )
-                admin_map = {a.telegram_id: a.role for a in resp.admins}
+                now = time.time()
+                if now - context.bot_data.get('_admin_map_time', 0.0) < 60:
+                    admin_map = context.bot_data['_admin_map']
+                else:
+                    resp = await pool.call(
+                        "/logistics.LogisticsEngine/ListAdmins",
+                        lambda stub, meta: stub.ListAdmins(pb.Empty(), metadata=meta),
+                        user_id=user.id,
+                    )
+                    admin_map = {a.telegram_id: a.role for a in resp.admins}
+                    context.bot_data['_admin_map_time'] = now
+                    context.bot_data['_admin_map'] = admin_map
             except Exception:
                 await update.effective_message.reply_text("⚠️ Could not verify role.")
                 return
@@ -137,11 +155,19 @@ def check_maintenance(func: Callable) -> Callable:
     @functools.wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
-            resp = await pool.call(
-                "/logistics.LogisticsEngine/CheckHealth",
-                lambda stub, meta: stub.CheckHealth(pb.Empty(), metadata=meta),
-            )
-            if resp.maintenance_mode:
+            now = time.time()
+            if now - context.bot_data.get('_health_time', 0.0) < 60:
+                is_maintenance = context.bot_data['_health_status']
+            else:
+                resp = await pool.call(
+                    "/logistics.LogisticsEngine/CheckHealth",
+                    lambda stub, meta: stub.CheckHealth(pb.Empty(), metadata=meta),
+                )
+                is_maintenance = resp.maintenance_mode
+                context.bot_data['_health_time'] = now
+                context.bot_data['_health_status'] = is_maintenance
+
+            if is_maintenance:
                 await update.effective_message.reply_text(
                     "🔧 The service is currently under maintenance. "
                     "We'll be back shortly!"

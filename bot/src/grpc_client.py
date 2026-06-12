@@ -225,8 +225,18 @@ class ChannelPool:
             try:
                 meta = _build_metadata(method_name, kwargs.get("user_id"))
                 async with self.acquire() as slot:
-                    stub = logistics_pb2_grpc.LogisticsEngineStub(slot.channel)
-                    return await coro_factory(stub, meta)
+                    if not hasattr(slot, "stub"):
+                        slot.stub = logistics_pb2_grpc.LogisticsEngineStub(slot.channel)
+                    return await asyncio.wait_for(coro_factory(slot.stub, meta), timeout=RPC_TIMEOUT)
+            except asyncio.TimeoutError:
+                last_exc = Exception(f"gRPC call {method_name} timed out after {RPC_TIMEOUT}s")
+                if attempt < RETRY_ATTEMPTS:
+                    logger.warning(
+                        "gRPC %s attempt %d/%d timed out — retrying in %.1fs",
+                        method_name, attempt, RETRY_ATTEMPTS, delay,
+                    )
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, RETRY_MAX_DELAY)
             except grpc.RpcError as exc:
                 last_exc = exc
                 code = exc.code()
@@ -260,6 +270,7 @@ class ChannelPool:
         """Periodically check channel health, replacing unhealthy channels."""
         while True:
             await asyncio.sleep(30)
+            bad_indices = []
             async with self._lock:
                 for i, slot in enumerate(self._slots):
                     state = slot.channel.get_state(try_to_connect=False)
@@ -268,13 +279,15 @@ class ChannelPool:
                         grpc.ChannelConnectivity.SHUTDOWN,
                     )
                     if not is_healthy and slot.in_flight == 0:
-                        logger.warning(
-                            "replacing unhealthy channel %d (state=%s)", i, state
-                        )
-                        await slot.channel.close()
-                        self._slots[i] = ChannelSlot(
-                            channel=await self._make_channel()
-                        )
+                        bad_indices.append(i)
+
+            for i in bad_indices:
+                logger.warning("replacing unhealthy channel %d", i)
+                new_channel = await self._make_channel()
+                async with self._lock:
+                    old_slot = self._slots[i]
+                    self._slots[i] = ChannelSlot(channel=new_channel)
+                await old_slot.channel.close()
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
@@ -287,11 +300,13 @@ class ChannelPool:
         opts = [
             ("grpc.max_receive_message_length", 10 * 1024 * 1024),
             ("grpc.max_send_message_length", 10 * 1024 * 1024),
+            ("grpc.keepalive_time_ms", 30000),
+            ("grpc.keepalive_timeout_ms", 10000),
+            ("grpc.keepalive_permit_without_calls", 1),
         ]
 
         # SEC-001: use TLS if cert file is configured
         if TLS_CERT_FILE and os.path.exists(TLS_CERT_FILE):
-            global _tls_cert_data
             if getattr(self, '_tls_cert_data', None) is None:
                 def _read_cert():
                     with open(TLS_CERT_FILE, "rb") as f:

@@ -19,6 +19,14 @@ import (
 	pb "logistics-engine/api"
 )
 
+func fireAndForget(action func(ctx context.Context)) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		action(ctx)
+	}()
+}
+
 // Server implements pb.LogisticsEngineServer
 type Server struct {
 	pb.UnimplementedLogisticsEngineServer
@@ -392,10 +400,14 @@ func (s *Server) PlaceOrder(ctx context.Context, req *pb.OrderRequest) (*pb.Orde
 
 	// Notify all admins
 	// #nosec G118 -- background admin notification must outlive request context
-	go notifyAdminsNewOrder(context.Background(), humanRef, req.Username, req.ExpectedTotal)
+	fireAndForget(func(ctx context.Context) {
+		notifyAdminsNewOrder(ctx, humanRef, req.Username, req.ExpectedTotal)
+	})
 
 	// #nosec G118 -- background auto dispatch must outlive request context
-	go autoDispatch(context.Background(), orderID)
+	fireAndForget(func(ctx context.Context) {
+		autoDispatch(ctx, orderID)
+	})
 
 	return &pb.OrderResponse{
 		Success:  true,
@@ -453,7 +465,9 @@ func (s *Server) ReportOrderIssue(ctx context.Context, req *pb.IssueReport) (*pb
 		return nil, status.Errorf(codes.Internal, "report issue: %v", err)
 	}
 	// #nosec G118 -- background issue notification must outlive request context
-	go notifyAdminsIssue(context.Background(), req.OrderId, req.IssueType)
+	fireAndForget(func(ctx context.Context) {
+		notifyAdminsIssue(ctx, req.OrderId, req.IssueType)
+	})
 	return &pb.StatusResponse{Success: true, Message: "Issue reported — our team will review it shortly"}, nil
 }
 
@@ -470,7 +484,9 @@ func (s *Server) AssignDriver(ctx context.Context, req *pb.AssignDriverRequest) 
 	}
 	// Notify driver
 	// #nosec G118 -- background driver notification must outlive request context
-	go notifyDriver(context.Background(), req.DriverId, req.OrderId)
+	fireAndForget(func(ctx context.Context) {
+		notifyDriver(ctx, req.DriverId, req.OrderId)
+	})
 	return &pb.StatusResponse{Success: true, Message: "Driver assigned"}, nil
 }
 
@@ -823,36 +839,33 @@ func grpcErr(err error) error {
 }
 
 func notifyAdminsNewOrder(ctx context.Context, humanRef, username string, total float64) {
-	admins, _ := DBListAdmins(ctx)
 	msg := fmt.Sprintf("🛒 New order *%s* from @%s — LKR %.0f", humanRef, username, total)
-	for _, a := range admins {
-		_ = DBEnqueueNotif(ctx, a.TelegramId, "new_order", msg)
-	}
+	_, _ = pool.Exec(ctx, `
+		INSERT INTO pending_notifs (user_id, type, text)
+		SELECT telegram_id, 'new_order', $1 FROM admin_users
+	`, msg)
 }
 
 func notifyAdminsIssue(ctx context.Context, orderID, issueType string) {
-	admins, _ := DBListAdmins(ctx)
 	msg := fmt.Sprintf("⚠️ Issue reported on order *%s*: %s", orderID, issueType)
-	for _, a := range admins {
-		_ = DBEnqueueNotif(ctx, a.TelegramId, "issue_report", msg)
-	}
+	_, _ = pool.Exec(ctx, `
+		INSERT INTO pending_notifs (user_id, type, text)
+		SELECT telegram_id, 'issue_report', $1 FROM admin_users
+	`, msg)
 }
 
 func notifyDriver(ctx context.Context, driverID, orderID string) {
-	drivers, _ := DBListDrivers(ctx, false)
-	for _, d := range drivers {
-		if d.Id == driverID && d.TelegramId != 0 {
-			_ = DBEnqueueNotif(ctx, d.TelegramId, "driver_assign",
-				fmt.Sprintf("🚗 New delivery assigned: order *%s*", orderID))
-			return
-		}
-	}
+	_, _ = pool.Exec(ctx, `
+		INSERT INTO pending_notifs (user_id, type, text)
+		SELECT telegram_id, 'driver_assign', $2 FROM drivers WHERE id=$1 AND telegram_id != 0
+	`, driverID, fmt.Sprintf("🚗 New delivery assigned: order *%s*", orderID))
 }
 
 // autoDispatch assigns the nearest available driver to a newly placed order.
 func autoDispatch(ctx context.Context, orderID string) {
-	_, err := DBGetOrder(ctx, orderID)
-	if err != nil {
+	var exists bool
+	_ = pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM orders WHERE id=$1)", orderID).Scan(&exists)
+	if !exists {
 		return
 	}
 	drivers, err := DBListDrivers(ctx, true)
@@ -865,6 +878,8 @@ func autoDispatch(ctx context.Context, orderID string) {
 		slog.Warn("auto-dispatch assign failed", "order", orderID, "driver", driver.Id, "err", err)
 		return
 	}
-	notifyDriver(ctx, driver.Id, orderID)
+	if driver.TelegramId != 0 {
+		_ = DBEnqueueNotif(ctx, driver.TelegramId, "driver_assign", fmt.Sprintf("🚗 New delivery assigned: order *%s*", orderID))
+	}
 	slog.Info("auto-dispatch assigned", "order", orderID, "driver", driver.Id)
 }

@@ -533,7 +533,7 @@ async def post_init(app: Application) -> None:
     logger.info("gRPC channel pool initialised")
 
     # Start notification polling loop
-    asyncio.create_task(poll_notifications(app))
+    app.bot_data["poll_task"] = asyncio.create_task(poll_notifications(app))
 
 
 async def post_shutdown(app: Application) -> None:
@@ -545,6 +545,10 @@ async def post_shutdown(app: Application) -> None:
         logger.info("flushing pending carts before shutdown…")
         await cart_manager.flush_all()
         logger.info("cart flush complete")
+
+    task = app.bot_data.get("poll_task")
+    if task:
+        task.cancel()
 
     await pool.stop()
 
