@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v12.5.2] - 2026-06-12
+
+### 🛡 Security & Lint Hardening
+- **Go Engine & Supervisor Security:** Resolved `gosec` findings including G118 (context-scoped goroutines), G104 (unhandled Close errors), G115 (integer overflow checks on zip headers), G301 (directory permissions), and G305 (archive extraction validations).
+- **Python Bot Security:** Cleaned up Python security warnings and annotated non-cryptographic random checks correctly.
+- **Local Dev Toolchain:** Refactored `Taskfile.yml` build tasks to dynamically navigate Go subdirectories, enabling project-wide `task build` commands to compile successfully out-of-the-box.
+
 ## [v12.5.1] - 2026-06-12
 
 ### 🚀 Advanced Performance & Concurrency

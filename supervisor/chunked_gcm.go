@@ -81,6 +81,7 @@ func (c *chunkedGCMWriter) flushChunk() error {
 
 	ciphertext := c.aead.Seal(nil, chunkNonce, c.buf[:c.pos], nil)
 	lenBuf := make([]byte, 4)
+	// #nosec G115 -- length is bounded by 64KB chunk size + GCM overhead, safe to cast to uint32
 	binary.BigEndian.PutUint32(lenBuf, uint32(len(ciphertext)))
 	if _, err := c.w.Write(lenBuf); err != nil {
 		return err
@@ -198,6 +199,7 @@ func decryptEnvFile(path string) ([]byte, error) {
 	h := sha256.Sum256([]byte(machineID))
 	key := h[:16]
 
+	// #nosec G304 -- path is validated/derived configuration path
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

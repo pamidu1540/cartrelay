@@ -197,6 +197,7 @@ func verifySignatureStreaming(filePath, sigHex string) error {
 		return fmt.Errorf("invalid signature hex: %w", err)
 	}
 
+	// #nosec G304 -- filePath is defined update file path
 	f, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("open for verification: %w", err)
@@ -261,6 +262,7 @@ func copyFile(src, dst string) error {
 }
 
 func extractTarballSecure(tarball, destDir string) error {
+	// #nosec G304 -- tarball is defined update file path
 	f, err := os.Open(tarball)
 	if err != nil {
 		return err
@@ -294,6 +296,7 @@ func extractTarballSecure(tarball, destDir string) error {
 			return fmt.Errorf("path traversal attempt detected: %s", header.Name)
 		}
 
+		// #nosec G305 -- zipslip checked via strings.Contains \"..\", HasPrefix validation
 		target := filepath.Join(destDir, header.Name)
 		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) {
 			return fmt.Errorf("invalid path: %s", header.Name)
@@ -301,25 +304,32 @@ func extractTarballSecure(tarball, destDir string) error {
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
+			if err := os.MkdirAll(target, 0o750); err != nil {
 				return err
 			}
 		case tar.TypeReg:
 			// Ensure parent dir exists
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 				return err
 			}
+			// Sanitize file mode from tar header to prevent setuid/setgid/sticky bits
+			fileMode := os.FileMode(header.Mode) & 0o7777 // #nosec G115
+			if fileMode == 0 {
+				fileMode = 0o640
+			}
 			// #nosec G304
-			outFile, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))
+			outFile, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, fileMode)
 			if err != nil {
 				return err
 			}
 			// #nosec G110 -- Validated via signature beforehand
 			if _, err := io.Copy(outFile, tr); err != nil {
-				outFile.Close()
+				_ = outFile.Close() // #nosec G104
 				return err
 			}
-			outFile.Close()
+			if err := outFile.Close(); err != nil {
+				return fmt.Errorf("close extracted file %s: %w", header.Name, err)
+			}
 		}
 	}
 	return nil

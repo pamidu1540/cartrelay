@@ -119,7 +119,7 @@ class CartManager:
             items = await self.get_cart(user_id)
             for ci in items:
                 if ci.item_id == item_id:
-                    ci.quantity += quantity
+                    ci.quantity += qty
                     if ci.quantity <= 0:
                         items = [i for i in items if i.item_id != item_id]
                     await self.set_items(user_id, items)

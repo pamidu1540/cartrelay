@@ -247,7 +247,7 @@ func SetSystemSettings(ctx context.Context, s *pb.SystemSettings, actorID int64)
 	br := tx.SendBatch(ctx, batch)
 	for range settings {
 		if _, err := br.Exec(); err != nil {
-			br.Close()
+			_ = br.Close() // #nosec G104 — already returning the primary error
 			return fmt.Errorf("set config batch exec: %w", err)
 		}
 	}
@@ -1623,7 +1623,8 @@ func DBIsAdmin(ctx context.Context, telegramID int64) (bool, string, error) {
 func DBAuditLog(ctx context.Context, actorID int64, action, targetID, detail string) {
 	// fire-and-forget in background to avoid synchronous DB write in hot paths
 	go func() {
-		ctxBg := context.Background()
+		ctxBg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
 		_, err := pool.Exec(ctxBg, `
 			INSERT INTO audit_log (actor_id, action, target_id, detail)
 			VALUES ($1,$2,$3,$4)`,
