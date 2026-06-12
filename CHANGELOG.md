@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v12.5.3] - 2026-06-12
+
+### 🐛 Docker Build Fixes
+- **Engine Dockerfile:** Upgraded the `golang` base image from `1.24-bookworm` to `1.25-bookworm` to satisfy the `go 1.25.0` requirement in `engine/go.mod` and fix Docker Buildx compilation failures.
+
 ## [v12.5.2] - 2026-06-12
 
 ### 🛡 Security & Lint Hardening
