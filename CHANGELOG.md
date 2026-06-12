@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v12.5.7] - 2026-06-12
+
+### 🐛 Permissions & Volume Mount Fixes
+- **Host Path Pre-Creation:** Fixed an issue where the absolute host path for the Unix socket was not automatically created by Docker if it didn't exist before the supervisor attempted to `chown` it, causing permissions to silently fail. The supervisor now explicitly creates `/opt/logistics-system/deploy/sockets` natively on the host before running the root-escalated transient container, ensuring ownership is correctly applied before the engine starts.
+
 ## [v12.5.6] - 2026-06-12
 
 ### 🐛 Permissions & Volume Mount Fixes
