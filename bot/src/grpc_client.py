@@ -44,6 +44,7 @@ TLS_CERT_FILE: str = os.getenv("TLS_CERT_FILE", "")
 RETRY_ATTEMPTS: int = 3
 RETRY_BASE_DELAY: float = 0.5   # seconds; doubles each attempt
 RETRY_MAX_DELAY: float = 4.0
+RPC_TIMEOUT: float = 10.0
 
 # Circuit breaker
 CB_FAILURE_THRESHOLD: int = 5   # consecutive failures to trip
@@ -228,7 +229,7 @@ class ChannelPool:
                     if not hasattr(slot, "stub"):
                         slot.stub = logistics_pb2_grpc.LogisticsEngineStub(slot.channel)
                     return await asyncio.wait_for(coro_factory(slot.stub, meta), timeout=RPC_TIMEOUT)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 last_exc = Exception(f"gRPC call {method_name} timed out after {RPC_TIMEOUT}s")
                 if attempt < RETRY_ATTEMPTS:
                     logger.warning(

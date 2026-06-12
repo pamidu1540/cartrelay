@@ -77,27 +77,26 @@ class CartManager:
 
     async def get_cart(self, user_id: int) -> list[pb.CartItem]:
         """Return the user's current cart, loading from engine if not cached."""
-        async with self._acquire_user_lock(user_id):
-            async with self._lock:
-                cached = self._get_local(user_id)
-                if cached is not None:
-                    return cached
+        async with self._lock:
+            cached = self._get_local(user_id)
+            if cached is not None:
+                return cached
 
-            # Load from engine
-            try:
-                resp = await pool.call(
-                    "/logistics.LogisticsEngine/GetCart",
-                    lambda stub, meta: stub.GetCart(
-                        pb.UserId(user_id=user_id), metadata=meta
-                    ),
-                    user_id=user_id,
-                )
-                async with self._lock:
-                    self._set_local(user_id, resp.items)
-                return list(resp.items)
-            except Exception as exc:
-                logger.warning("load cart failed for user %d: %s", user_id, exc)
-                return []
+        # Load from engine
+        try:
+            resp = await pool.call(
+                "/logistics.LogisticsEngine/GetCart",
+                lambda stub, meta: stub.GetCart(
+                    pb.UserId(user_id=user_id), metadata=meta
+                ),
+                user_id=user_id,
+            )
+            async with self._lock:
+                self._set_local(user_id, resp.items)
+            return list(resp.items)
+        except Exception as exc:
+            logger.warning("load cart failed for user %d: %s", user_id, exc)
+            return []
 
     async def set_items(self, user_id: int, items: list[pb.CartItem]) -> None:
         """Replace the user's cart and persist to engine immediately."""
@@ -114,7 +113,7 @@ class CartManager:
                     self._set_local(user_id, old_items)
             raise
 
-    async def add_item(self, user_id: int, item_id: str, quantity: int = 1, note: str = "") -> list[pb.CartItem]:
+    async def add_item(self, user_id: int, item_id: str, qty: int = 1, note: str = "") -> list[pb.CartItem]:
         """Add qty of item_id to the cart. Returns updated cart."""
         async with self._acquire_user_lock(user_id):
             items = await self.get_cart(user_id)
@@ -125,8 +124,8 @@ class CartManager:
                         items = [i for i in items if i.item_id != item_id]
                     await self.set_items(user_id, items)
                     return items
-            if quantity > 0:
-                items.append(pb.CartItem(item_id=item_id, quantity=quantity, note=note))
+            if qty > 0:
+                items.append(pb.CartItem(item_id=item_id, quantity=qty, note=note))
             await self.set_items(user_id, items)
             return items
 
@@ -138,19 +137,19 @@ class CartManager:
             await self.set_items(user_id, items)
             return items
 
-    async def set_item_quantity(self, user_id: int, item_id: str, quantity: int) -> list[pb.CartItem]:
+    async def set_quantity(self, user_id: int, item_id: str, qty: int) -> list[pb.CartItem]:
         """Set the quantity of item_id. qty <= 0 removes the item."""
         async with self._acquire_user_lock(user_id):
             items = await self.get_cart(user_id)
-            if quantity <= 0:
+            if qty <= 0:
                 items = [ci for ci in items if ci.item_id != item_id]
             else:
                 for ci in items:
                     if ci.item_id == item_id:
-                        ci.quantity = quantity
+                        ci.quantity = qty
                         break
                 else:
-                    items.append(pb.CartItem(item_id=item_id, quantity=quantity))
+                    items.append(pb.CartItem(item_id=item_id, quantity=qty))
             await self.set_items(user_id, items)
             return items
 

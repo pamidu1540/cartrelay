@@ -21,14 +21,15 @@ tasks:
     env:
       UV_PROJECT_ENVIRONMENT: "{{.USER_WORKING_DIR}}/.tools/.venv"
     cmds:
-      - .tools/bin/uv sync --directory bot
+      - .tools/bin/uv sync --directory bot --all-extras
 
   lint:
     desc: "Run static analysis and linting (Go and Python)"
     env:
       UV_PROJECT_ENVIRONMENT: "{{.USER_WORKING_DIR}}/.tools/.venv"
     cmds:
-      - .tools/bin/golangci-lint run ./...
+      - cd engine && ../.tools/bin/golangci-lint run ./...
+      - cd supervisor && ../.tools/bin/golangci-lint run ./...
       - .tools/bin/uv run --directory bot ruff check src
 
   test:
@@ -36,7 +37,8 @@ tasks:
     env:
       UV_PROJECT_ENVIRONMENT: "{{.USER_WORKING_DIR}}/.tools/.venv"
     cmds:
-      - go test -v ./engine/... ./supervisor/...
+      - cd engine && go test -v ./...
+      - cd supervisor && go test -v ./...
       - .tools/bin/uv run --directory bot pytest tests
 
   build:
