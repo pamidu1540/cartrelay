@@ -97,85 +97,97 @@ func AuthInterceptor(
 func validateHMACToken(token, method string) bool {
 	secret := []byte(os.Getenv("INTERNAL_TOKEN"))
 	now := time.Now().Unix()
+	tokenBytes := []byte(token)
+
+	// Fast path: exact match on current second
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(fmt.Sprintf("%s:%d", method, now)))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	if hmac.Equal(tokenBytes, []byte(expected)) {
+		return true
+	}
 
 	for offset := int64(-5); offset <= 5; offset++ {
+		if offset == 0 {
+			continue
+		}
 		msg := fmt.Sprintf("%s:%d", method, now+offset)
-		mac := hmac.New(sha256.New, secret)
+		mac = hmac.New(sha256.New, secret)
 		mac.Write([]byte(msg))
-		expected := hex.EncodeToString(mac.Sum(nil))
-		if hmac.Equal([]byte(token), []byte(expected)) {
+		expected = hex.EncodeToString(mac.Sum(nil))
+		if hmac.Equal(tokenBytes, []byte(expected)) {
 			return true
 		}
 	}
 	return false
 }
 
+var adminMethods = map[string]bool{
+	"/logistics.LogisticsEngine/AddItem":            true,
+	"/logistics.LogisticsEngine/EditItem":           true,
+	"/logistics.LogisticsEngine/EditItemPrice":      true,
+	"/logistics.LogisticsEngine/EditItemStock":      true,
+	"/logistics.LogisticsEngine/RemoveItem":         true,
+	"/logistics.LogisticsEngine/BulkImportItems":    true,
+	"/logistics.LogisticsEngine/GetAllOrders":       true,
+	"/logistics.LogisticsEngine/UpdateOrderStatus":  true,
+	"/logistics.LogisticsEngine/AssignDriver":       true,
+	"/logistics.LogisticsEngine/AddOrderNote":       true,
+	"/logistics.LogisticsEngine/ResolveOrderIssue":  true,
+	"/logistics.LogisticsEngine/AddWarehouse":       true,
+	"/logistics.LogisticsEngine/EditWarehouse":      true,
+	"/logistics.LogisticsEngine/RemoveWarehouse":    true,
+	"/logistics.LogisticsEngine/AddDriver":          true,
+	"/logistics.LogisticsEngine/EditDriver":         true,
+	"/logistics.LogisticsEngine/RemoveDriver":       true,
+	"/logistics.LogisticsEngine/BroadcastDrivers":   true,
+	"/logistics.LogisticsEngine/AddPromo":           true,
+	"/logistics.LogisticsEngine/EditPromo":          true,
+	"/logistics.LogisticsEngine/RemovePromo":        true,
+	"/logistics.LogisticsEngine/AdjustLoyaltyPoints":true,
+	"/logistics.LogisticsEngine/AddAdmin":           true,
+	"/logistics.LogisticsEngine/RemoveAdmin":        true,
+	"/logistics.LogisticsEngine/ListAdmins":         true,
+	"/logistics.LogisticsEngine/GetAuditLog":        true,
+	"/logistics.LogisticsEngine/SetSystemSettings":  true,
+	"/logistics.LogisticsEngine/ToggleMaintenance":  true,
+	"/logistics.LogisticsEngine/ScheduleMaintenance":true,
+	"/logistics.LogisticsEngine/GetRevenueSummary":  true,
+	"/logistics.LogisticsEngine/GetTopItems":        true,
+	"/logistics.LogisticsEngine/GetOrderVolumeTrend":true,
+}
+
 // isAdminRPC returns true for RPCs that require admin privileges.
 func isAdminRPC(method string) bool {
-	adminMethods := map[string]bool{
-		"/logistics.LogisticsEngine/AddItem":            true,
-		"/logistics.LogisticsEngine/EditItem":           true,
-		"/logistics.LogisticsEngine/EditItemPrice":      true,
-		"/logistics.LogisticsEngine/EditItemStock":      true,
-		"/logistics.LogisticsEngine/RemoveItem":         true,
-		"/logistics.LogisticsEngine/BulkImportItems":    true,
-		"/logistics.LogisticsEngine/GetAllOrders":       true,
-		"/logistics.LogisticsEngine/UpdateOrderStatus":  true,
-		"/logistics.LogisticsEngine/AssignDriver":       true,
-		"/logistics.LogisticsEngine/AddOrderNote":       true,
-		"/logistics.LogisticsEngine/ResolveOrderIssue":  true,
-		"/logistics.LogisticsEngine/AddWarehouse":       true,
-		"/logistics.LogisticsEngine/EditWarehouse":      true,
-		"/logistics.LogisticsEngine/RemoveWarehouse":    true,
-		"/logistics.LogisticsEngine/AddDriver":          true,
-		"/logistics.LogisticsEngine/EditDriver":         true,
-		"/logistics.LogisticsEngine/RemoveDriver":       true,
-		"/logistics.LogisticsEngine/BroadcastDrivers":   true,
-		"/logistics.LogisticsEngine/AddPromo":           true,
-		"/logistics.LogisticsEngine/EditPromo":          true,
-		"/logistics.LogisticsEngine/RemovePromo":        true,
-		"/logistics.LogisticsEngine/AdjustLoyaltyPoints":true,
-		"/logistics.LogisticsEngine/AddAdmin":           true,
-		"/logistics.LogisticsEngine/RemoveAdmin":        true,
-		"/logistics.LogisticsEngine/ListAdmins":         true,
-		"/logistics.LogisticsEngine/GetAuditLog":        true,
-		"/logistics.LogisticsEngine/SetSystemSettings":  true,
-		"/logistics.LogisticsEngine/ToggleMaintenance":  true,
-		"/logistics.LogisticsEngine/ScheduleMaintenance":true,
-		"/logistics.LogisticsEngine/GetRevenueSummary":  true,
-		"/logistics.LogisticsEngine/GetTopItems":        true,
-		"/logistics.LogisticsEngine/GetOrderVolumeTrend":true,
-	}
 	return adminMethods[method]
+}
+
+var catalogMethods = map[string]bool{
+	"/logistics.LogisticsEngine/AddItem":         true,
+	"/logistics.LogisticsEngine/EditItem":        true,
+	"/logistics.LogisticsEngine/EditItemPrice":   true,
+	"/logistics.LogisticsEngine/EditItemStock":   true,
+	"/logistics.LogisticsEngine/RemoveItem":      true,
+	"/logistics.LogisticsEngine/BulkImportItems": true,
+}
+
+var dispatchMethods = map[string]bool{
+	"/logistics.LogisticsEngine/GetAllOrders":      true,
+	"/logistics.LogisticsEngine/UpdateOrderStatus": true,
+	"/logistics.LogisticsEngine/AssignDriver":      true,
+	"/logistics.LogisticsEngine/AddOrderNote":      true,
+}
+
+var supportMethods = map[string]bool{
+	"/logistics.LogisticsEngine/GetAllOrders":      true,
+	"/logistics.LogisticsEngine/ResolveOrderIssue": true,
+	"/logistics.LogisticsEngine/AddOrderNote":      true,
 }
 
 // enforceRBAC restricts certain RPCs to specific roles.
 func enforceRBAC(method, role string) error {
 	if role == "super_admin" {
 		return nil // super_admin can do everything
-	}
-
-	// Catalog manager
-	catalogMethods := map[string]bool{
-		"/logistics.LogisticsEngine/AddItem":         true,
-		"/logistics.LogisticsEngine/EditItem":        true,
-		"/logistics.LogisticsEngine/EditItemPrice":   true,
-		"/logistics.LogisticsEngine/EditItemStock":   true,
-		"/logistics.LogisticsEngine/RemoveItem":      true,
-		"/logistics.LogisticsEngine/BulkImportItems": true,
-	}
-	// Dispatcher
-	dispatchMethods := map[string]bool{
-		"/logistics.LogisticsEngine/GetAllOrders":      true,
-		"/logistics.LogisticsEngine/UpdateOrderStatus": true,
-		"/logistics.LogisticsEngine/AssignDriver":      true,
-		"/logistics.LogisticsEngine/AddOrderNote":      true,
-	}
-	// Support
-	supportMethods := map[string]bool{
-		"/logistics.LogisticsEngine/GetAllOrders":     true,
-		"/logistics.LogisticsEngine/ResolveOrderIssue":true,
-		"/logistics.LogisticsEngine/AddOrderNote":     true,
 	}
 
 	allowed := false

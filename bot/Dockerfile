@@ -2,7 +2,7 @@
 
 # ── Stage 1: proto codegen ────────────────────────────────────────────────────
 FROM python:3.12-slim AS proto-gen
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /uvx /bin/
 
 RUN uv pip install --system --no-cache-dir grpcio-tools==1.80.0
 
@@ -20,7 +20,7 @@ RUN mkdir -p /out && \
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /uvx /bin/
 
 RUN useradd -m -u 1001 bot
 

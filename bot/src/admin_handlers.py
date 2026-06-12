@@ -47,7 +47,7 @@ async def _reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, 
 
 
 async def _rpc_error(update: Update, context: ContextTypes.DEFAULT_TYPE, exc: grpc.RpcError) -> None:
-    await _reply(update, context, context, f"⚠️ Engine error: {exc.details()}")
+    await _reply(update, context, f"⚠️ Engine error: {exc.details()}")
 
 
 # ── Main admin panel ──────────────────────────────────────────────────────────

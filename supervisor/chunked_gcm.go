@@ -134,7 +134,11 @@ func newChunkedGCMReader(r io.Reader, key []byte) (*chunkedGCMReader, error) {
 func (c *chunkedGCMReader) Read(p []byte) (n int, err error) {
 	if len(c.buf) > 0 {
 		n = copy(p, c.buf)
-		c.buf = c.buf[n:]
+		if n == len(c.buf) {
+			c.buf = nil
+		} else {
+			c.buf = c.buf[n:]
+		}
 		return n, nil
 	}
 	if c.eof {
@@ -167,14 +171,19 @@ func (c *chunkedGCMReader) Read(p []byte) (n int, err error) {
 	}
 
 	n = copy(p, plainBuf)
-	c.buf = plainBuf[n:]
+	if n == len(plainBuf) {
+		c.buf = nil
+	} else {
+		c.buf = make([]byte, len(plainBuf)-n)
+		copy(c.buf, plainBuf[n:])
+	}
 	return n, nil
 }
 
 func getAES128Key() []byte {
 	token := os.Getenv("INTERNAL_TOKEN")
 	if token == "" {
-		token = "default_fallback_token_for_tests"
+		panic("INTERNAL_TOKEN environment variable must be set")
 	}
 	h := sha256.Sum256([]byte(token))
 	return h[:16]

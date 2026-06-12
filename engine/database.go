@@ -239,12 +239,20 @@ func SetSystemSettings(ctx context.Context, s *pb.SystemSettings, actorID int64)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	batch := &pgx.Batch{}
 	for k, v := range settings {
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO config (key, value) VALUES ($1, $2)
-			 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, k, v); err != nil {
-			return fmt.Errorf("set config %s: %w", k, err)
+		batch.Queue(`INSERT INTO config (key, value) VALUES ($1, $2)
+			 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, k, v)
+	}
+	br := tx.SendBatch(ctx, batch)
+	for range settings {
+		if _, err := br.Exec(); err != nil {
+			br.Close()
+			return fmt.Errorf("set config batch exec: %w", err)
 		}
+	}
+	if err := br.Close(); err != nil {
+		return fmt.Errorf("set config batch close: %w", err)
 	}
 	DBAuditLog(ctx, actorID, "set_system_settings", "config", fmt.Sprintf("%+v", settings))
 	return tx.Commit(ctx)
@@ -366,18 +374,12 @@ func FetchCatalogItems(ctx context.Context, catFilter, search string, page, page
 		n++
 	}
 
-	// Count
-	var total int32
-	countArgs := make([]any, len(args))
-	copy(countArgs, args)
-	_ = pool.QueryRow(ctx, "SELECT COUNT(*) FROM items WHERE "+where, countArgs...).Scan(&total)
-
-	// Fetch — featured items first, then alphabetical
+	// Fetch with window function
 	args = append(args, pageSize, offset)
 	rows, err := pool.Query(ctx, fmt.Sprintf(`
 		SELECT id, name, price, volume_cubes, category, stock, photo_file_id,
 		       description, is_featured, is_available, available_from, available_until,
-		       tax_rate, reorder_level, deleted_at, created_at
+		       tax_rate, reorder_level, deleted_at, created_at, count(*) over()
 		FROM items
 		WHERE %s
 		ORDER BY is_featured DESC, category, name
@@ -389,8 +391,7 @@ func FetchCatalogItems(ctx context.Context, catFilter, search string, page, page
 	}
 	defer rows.Close()
 
-	items, err := scanItems(rows)
-	return items, total, err
+	return scanItems(rows, true)
 }
 
 func DBGetItemsByIDs(ctx context.Context, ids []string) (map[string]*pb.Item, error) {
@@ -419,7 +420,7 @@ func DBGetItemsByIDs(ctx context.Context, ids []string) (map[string]*pb.Item, er
 	}
 	defer rows.Close()
 
-	items, err := scanItems(rows)
+	items, _, err := scanItems(rows, false)
 	if err != nil {
 		return nil, err
 	}
@@ -457,25 +458,30 @@ func DBBulkImportItems(ctx context.Context, items []*pb.Item, actorID int64) (in
 	return created, updated, errs
 }
 
-func scanItems(rows pgx.Rows) ([]*pb.Item, error) {
+func scanItems(rows pgx.Rows, withTotal bool) ([]*pb.Item, int32, error) {
 	items := make([]*pb.Item, 0, 32)
+	var total int32
 	for rows.Next() {
 		var it pb.Item
 		var deletedAt *int64
-		if err := rows.Scan(
+		dest := []any{
 			&it.Id, &it.Name, &it.Price, &it.VolumeCubes, &it.Category,
 			&it.Stock, &it.PhotoFileId, &it.Description, &it.IsFeatured,
 			&it.IsAvailable, &it.AvailableFrom, &it.AvailableUntil,
 			&it.TaxRate, &it.ReorderLevel, &deletedAt, &it.CreatedAt,
-		); err != nil {
-			return nil, err
+		}
+		if withTotal {
+			dest = append(dest, &total)
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, 0, err
 		}
 		if deletedAt != nil {
 			it.DeletedAt = *deletedAt
 		}
 		items = append(items, &it)
 	}
-	return items, rows.Err()
+	return items, total, rows.Err()
 }
 
 // ── Warehouses ────────────────────────────────────────────────────────────────
@@ -925,13 +931,10 @@ func DBGetUserOrders(ctx context.Context, userID int64, page, pageSize int32) ([
 	}
 	offset := page * pageSize
 
-	var total int32
-	_ = pool.QueryRow(ctx, "SELECT COUNT(*) FROM orders WHERE user_id=$1", userID).Scan(&total)
-
 	rows, err := pool.Query(ctx, `
 		SELECT order_id, human_ref, status, total, created_at, receipt, user_id, username,
 		       COALESCE(driver_id,''), '', order_notes, delivery_address,
-		       scheduled_for, contactless, recipient_name, delivery_otp, issue_status
+		       scheduled_for, contactless, recipient_name, delivery_otp, issue_status, count(*) over()
 		FROM orders
 		WHERE user_id=$1
 		ORDER BY created_at DESC
@@ -943,8 +946,7 @@ func DBGetUserOrders(ctx context.Context, userID int64, page, pageSize int32) ([
 	}
 	defer rows.Close()
 
-	orders, err := scanOrdersFlat(rows)
-	return orders, total, err
+	return scanOrdersFlat(rows, true)
 }
 
 func DBGetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) ([]*pb.Order, int32, error) {
@@ -978,17 +980,12 @@ func DBGetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) ([]*pb.Ord
 		n++
 	}
 
-	var total int32
-	countArgs := make([]any, len(args))
-	copy(countArgs, args)
-	_ = pool.QueryRow(ctx, "SELECT COUNT(*) FROM orders o WHERE "+where, countArgs...).Scan(&total)
-
 	args = append(args, req.PageSize, offset)
 	rows, err := pool.Query(ctx, fmt.Sprintf(`
 		SELECT o.order_id, o.human_ref, o.status, o.total, o.created_at, o.receipt,
 		       o.user_id, o.username, COALESCE(o.driver_id,''), COALESCE(d.name,''),
 		       o.order_notes, o.delivery_address, o.scheduled_for,
-		       o.contactless, o.recipient_name, o.delivery_otp, o.issue_status
+		       o.contactless, o.recipient_name, o.delivery_otp, o.issue_status, count(*) over()
 		FROM orders o
 		LEFT JOIN drivers d ON d.id = o.driver_id
 		WHERE %s
@@ -1001,8 +998,7 @@ func DBGetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) ([]*pb.Ord
 	}
 	defer rows.Close()
 
-	orders, err := scanOrdersFlat(rows)
-	return orders, total, err
+	return scanOrdersFlat(rows, true)
 }
 
 // DBUpdateOrderStatus enforces status machine transitions and records history.
@@ -1168,21 +1164,26 @@ func DBResolveIssue(ctx context.Context, req *pb.ResolveIssueRequest) error {
 	return tx.Commit(ctx)
 }
 
-func scanOrdersFlat(rows pgx.Rows) ([]*pb.Order, error) {
+func scanOrdersFlat(rows pgx.Rows, withTotal bool) ([]*pb.Order, int32, error) {
 	orders := make([]*pb.Order, 0, 32)
+	var total int32
 	for rows.Next() {
 		o := &pb.Order{}
-		if err := rows.Scan(
+		dest := []any{
 			&o.OrderId, &o.HumanRef, &o.Status, &o.Total, &o.Timestamp,
 			&o.Receipt, &o.UserId, &o.Username, &o.DriverId, &o.DriverName,
 			&o.OrderNotes, &o.DeliveryAddress, &o.ScheduledFor,
 			&o.Contactless, &o.RecipientName, &o.DeliveryOtp, &o.IssueStatus,
-		); err != nil {
-			return nil, err
+		}
+		if withTotal {
+			dest = append(dest, &total)
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return nil, 0, err
 		}
 		orders = append(orders, o)
 	}
-	return orders, rows.Err()
+	return orders, total, rows.Err()
 }
 
 // ── Carts ─────────────────────────────────────────────────────────────────────
@@ -1620,14 +1621,18 @@ func DBIsAdmin(ctx context.Context, telegramID int64) (bool, string, error) {
 // ── Audit log ─────────────────────────────────────────────────────────────────
 
 func DBAuditLog(ctx context.Context, actorID int64, action, targetID, detail string) {
-	_, err := pool.Exec(ctx, `
-		INSERT INTO audit_log (actor_id, action, target_id, detail)
-		VALUES ($1,$2,$3,$4)`,
-		actorID, action, targetID, detail,
-	)
-	if err != nil {
-		slog.Warn("audit log write failed", "err", err, "action", action)
-	}
+	// fire-and-forget in background to avoid synchronous DB write in hot paths
+	go func() {
+		ctxBg := context.Background()
+		_, err := pool.Exec(ctxBg, `
+			INSERT INTO audit_log (actor_id, action, target_id, detail)
+			VALUES ($1,$2,$3,$4)`,
+			actorID, action, targetID, detail,
+		)
+		if err != nil {
+			slog.Warn("audit log write failed", "err", err, "action", action)
+		}
+	}()
 }
 
 func DBGetAuditLog(ctx context.Context, req *pb.AuditLogRequest) ([]*pb.AuditEntry, int32, error) {
@@ -1661,14 +1666,9 @@ func DBGetAuditLog(ctx context.Context, req *pb.AuditLogRequest) ([]*pb.AuditEnt
 		n++
 	}
 
-	var total int32
-	countArgs := make([]any, len(args))
-	copy(countArgs, args)
-	_ = pool.QueryRow(ctx, "SELECT COUNT(*) FROM audit_log WHERE "+where, countArgs...).Scan(&total)
-
 	args = append(args, req.PageSize, offset)
 	rows, err := pool.Query(ctx, fmt.Sprintf(`
-		SELECT id, ts, actor_id, action, target_id, detail
+		SELECT id, ts, actor_id, action, target_id, detail, count(*) over()
 		FROM audit_log WHERE %s
 		ORDER BY ts DESC LIMIT $%d OFFSET $%d`, where, n, n+1),
 		args...,
@@ -1679,9 +1679,10 @@ func DBGetAuditLog(ctx context.Context, req *pb.AuditLogRequest) ([]*pb.AuditEnt
 	defer rows.Close()
 
 	var entries []*pb.AuditEntry
+	var total int32
 	for rows.Next() {
 		e := &pb.AuditEntry{}
-		if err := rows.Scan(&e.Id, &e.Ts, &e.ActorId, &e.Action, &e.TargetId, &e.Detail); err != nil {
+		if err := rows.Scan(&e.Id, &e.Ts, &e.ActorId, &e.Action, &e.TargetId, &e.Detail, &total); err != nil {
 			return nil, 0, err
 		}
 		entries = append(entries, e)
@@ -1821,31 +1822,28 @@ func IssueBirthdayRewards(ctx context.Context) error {
 
 func CheckLowStockAndAlert(ctx context.Context) error {
 	items, err := DBGetLowStock(ctx, 0) // 0 = use per-item reorder_level
-	if err != nil {
+	if err != nil || len(items) == 0 {
 		return err
 	}
-	// Find super admin(s) to notify
-	rows, err := pool.Query(ctx,
-		"SELECT telegram_id FROM admin_users WHERE role='super_admin'")
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
 
-	var adminIDs []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err == nil {
-			adminIDs = append(adminIDs, id)
-		}
-	}
-
+	batch := &pgx.Batch{}
 	for _, item := range items {
 		if item.Stock <= item.Threshold {
 			msg := fmt.Sprintf("⚠️ Low stock alert: *%s* has only %d unit(s) left (threshold: %d)",
 				item.Name, item.Stock, item.Threshold)
-			for _, aid := range adminIDs {
-				_ = DBEnqueueNotif(ctx, aid, "low_stock", msg)
+			batch.Queue(`
+				INSERT INTO pending_notifs (user_id, type, text)
+				SELECT telegram_id, 'low_stock', $1 
+				FROM admin_users WHERE role='super_admin'`, msg)
+		}
+	}
+	
+	if batch.Len() > 0 {
+		br := pool.SendBatch(ctx, batch)
+		defer br.Close()
+		for i := 0; i < batch.Len(); i++ {
+			if _, err := br.Exec(); err != nil {
+				return err
 			}
 		}
 	}

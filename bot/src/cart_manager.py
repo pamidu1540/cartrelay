@@ -40,6 +40,16 @@ class CartManager:
         self._ttl = 3600
         self._lock = asyncio.Lock()
         self._user_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._last_prune = time.monotonic()
+
+    def _acquire_user_lock(self, user_id: int) -> asyncio.Lock:
+        now = time.monotonic()
+        if now - self._last_prune > 3600:
+            to_del = [k for k, lck in self._user_locks.items() if not lck.locked()]
+            for k in to_del:
+                del self._user_locks[k]
+            self._last_prune = now
+        return self._user_locks[user_id]
 
     def _get_local(self, user_id: int):
         if user_id in self._local:
@@ -65,28 +75,29 @@ class CartManager:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    async def get(self, user_id: int) -> list[pb.CartItem]:
+    async def get_cart(self, user_id: int) -> list[pb.CartItem]:
         """Return the user's current cart, loading from engine if not cached."""
-        async with self._lock:
-            cached = self._get_local(user_id)
-            if cached is not None:
-                return cached
-
-        # Load from engine
-        try:
-            resp = await pool.call(
-                "/logistics.LogisticsEngine/GetCart",
-                lambda stub, meta: stub.GetCart(
-                    pb.UserId(user_id=user_id), metadata=meta
-                ),
-                user_id=user_id,
-            )
+        async with self._acquire_user_lock(user_id):
             async with self._lock:
-                self._set_local(user_id, resp.items)
-            return list(resp.items)
-        except Exception as exc:
-            logger.warning("load cart failed for user %d: %s", user_id, exc)
-            return []
+                cached = self._get_local(user_id)
+                if cached is not None:
+                    return cached
+
+            # Load from engine
+            try:
+                resp = await pool.call(
+                    "/logistics.LogisticsEngine/GetCart",
+                    lambda stub, meta: stub.GetCart(
+                        pb.UserId(user_id=user_id), metadata=meta
+                    ),
+                    user_id=user_id,
+                )
+                async with self._lock:
+                    self._set_local(user_id, resp.items)
+                return list(resp.items)
+            except Exception as exc:
+                logger.warning("load cart failed for user %d: %s", user_id, exc)
+                return []
 
     async def set_items(self, user_id: int, items: list[pb.CartItem]) -> None:
         """Replace the user's cart and persist to engine immediately."""
@@ -103,43 +114,43 @@ class CartManager:
                     self._set_local(user_id, old_items)
             raise
 
-    async def add_item(self, user_id: int, item_id: str, qty: int = 1, note: str = "") -> list[pb.CartItem]:
+    async def add_item(self, user_id: int, item_id: str, quantity: int = 1, note: str = "") -> list[pb.CartItem]:
         """Add qty of item_id to the cart. Returns updated cart."""
-        async with self._user_locks[user_id]:
-            items = await self.get(user_id)
+        async with self._acquire_user_lock(user_id):
+            items = await self.get_cart(user_id)
             for ci in items:
                 if ci.item_id == item_id:
-                    ci.quantity += qty
+                    ci.quantity += quantity
                     if ci.quantity <= 0:
                         items = [i for i in items if i.item_id != item_id]
                     await self.set_items(user_id, items)
                     return items
-            if qty > 0:
-                items.append(pb.CartItem(item_id=item_id, quantity=qty, note=note))
+            if quantity > 0:
+                items.append(pb.CartItem(item_id=item_id, quantity=quantity, note=note))
             await self.set_items(user_id, items)
             return items
 
     async def remove_item(self, user_id: int, item_id: str) -> list[pb.CartItem]:
         """Remove item_id entirely from the cart."""
-        async with self._user_locks[user_id]:
-            items = await self.get(user_id)
+        async with self._acquire_user_lock(user_id):
+            items = await self.get_cart(user_id)
             items = [ci for ci in items if ci.item_id != item_id]
             await self.set_items(user_id, items)
             return items
 
-    async def set_quantity(self, user_id: int, item_id: str, qty: int) -> list[pb.CartItem]:
+    async def set_item_quantity(self, user_id: int, item_id: str, quantity: int) -> list[pb.CartItem]:
         """Set the quantity of item_id. qty <= 0 removes the item."""
-        async with self._user_locks[user_id]:
-            items = await self.get(user_id)
-            if qty <= 0:
+        async with self._acquire_user_lock(user_id):
+            items = await self.get_cart(user_id)
+            if quantity <= 0:
                 items = [ci for ci in items if ci.item_id != item_id]
             else:
                 for ci in items:
                     if ci.item_id == item_id:
-                        ci.quantity = qty
+                        ci.quantity = quantity
                         break
                 else:
-                    items.append(pb.CartItem(item_id=item_id, quantity=qty))
+                    items.append(pb.CartItem(item_id=item_id, quantity=quantity))
             await self.set_items(user_id, items)
             return items
 

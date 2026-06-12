@@ -142,15 +142,23 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         pass
 
     # 1. Check if user profile is registered
-    profile = None
-    try:
-        profile = await pool.call(
+    async def _get_profile():
+        return await pool.call(
             "/logistics.LogisticsEngine/GetProfile",
             lambda stub, meta: stub.GetProfile(pb.UserId(user_id=user_id), metadata=meta),
             user_id=user_id
         )
-    except Exception:
-        pass
+
+    async def _get_address():
+        return await pool.call(
+            "/logistics.LogisticsEngine/ListSavedAddresses",
+            lambda stub, meta: stub.ListSavedAddresses(pb.UserId(user_id=user_id), metadata=meta),
+            user_id=user_id
+        )
+
+    profile_resp, addr_resp = await asyncio.gather(_get_profile(), _get_address(), return_exceptions=True)
+
+    profile = profile_resp if not isinstance(profile_resp, Exception) else None
 
     if not profile or not profile.display_name or not profile.phone:
         # Prompt user to set up profile
@@ -167,16 +175,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     # 2. Check if user has a default address configured
     has_address = False
-    try:
-        addr_resp = await pool.call(
-            "/logistics.LogisticsEngine/ListSavedAddresses",
-            lambda stub, meta: stub.ListSavedAddresses(pb.UserId(user_id=user_id), metadata=meta),
-            user_id=user_id
-        )
-        if addr_resp.addresses:
-            has_address = True
-    except Exception:
-        pass
+    if not isinstance(addr_resp, Exception) and getattr(addr_resp, "addresses", None):
+        has_address = True
 
     if not has_address:
         context.user_data["registering"] = True
@@ -302,14 +302,22 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return False
 
     async def _fetch_cat():
-        return await pool.call("/logistics.LogisticsEngine/GetCatalog", lambda stub, meta: stub.GetCatalog(pb.CatalogRequest(page=0, page_size=200), metadata=meta))
+        global _cached_categories
+        now = time.time()
+        if now - getattr(context.bot_data, '_cat_time', 0.0) < 300:
+            return context.bot_data['_cat_list']
+        resp = await pool.call("/logistics.LogisticsEngine/GetCatalog", lambda stub, meta: stub.GetCatalog(pb.CatalogRequest(page=0, page_size=200), metadata=meta))
+        cats = sorted({it.category for it in resp.items if it.is_available})
+        context.bot_data['_cat_time'] = now
+        context.bot_data['_cat_list'] = cats
+        return cats
 
     try:
         wh_task = asyncio.create_task(_fetch_wh())
         cat_task = asyncio.create_task(_fetch_cat())
         has_wh = await wh_task
-        resp = await cat_task
-        has_cat = len(resp.items) > 0
+        categories = await cat_task
+        has_cat = len(categories) > 0
     except grpc.RpcError as e:
         msg = await context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -325,8 +333,6 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             "Some features may be limited.\n\n"
         )
 
-    # Build category list
-    categories = sorted({it.category for it in resp.items if it.is_available})
     kb = [[InlineKeyboardButton(f"📂 {cat}", callback_data=f"cat_select:{cat}:0")]
           for cat in categories]
     kb.append([InlineKeyboardButton("🔍 All Items", callback_data="cat_select:all:0")])
@@ -1410,17 +1416,23 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def _show_catalog_categories_helper(query) -> None:
     try:
-        resp = await pool.call(
-            "/logistics.LogisticsEngine/GetCatalog",
-            lambda stub, meta: stub.GetCatalog(
-                pb.CatalogRequest(page=0, page_size=200), metadata=meta
-            ),
-        )
+        now = time.time()
+        if now - getattr(query.bot.data, '_cat_time', 0.0) < 300:
+            categories = query.bot.data['_cat_list']
+        else:
+            resp = await pool.call(
+                "/logistics.LogisticsEngine/GetCatalog",
+                lambda stub, meta: stub.GetCatalog(
+                    pb.CatalogRequest(page=0, page_size=200), metadata=meta
+                ),
+            )
+            categories = sorted({it.category for it in resp.items if it.is_available})
+            query.bot.data['_cat_time'] = now
+            query.bot.data['_cat_list'] = categories
     except grpc.RpcError as e:
         await query.edit_message_text(f"⚠️ Could not load catalog: {e.details()}")
         return
 
-    categories = sorted({it.category for it in resp.items if it.is_available})
     kb = [[InlineKeyboardButton(f"📂 {cat}", callback_data=f"cat_select:{cat}:0")]
           for cat in categories]
     kb.append([InlineKeyboardButton("🔍 All Items", callback_data="cat_select:all:0")])
@@ -1490,11 +1502,6 @@ async def cb_profile_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if field == "back_to_main":
         disclaimer = ""
-        if not pool.is_licensed():
-            disclaimer = (
-                "⚠️ *Running in UNLICENSED mode.*\n"
-                "Some features may be limited.\n\n"
-            )
 
         kb = [
             [InlineKeyboardButton("🛒 Browse Catalog", callback_data="cat_select:all:0")],
@@ -2228,12 +2235,12 @@ async def poll_notifications(app) -> None:
             user_ids = {a.telegram_id for a in admin_resp.admins}
             user_ids.update(app.user_data.keys())
 
-            for uid in user_ids:
+            async def _poll_user(uid: int):
                 try:
                     notif_resp = await pool.call(
                         "/logistics.LogisticsEngine/GetPendingNotifs",
-                        lambda stub, meta, _uid=uid: stub.GetPendingNotifs(
-                            pb.UserId(user_id=_uid), metadata=meta
+                        lambda stub, meta: stub.GetPendingNotifs(
+                            pb.UserId(user_id=uid), metadata=meta
                         ),
                         user_id=uid,
                     )
@@ -2248,6 +2255,9 @@ async def poll_notifications(app) -> None:
                             pass
                 except Exception:
                     pass
+
+            if user_ids:
+                await asyncio.gather(*[_poll_user(uid) for uid in user_ids])
         except Exception:
             pass
 
