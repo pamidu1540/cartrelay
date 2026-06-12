@@ -175,7 +175,6 @@ jobs:
             postgres:
               image: postgres:16-alpine
               restart: unless-stopped
-              env_file: .env
               environment:
                 - POSTGRES_USER=${POSTGRES_USER}
                 - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -193,7 +192,6 @@ jobs:
               image: ${{ env.IMAGE_ENGINE }}:${{ github.ref_name }}
               container_name: logistics_engine
               restart: unless-stopped
-              env_file: .env
               environment:
                 - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
                 - INTERNAL_TOKEN=${INTERNAL_TOKEN}
@@ -218,7 +216,6 @@ jobs:
               image: ${{ env.IMAGE_BOT }}:${{ github.ref_name }}
               container_name: logistics_bot
               restart: unless-stopped
-              env_file: .env
               environment:
                 - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
                 - INTERNAL_TOKEN=${INTERNAL_TOKEN}
