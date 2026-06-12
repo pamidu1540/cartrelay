@@ -69,7 +69,7 @@ spinner() {
     printf "\r   ${CYN}${__sp:$((__i % ${#__sp})):1}${RST}  %s…" "$__msg"
     __i=$((__i + 1)); sleep 0.1
   done
-  wait "$__pid"
+  wait "$__pid" || true
   local __rc=$?
   if ((__rc == 0)); then
     printf "\r   ${GRN}✔${RST}  %s    \n" "$__msg"
@@ -451,7 +451,7 @@ services:
           cpus: "0.05"
           memory: 32M
     networks: [backend]
-\${datadog_agent_service}
+${datadog_agent_service}
 
 volumes:
   postgres_data: {driver: local}
@@ -576,7 +576,7 @@ pull_images() {
     i=$(( (i + 1) % (width + 1) ))
     sleep 0.1
   done
-  wait "$pid"
+  wait "$pid" || true
   local rc=$?
   
   if ((rc == 0)); then
