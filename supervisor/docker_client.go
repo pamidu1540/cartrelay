@@ -162,24 +162,14 @@ func RestartContainers() error {
 }
 
 func ensureSocketPermissions() {
-	bindPath := "/opt/logistics-system/deploy/sockets"
-	
-	// 1. Ensure the directory exists on the host before anything else
-	_ = os.MkdirAll(bindPath, 0o755)
-
-	// 2. If it's a bind mount directory on host, chown it to nonroot (65532:65532)
-	if _, err := os.Stat(bindPath); err == nil {
-		_ = os.Chown(bindPath, 65532, 65532)
-		_ = os.Chmod(bindPath, 0770) // #nosec G302
-	}
-
-	// 2. Fix the docker volume permissions using a transient helper container.
+	// Fix the docker volume permissions using a transient helper container.
 	// We run it with user '0' (root) so it has privileges to modify root-owned volumes.
+	// We mount the exact named volume 'deploy_sockets' that docker-compose uses.
 	// Since the database container image (postgres:16-alpine) is guaranteed to be present on the host,
 	// we use it to run chown and clean up any stale root-owned socket file.
 	// #nosec G204
 	cmd := exec.Command("docker", "run", "--rm", "-u", "0",
-		"-v", "/opt/logistics-system/deploy/sockets:/app/sockets",
+		"-v", "deploy_sockets:/app/sockets",
 		"postgres:16-alpine",
 		"sh", "-c", "chown -R 65532:65532 /app/sockets && rm -f /app/sockets/logistics.sock",
 	)
