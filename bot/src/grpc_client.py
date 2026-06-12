@@ -55,8 +55,8 @@ CB_RECOVERY_TIMEOUT: float = 10.0  # seconds before half-open probe
 
 def make_auth_token(method: str) -> str:
     """Generate HMAC-SHA256 token matching interceptors.go validateHMACToken."""
-    minute = int(time.time()) // 60
-    msg = f"{method}:{minute}".encode()
+    now = int(time.time())
+    msg = f"{method}:{now}".encode()
     token = hmac.HMAC(INTERNAL_TOKEN.encode(), msg, hashlib.sha256).hexdigest()
     return token
 
