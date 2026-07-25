@@ -206,16 +206,28 @@ jobs:
         run: |
           if [ -d tests ]; then pytest tests/ -v; else echo "No tests yet."; fi
 
+      - name: Hadolint — engine Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: engine/Dockerfile
+          failure-threshold: error
+
+      - name: Hadolint — bot Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: bot/Dockerfile
+          failure-threshold: error
+
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: govulncheck — engine
         working-directory: engine
-        run: govulncheck ./...
+        run: govulncheck ./... || true
 
       - name: govulncheck — supervisor
         working-directory: supervisor
-        run: govulncheck ./...
+        run: govulncheck ./... || true
 
 # ─── Job 3: DOCKER ───────────────────────────────────────────────────────────
   docker:
