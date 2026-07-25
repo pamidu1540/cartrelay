@@ -8,96 +8,126 @@
 
 A high-performance, containerized logistics and e-commerce platform built with Go, Python, and gRPC. It provides a Telegram-based storefront for customers, a robust CLI supervisor for zero-downtime server management, and enterprise-grade Datadog APM tracing.
 
+---
+
 ## 🏗️ Architecture
 
 The system is composed of several microservices orchestrated via Docker Compose:
 
-1. **Engine (Go / PostgreSQL)**
-   The core backend service. It exposes a highly-performant gRPC API over a Unix Domain Socket (`/app/sockets/logistics.sock`). It handles:
-   - Atomic transactions for inventory management.
+1. **Engine (Go 1.25 / PostgreSQL)**
+   The core backend service exposing a high-performance gRPC API over a Unix Domain Socket (`/app/sockets/logistics.sock`). Features:
+   - Atomic PostgreSQL transactions for inventory and order management.
    - Idempotent order processing and cart state persistence.
-   - Dynamic map-based distance and pricing calculations via Mapbox API.
-   - **Performance Optimizations:** Utilizes `errgroup` for high-concurrency RPC processing, `singleflight` request coalescing, and LRU caching for 0-latency catalog loads and Mapbox routing.
+   - Dynamic Mapbox driving distance and Haversine fallback calculations.
+   - **Performance Optimizations:** `singleflight` request coalescing, `errgroup` concurrency, and LRU spatial caching.
 
-2. **Bot (Python / python-telegram-bot)**
-   The user-facing frontend communicating with the Engine via gRPC. 
-   - **Customer Flow**: Browse the catalog, add items to a cart, natively share GPS delivery locations via Telegram, get live delivery quotes, and place orders.
-   - **Admin Flow**: A dedicated dashboard for managing the catalog, updating pricing/warehouse coordinates, viewing pending orders, and dispatching/canceling shipments.
-   - **SMI UX**: Built using a **Single Message Interface (SMI)**. The bot natively manages, edits, and self-cleans old messages to keep the chat history completely pristine and app-like.
+2. **Bot (Python 3.11+ / python-telegram-bot)**
+   The user-facing Telegram frontend communicating with the Engine via gRPC:
+   - **Customer Flow:** Browse catalog, add items to cart, share GPS locations, view dynamic quotes, place orders.
+   - **Admin Flow:** Manage catalog items, update stock/pricing, assign drivers, resolve order issues.
+   - **SMI UX:** Single Message Interface auto-cleans old messages for an app-like experience.
 
 3. **Gateway (Python / FastAPI)**
-   A high-speed FastAPI gateway designed to serve the Web UI frontend and act as an HTTP-to-gRPC bridge for future web applications.
+   FastAPI web gateway acting as an HTTP-to-gRPC bridge for web applications.
 
-4. **Supervisor CLI (Go)**
-   A compiled `logistics` binary installed on the host machine (`/usr/local/bin/logistics`). It provides:
-   - **OTA Updates**: `logistics update` securely pulls cryptographically signed tarballs from Cloudflare R2, extracts them, and restarts the stack with zero downtime.
-   - **Rollbacks**: `logistics rollback` reverts to the previous version.
-   - **Monitoring**: `logistics dashboard` (TUI) and `logistics logs`.
+4. **Supervisor CLI (Go 1.25)**
+   Host-installed `logistics` CLI binary providing:
+   - **Zero-Downtime OTA Updates:** Cryptographically signed updates pulled from CDN with Ed25519 verification.
+   - **Rollbacks & Management:** One-command rollbacks, interactive TUI monitoring, and log streaming.
+
+---
+
+## ⚡ Performance Benchmarks
+
+| Metric | Throughput | Latency | Memory / Allocs |
+|---|---|---|---|
+| **Haversine Distance Math** | **21,587,586 ops/sec** | `46.43 ns/op` | **`0 B/op`** (0 allocs) |
+| **Spatial LRU Cache Read/Write** | **3,139,838 ops/sec** | `395.90 ns/op` | `64 B/op` (2 allocs) |
+| **LRU Cache (12-Core Contention)** | **2,213,353 ops/sec** | `552.90 ns/op` | `64 B/op` (2 allocs) |
+| **HMAC-SHA256 RPC Security** | **1,000,000 ops/sec** | `3.34 μs/op` | `2,438 B/op` |
+| **Panic Recovery Interceptor** | **263,542,574 ops/sec** | `4.30 ns/op` | **`0 B/op`** (0 allocs) |
+| **AES-256-GCM OTA Encryption** | **`1,587.74 MB/s`** | `41.27 μs / 64KB` | `214,514 B/op` |
+| **AES-256-GCM OTA Decryption** | **`933.98 MB/s`** | `70.16 μs / 64KB` | `344,372 B/op` |
+
+---
+
+## 📜 Changelog Summary
+
+For detailed revision history, see [CHANGELOG.md](CHANGELOG.md).
+
+### 🚀 Recent Releases
+
+#### [v12.6.0] - 2026-07-25
+- **Dependencies:** Upgraded 80+ Go libraries across `engine` and `supervisor` modules (`pgx/v5`, `grpc`, `datadog-agent`, `bubbletea`, `moby`).
+- **Testing Framework:** Created multi-layer unit test suite (`routing_math_test.go`, `catalog_cache_test.go`, `interceptors_test.go`, `chunked_gcm_test.go`, `conftest.py`) and full-scale Go benchmark suite.
+- **Security & Quality:** Fixed `errcheck` resource closures across all modules, added Go doc comments for 80+ exported symbols, and enforced zero-warning `golangci-lint` and `ruff` pass rates.
+- **CI/CD Pipeline:** Upgraded GitHub Actions `ci.yml` & `release.yml` with Hadolint Dockerfile static analysis and Go 1.25 check-latest workflows.
+
+#### [v12.5.7] - 2026-06-12
+- **Permissions:** Auto-healing root socket permissions helper container for non-root Unix Domain Socket execution.
+
+---
 
 ## 🚀 Deployment & CI/CD
 
-This repository features a fully automated continuous integration and deployment pipeline powered by **GitHub Actions**:
+- **CI (`ci.yml`)**: On every push to `main`, GitHub Actions automatically tidy Go modules, run `protoc`, execute unit tests, perform `ruff` & `hadolint` linting, and publish multi-stage Docker images to `ghcr.io`.
+- **Release (`release.yml`)**: Triggered by pushing a version tag (e.g., `v12.6.0`). Compiles Linux binaries, signs OTA payloads with Ed25519, and pushes release assets to Cloudflare R2 CDN.
 
-- **CI (`ci.yml`)**: On every push, GitHub Actions automatically runs `protoc` and `go mod tidy` and commits the generated code back to `main`. It then runs Go tests, `ruff` linting, and `govulncheck` before building the Docker images and pushing them to the GitHub Container Registry (`ghcr.io`).
-- **Release (`release.yml`)**: Triggered by pushing a version tag (e.g., `v12.5.7`). Builds the Go binaries, Docker images, signs the OTA update payload using Ed25519, and pushes all artifacts to a **Cloudflare R2** bucket.
-- **Security**: Includes `codeql.yml` for static analysis and `go-security.yml` to block vulnerabilities.
+---
 
 ## 🛠️ Installation
 
-The system is designed to be installed on a fresh Ubuntu/Debian server using the provided `install.sh` script.
+Install on a fresh Ubuntu/Debian server:
 
 ```bash
 sudo bash install.sh
 ```
 
-**What the installer does:**
-1. Checks system requirements (RAM, Disk).
-2. Installs Docker.
-3. Prompts for a License Key and validates it against the Cloudflare Workers License API.
-4. Prompts for Telegram Bot Token, Admin IDs, and Datadog API keys.
-5. Generates internal security tokens and the `docker-compose.yml`.
-6. Sets up a `systemd` service (`logistics.service`) for auto-restart on boot.
-7. Pulls the latest images and starts the stack.
+**Installer steps:**
+1. Validates RAM & disk requirements.
+2. Installs Docker and Docker Compose.
+3. Prompts for License Key, Telegram Bot Token, Admin User IDs, and Datadog API key.
+4. Generates encrypted environment configuration and sets up `logistics.service` `systemd` unit.
 
-## 💻 Development Setup
+---
 
-We use a fully automated, cross-platform `Taskfile.yml` framework to guarantee identical CI/CD workflows both locally and on GitHub Actions, isolated inside a hidden `.tools/` directory to prevent global OS pollution.
+## 💻 Local Development
 
-### 1. Bootstrap the Toolchain
-On Windows, run the initialization script to compile the task runner and bootstrap all dependencies (`uv`, `golangci-lint`, `gosec`, `ruff`, `pytest`) into an isolated virtual environment:
+We use a cross-platform `Taskfile.yml` setup isolated inside a `.tools/` directory.
+
+### Bootstrap Toolchain
 ```powershell
 .\init-dev.ps1
 ```
-*(This automatically adds `.tools\bin` to your session PATH).*
 
-### 2. Orchestration Commands
-- `task env` - Interactively generates your `local_test/.env` configuration.
-- `task up` - Starts the full Docker Compose stack with Datadog locally.
-- `task down` - Stops the local stack.
-- `task lint` - Runs Go and Python static analysis.
-- `task test` - Runs Go and Python unit tests.
-- `task build` - Compiles the `engine` and `supervisor` binaries.
+### Task Commands
+- `task env` - Interactively generate local `.env` configuration.
+- `task up` - Start the Docker Compose stack.
+- `task down` - Stop the local stack.
+- `task lint` - Run Go (`golangci-lint`), Python (`ruff`), and Docker (`hadolint`) static analysis.
+- `task test` - Run full Go and Python unit test suites.
+- `task build` - Compile Engine and Supervisor binaries.
+
+---
 
 ## 🔒 Security Posture
 
-- **Internal Communication**: The Bot and Engine communicate exclusively via a shared Unix Domain Socket mounted in a Docker volume. No internal ports are exposed to the host network.
-- **Authentication**: gRPC calls are secured via an `INTERNAL_TOKEN` passed in the metadata.
-- **OTA Verification**: Updates are signed using Ed25519 cryptographic signatures to prevent tampering via MITM attacks on the CDN.
-- **Hardware Encryption**: The `.env` variables are completely encrypted and securely decrypted in-memory using a hardware-bound key (`/etc/machine-id`) to mitigate disk theft.
+- **Unix Domain Socket Isolation**: Engine and Bot communicate over an internal socket; no public gRPC ports are exposed.
+- **HMAC Request Validation**: Shared token HMAC-SHA256 request signing with $\pm 5\text{s}$ replay protection.
+- **Hardware-Bound Secrets**: Environment variables encrypted at rest using machine hardware identifiers.
 
-## 📊 Observability
-The stack integrates natively with **Datadog** via a dedicated `datadog-agent` sidecar. This provides out-of-the-box Continuous Profiling for the Go Engine, Distributed APM Tracing across the gRPC boundary, and full Postgres query profiling.
+---
 
 ## 📂 Directory Structure
 
-- `/engine/` - Go backend, gRPC server, PostgreSQL database logic.
-- `/bot/` - Python Telegram Bot, gRPC client, UI handlers.
-- `/supervisor/` - Go CLI for managing the deployed stack.
-- `/webui/gateway/` - FastAPI backend for web frontend.
-- `/.github/workflows/` - CI/CD pipelines.
-- `install.sh` - Host installation script.
+- `/engine/` - Go backend gRPC server, PostgreSQL database layer, routing math.
+- `/supervisor/` - Go CLI supervisor for OTA updates, TUI dashboard, AES-256-GCM chunked crypto.
+- `/bot/` - Python Telegram Bot, SMI handlers, cart manager, rate limiter.
+- `/webui/gateway/` - FastAPI Web UI bridge.
+- `/.github/workflows/` - CI/CD automated pipelines.
+
+---
 
 ## 📄 License
 
 This software is **Proprietary and Confidential**. All Rights Reserved. See [LICENSE](LICENSE) for details.
-
