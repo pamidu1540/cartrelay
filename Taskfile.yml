@@ -24,13 +24,15 @@ tasks:
       - .tools/bin/uv sync --directory bot --all-extras
 
   lint:
-    desc: "Run static analysis and linting (Go and Python)"
+    desc: "Run static analysis and linting (Go, Python, Docker)"
     env:
       UV_PROJECT_ENVIRONMENT: "{{.USER_WORKING_DIR}}/.tools/.venv"
     cmds:
       - cd engine && ../.tools/bin/golangci-lint run ./...
       - cd supervisor && ../.tools/bin/golangci-lint run ./...
       - .tools/bin/uv run --directory bot ruff check src
+      - docker run --rm -i hadolint/hadolint < engine/Dockerfile || true
+      - docker run --rm -i hadolint/hadolint < bot/Dockerfile || true
 
   test:
     desc: "Run test suites (Go and Python)"
