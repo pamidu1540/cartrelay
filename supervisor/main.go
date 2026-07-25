@@ -57,7 +57,7 @@ func main() {
 	root.AddCommand(&cobra.Command{
 		Use:   "start",
 		Short: "Start all services",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			return executeDockerCompose("up", "-d", "--build")
 		},
 	})
@@ -66,7 +66,7 @@ func main() {
 	root.AddCommand(&cobra.Command{
 		Use:   "stop",
 		Short: "Stop all services",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			return executeDockerCompose("down")
 		},
 	})
@@ -75,7 +75,7 @@ func main() {
 	root.AddCommand(&cobra.Command{
 		Use:   "restart",
 		Short: "Restart all service containers",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			if err := RestartContainers(); err != nil {
 				return err
 			}
@@ -88,7 +88,7 @@ func main() {
 	root.AddCommand(&cobra.Command{
 		Use:   "status",
 		Short: "Print a quick container health snapshot",
-		Run: func(cmd *cobra.Command, _ []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			s := fetchLiveStats()
 			fmt.Printf("Engine : %s\n", s.EngineStatus)
 			fmt.Printf("Bot    : %s\n", s.BotStatus)
@@ -126,7 +126,7 @@ func main() {
 		Use:     "dashboard",
 		Aliases: []string{"dash"},
 		Short:   "Open the interactive TUI dashboard",
-		Run: func(cmd *cobra.Command, _ []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			StartDashboard()
 		},
 	})
@@ -165,7 +165,7 @@ func main() {
 	root.AddCommand(&cobra.Command{
 		Use:   "rollback",
 		Short: "Re-apply the most recent backup tarball",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			if err := RollbackUpdate(); err != nil {
 				return err
 			}
@@ -178,7 +178,7 @@ func main() {
 	root.AddCommand(&cobra.Command{
 		Use:   "maintenance",
 		Short: "Toggle engine maintenance mode via gRPC",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			enabled, err := GRPCToggleMaintenance()
 			if err != nil {
 				return err
@@ -196,7 +196,7 @@ func main() {
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "Print supervisor version",
-		Run: func(cmd *cobra.Command, _ []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			fmt.Printf("logistics-supervisor %s\n", Version)
 		},
 	})

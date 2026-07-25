@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v12.6.0] - 2026-07-25
+
+### 🛡 Security & Library Upgrades
+- **Dependency Upgrades:** Upgraded 80+ Go dependencies across `engine` and `supervisor` modules (including `pgx/v5`, `google.golang.org/grpc`, `datadog-agent`, `opentelemetry`, `zap`, `bubbletea`, `moby/client`).
+- **Python Environment:** Synchronized Python virtual environment (`.venv`) via `uv` with all extras.
+
+### 🐛 Lint & Bug Fixes
+- **Resource Leak Fixes (`errcheck`):** Wrapped 15+ unhandled `defer X.Close()` and `defer os.Remove()` calls with error-suppression closures across `database.go`, `routing_math.go`, `docker_client.go`, and `ota_updater.go`.
+- **Documentation Coverage:** Added Go doc comments for 80+ exported functions, methods, variables, and types across `database.go`, `grpc_server.go`, `docker_client.go`, `interceptors.go`, `license_verifier.go`, `main.go`, and `chunked_gcm.go`.
+- **Formatting & Code Quality:** Applied `gofmt` and `goimports` across all Go source files. Resolved `max` builtin shadowing (`maxVal`), unused parameters (`ctx`, `cmd`), and context parameter ordering (`context.Context` listed first).
+- **Python Linting:** Fixed `AsyncMock` duplicate definition warning (`F811`) in `tests/test_bot.py`. Verified clean `ruff` and 100% passing `pytest` suite (12/12 passed).
+
 ## [v12.5.7] - 2026-06-12
 
 ### 🐛 Permissions & Volume Mount Fixes

@@ -20,6 +20,7 @@ local_test/.gopath/
 /engine/data/
 
 # Compiled Binaries
+bin/
 engine_bin
 logistics
 logistics.exe

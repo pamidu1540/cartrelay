@@ -65,7 +65,7 @@ func CheckAndApplyUpdate() error {
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if err := downloadFile(manifest.URL, tmpFile); err != nil {
 		_ = tmpFile.Close()
@@ -151,7 +151,7 @@ func fetchManifest(url string) (*updateManifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("manifest server HTTP %d", resp.StatusCode)
 	}
@@ -170,16 +170,16 @@ func downloadFile(url string, dst *os.File) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download server HTTP %d", resp.StatusCode)
 	}
-	
+
 	encWriter, err := newChunkedGCMWriter(dst, getAES128Key())
 	if err != nil {
 		return err
 	}
-	defer encWriter.Close()
+	defer func() { _ = encWriter.Close() }()
 
 	_, err = io.Copy(encWriter, resp.Body)
 	return err
@@ -202,7 +202,7 @@ func verifySignatureStreaming(filePath, sigHex string) error {
 	if err != nil {
 		return fmt.Errorf("open for verification: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	decReader, err := newChunkedGCMReader(f, getAES128Key())
 	if err != nil {
@@ -250,13 +250,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	// #nosec G304 -- OTA updater only operates on fixed local system directories
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 	_, err = io.Copy(out, in)
 	return err
 }
@@ -267,7 +267,7 @@ func extractTarballSecure(tarball, destDir string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	decReader, err := newChunkedGCMReader(f, getAES128Key())
 	if err != nil {
@@ -278,7 +278,7 @@ func extractTarballSecure(tarball, destDir string) error {
 	if err != nil {
 		return err
 	}
-	defer gzr.Close()
+	defer func() { _ = gzr.Close() }()
 
 	tr := tar.NewReader(gzr)
 

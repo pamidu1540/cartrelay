@@ -14,6 +14,7 @@ var placeholderPatterns = []string{
 	"PLACEHOLDER", "YOUR_KEY", "INSERT_KEY", "EXAMPLE", "TODO", "CHANGEME",
 }
 
+// VerifyLicense checks if a valid license key is configured.
 func VerifyLicense() error {
 	// Block dev secrets in production
 	if os.Getenv("DEPLOY_ENV") == "production" {

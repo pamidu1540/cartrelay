@@ -64,7 +64,7 @@ func FetchMapboxDistance(originLat, originLon, destLat, destLon float64) (float6
 			slog.Warn("mapbox request failed, falling back to haversine", "err", err)
 			return haversineKM(originLat, originLon, destLat, destLon), nil
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			slog.Warn("mapbox non-200 response, falling back to haversine",
@@ -136,7 +136,7 @@ func toRad(deg float64) float64 {
 
 // MapboxHealthCheck pings the Mapbox API to verify the token is valid.
 // Called once at startup; logs a warning if the token is misconfigured.
-func MapboxHealthCheck(ctx context.Context) {
+func MapboxHealthCheck(_ context.Context) {
 	token := os.Getenv("MAPBOX_TOKEN")
 	if token == "" {
 		slog.Info("MAPBOX_TOKEN not set — using Haversine distance only")

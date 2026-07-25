@@ -43,6 +43,7 @@ func init() {
 	})
 }
 
+// StartStatsCollector collects container stats on a background goroutine at the given interval.
 func StartStatsCollector(interval time.Duration) {
 	go func() {
 		for {
@@ -52,18 +53,23 @@ func StartStatsCollector(interval time.Duration) {
 	}()
 }
 
+// LatestStats returns the most recently collected system stats snapshot.
 func LatestStats() SystemStats {
 	return statsAtom.Load().(SystemStats)
 }
 
 type dockerContainerStats struct {
 	CPUStats struct {
-		CPUUsage       struct{ TotalUsage uint64 `json:"total_usage"` } `json:"cpu_usage"`
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
 		SystemCPUUsage uint64 `json:"system_cpu_usage"`
 		OnlineCPUs     uint32 `json:"online_cpus"`
 	} `json:"cpu_stats"`
 	PreCPUStats struct {
-		CPUUsage       struct{ TotalUsage uint64 `json:"total_usage"` } `json:"cpu_usage"`
+		CPUUsage struct {
+			TotalUsage uint64 `json:"total_usage"`
+		} `json:"cpu_usage"`
 		SystemCPUUsage uint64 `json:"system_cpu_usage"`
 	} `json:"precpu_stats"`
 	MemoryStats struct {
@@ -86,7 +92,7 @@ func fetchLiveStats() SystemStats {
 		result.BotStatus = "DOCKER ERR 🔴"
 		return result
 	}
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
@@ -125,7 +131,7 @@ func containerMetrics(cli *client.Client, containerID string) (cpu, ram string) 
 	if err != nil {
 		return "N/A", "N/A"
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var s dockerContainerStats
 	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
@@ -142,12 +148,13 @@ func containerMetrics(cli *client.Client, containerID string) (cpu, ram string) 
 	return fmt.Sprintf("%.1f%%", cpuPct), fmt.Sprintf("%.0f MB", ramMB)
 }
 
+// RestartContainers restarts the Docker Compose stack.
 func RestartContainers() error {
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		return fmt.Errorf("docker client: %w", err)
 	}
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -160,7 +167,6 @@ func RestartContainers() error {
 	}
 	return nil
 }
-
 
 func executeDockerCompose(args ...string) error {
 	base := []string{"compose", "-f", "/opt/logistics-system/deploy/docker-compose.yml"}
@@ -177,16 +183,17 @@ func executeDockerCompose(args ...string) error {
 // and must not depend on logistics-engine/api.
 //
 // Field numbers match logistics.proto:
-//   bool   success = 1
-//   string message = 2
+//
+//	bool   success = 1
+//	string message = 2
 type statusResponse struct {
 	Success bool   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 }
 
-func (s *statusResponse) ProtoMessage()             {}
-func (s *statusResponse) Reset()                    { *s = statusResponse{} }
-func (s *statusResponse) String() string            { return s.Message }
+func (s *statusResponse) ProtoMessage()               {}
+func (s *statusResponse) Reset()                      { *s = statusResponse{} }
+func (s *statusResponse) String() string              { return s.Message }
 func (s *statusResponse) ProtoReflect() proto.Message { return nil }
 
 // GRPCToggleMaintenance dials the engine socket and calls ToggleMaintenance.
@@ -209,7 +216,7 @@ func GRPCToggleMaintenance() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("connect: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -223,7 +230,7 @@ func GRPCToggleMaintenance() (bool, error) {
 
 	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("x-auth-token", signedToken))
 
-	req   := &emptypb.Empty{}
+	req := &emptypb.Empty{}
 	reply := &statusResponse{}
 
 	if err := conn.Invoke(ctx,

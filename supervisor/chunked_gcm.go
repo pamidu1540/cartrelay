@@ -1,3 +1,4 @@
+// Package main implements AES-256-GCM chunked encryption for secure OTA update payloads.
 package main
 
 import (

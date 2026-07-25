@@ -31,18 +31,20 @@ var pool *pgxpool.Pool
 
 // ── Sentinel errors ───────────────────────────────────────────────────────────
 
+// Sentinel errors returned by database operations.
 var (
-	ErrNotFound         = errors.New("not found")
-	ErrOutOfStock       = errors.New("out of stock")
-	ErrQuoteMissing     = errors.New("quote_data is required")
-	ErrPriceMismatch    = errors.New("price mismatch: possible tampering")
-	ErrDuplicateOrder   = errors.New("duplicate order: idempotency key already used")
-	ErrUnauthorized     = errors.New("unauthorized")
+	ErrNotFound          = errors.New("not found")
+	ErrOutOfStock        = errors.New("out of stock")
+	ErrQuoteMissing      = errors.New("quote_data is required")
+	ErrPriceMismatch     = errors.New("price mismatch: possible tampering")
+	ErrDuplicateOrder    = errors.New("duplicate order: idempotency key already used")
+	ErrUnauthorized      = errors.New("unauthorized")
 	ErrInvalidTransition = errors.New("invalid status transition")
 )
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
+// InitDatabase initializes the PostgreSQL connection pool using the provided DSN.
 func InitDatabase(dsn string) error {
 	if dsn == "" {
 		return fmt.Errorf("DATABASE_URL is not set")
@@ -83,6 +85,7 @@ func InitDatabase(dsn string) error {
 	return nil
 }
 
+// CloseDatabase closes the underlying PostgreSQL connection pool.
 func CloseDatabase() {
 	if pool != nil {
 		pool.Close()
@@ -172,6 +175,7 @@ func SeedAdmins(raw string) error {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
+// GetConfigValue retrieves a configuration value by key.
 func GetConfigValue(ctx context.Context, key string) (string, error) {
 	var val string
 	err := pool.QueryRow(ctx, "SELECT value FROM config WHERE key=$1", key).Scan(&val)
@@ -181,6 +185,7 @@ func GetConfigValue(ctx context.Context, key string) (string, error) {
 	return val, err
 }
 
+// SetConfigValue upserts a configuration key-value pair.
 func SetConfigValue(ctx context.Context, key, value string) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO config (key, value) VALUES ($1, $2)
@@ -190,6 +195,7 @@ func SetConfigValue(ctx context.Context, key, value string) error {
 	return err
 }
 
+// GetSystemSettings retrieves all configuration keys and maps them into a SystemSettings object.
 func GetSystemSettings(ctx context.Context) (*pb.SystemSettings, error) {
 	rows, err := pool.Query(ctx, "SELECT key, value FROM config")
 	if err != nil {
@@ -207,19 +213,20 @@ func GetSystemSettings(ctx context.Context) (*pb.SystemSettings, error) {
 	}
 
 	return &pb.SystemSettings{
-		DeliveryBaseFare:     parseFloat(m["delivery_base_fare"], 500),
-		DeliveryRatePerKm:    parseFloat(m["delivery_rate_per_km"], 75),
-		TaxRate:              parseFloat(m["tax_rate"], 0.08),
+		DeliveryBaseFare:      parseFloat(m["delivery_base_fare"], 500),
+		DeliveryRatePerKm:     parseFloat(m["delivery_rate_per_km"], 75),
+		TaxRate:               parseFloat(m["tax_rate"], 0.08),
 		FreeDeliveryThreshold: parseFloat(m["free_delivery_threshold"], 5000),
-		CancelWindowMinutes:  parseInt32(m["cancel_window_minutes"], 5),
-		LoyaltyEarnRate:      parseInt32(m["loyalty_earn_rate"], 10),
-		LoyaltyRedeemRate:    parseInt32(m["loyalty_redeem_rate"], 1),
-		MaxOrderValue:        parseInt32(m["max_order_value"], 0),
-		MinOrderValue:        parseInt32(m["min_order_value"], 0),
-		OrderCutoffTime:      m["order_cutoff_time"],
+		CancelWindowMinutes:   parseInt32(m["cancel_window_minutes"], 5),
+		LoyaltyEarnRate:       parseInt32(m["loyalty_earn_rate"], 10),
+		LoyaltyRedeemRate:     parseInt32(m["loyalty_redeem_rate"], 1),
+		MaxOrderValue:         parseInt32(m["max_order_value"], 0),
+		MinOrderValue:         parseInt32(m["min_order_value"], 0),
+		OrderCutoffTime:       m["order_cutoff_time"],
 	}, nil
 }
 
+// SetSystemSettings updates system configuration values and records an audit log.
 func SetSystemSettings(ctx context.Context, s *pb.SystemSettings, actorID int64) error {
 	settings := map[string]string{
 		"delivery_base_fare":      fmt.Sprintf("%.2f", s.DeliveryBaseFare),
@@ -260,6 +267,7 @@ func SetSystemSettings(ctx context.Context, s *pb.SystemSettings, actorID int64)
 
 // ── Items ─────────────────────────────────────────────────────────────────────
 
+// DBAddItem inserts a new item into the database and returns its ID.
 func DBAddItem(ctx context.Context, item *pb.Item, actorID int64) (string, error) {
 	var id string
 	err := pool.QueryRow(ctx, `
@@ -280,6 +288,7 @@ func DBAddItem(ctx context.Context, item *pb.Item, actorID int64) (string, error
 	return id, nil
 }
 
+// DBEditItem updates an existing item's details if it is not deleted.
 func DBEditItem(ctx context.Context, item *pb.Item, actorID int64) error {
 	res, err := pool.Exec(ctx, `
 		UPDATE items SET
@@ -302,6 +311,7 @@ func DBEditItem(ctx context.Context, item *pb.Item, actorID int64) error {
 	return nil
 }
 
+// DBEditItemPrice updates the price of a specific item.
 func DBEditItemPrice(ctx context.Context, itemID string, newPrice float64, actorID int64) error {
 	res, err := pool.Exec(ctx,
 		"UPDATE items SET price=$1 WHERE id=$2 AND deleted_at IS NULL",
@@ -317,6 +327,7 @@ func DBEditItemPrice(ctx context.Context, itemID string, newPrice float64, actor
 	return nil
 }
 
+// DBEditItemStock adjusts the stock count of an item by a given delta.
 func DBEditItemStock(ctx context.Context, itemID string, delta int32, reason string, actorID int64) error {
 	res, err := pool.Exec(ctx, `
 		UPDATE items SET stock = stock + $1
@@ -338,6 +349,7 @@ func DBEditItemStock(ctx context.Context, itemID string, delta int32, reason str
 	return nil
 }
 
+// DBRemoveItem soft-deletes an item by setting its deleted_at timestamp.
 func DBRemoveItem(ctx context.Context, itemID string, actorID int64) error {
 	res, err := pool.Exec(ctx,
 		"UPDATE items SET deleted_at=$1 WHERE id=$2 AND deleted_at IS NULL",
@@ -353,6 +365,7 @@ func DBRemoveItem(ctx context.Context, itemID string, actorID int64) error {
 	return nil
 }
 
+// FetchCatalogItems retrieves a paginated list of available catalog items.
 func FetchCatalogItems(ctx context.Context, catFilter, search string, page, pageSize int32) ([]*pb.Item, int32, error) {
 	if pageSize <= 0 {
 		pageSize = 50
@@ -394,6 +407,7 @@ func FetchCatalogItems(ctx context.Context, catFilter, search string, page, page
 	return scanItems(rows, true)
 }
 
+// DBGetItemsByIDs fetches a map of items by their unique IDs.
 func DBGetItemsByIDs(ctx context.Context, ids []string) (map[string]*pb.Item, error) {
 	if len(ids) == 0 {
 		return map[string]*pb.Item{}, nil
@@ -431,6 +445,7 @@ func DBGetItemsByIDs(ctx context.Context, ids []string) (map[string]*pb.Item, er
 	return m, nil
 }
 
+// DBBulkImportItems imports or updates a batch of items and returns counts and errors.
 func DBBulkImportItems(ctx context.Context, items []*pb.Item, actorID int64) (int32, int32, []string) {
 	var created, updated int32
 	var errs []string
@@ -486,6 +501,7 @@ func scanItems(rows pgx.Rows, withTotal bool) ([]*pb.Item, int32, error) {
 
 // ── Warehouses ────────────────────────────────────────────────────────────────
 
+// DBListWarehouses returns a list of all warehouses ordered by name.
 func DBListWarehouses(ctx context.Context) ([]*pb.Warehouse, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, name, address, lat, lon, open_time, close_time, is_active, capacity_units
@@ -507,6 +523,7 @@ func DBListWarehouses(ctx context.Context) ([]*pb.Warehouse, error) {
 	return whs, rows.Err()
 }
 
+// DBAddWarehouse inserts a new warehouse and returns its ID.
 func DBAddWarehouse(ctx context.Context, w *pb.Warehouse, actorID int64) (string, error) {
 	var id string
 	err := pool.QueryRow(ctx, `
@@ -521,6 +538,7 @@ func DBAddWarehouse(ctx context.Context, w *pb.Warehouse, actorID int64) (string
 	return id, nil
 }
 
+// DBEditWarehouse updates details for an existing warehouse.
 func DBEditWarehouse(ctx context.Context, w *pb.Warehouse, actorID int64) error {
 	res, err := pool.Exec(ctx, `
 		UPDATE warehouses SET name=$1, address=$2, lat=$3, lon=$4,
@@ -538,6 +556,7 @@ func DBEditWarehouse(ctx context.Context, w *pb.Warehouse, actorID int64) error 
 	return nil
 }
 
+// DBRemoveWarehouse deletes a warehouse from the database.
 func DBRemoveWarehouse(ctx context.Context, id string, actorID int64) error {
 	res, err := pool.Exec(ctx, "DELETE FROM warehouses WHERE id=$1", id)
 	if err != nil {
@@ -552,6 +571,7 @@ func DBRemoveWarehouse(ctx context.Context, id string, actorID int64) error {
 
 // ── Drivers ───────────────────────────────────────────────────────────────────
 
+// DBListDrivers retrieves active drivers, optionally filtering by availability.
 func DBListDrivers(ctx context.Context, availableOnly bool) ([]*pb.Driver, error) {
 	q := `SELECT id, name, phone, telegram_id, vehicle_type, zone, is_available, is_active
 	      FROM drivers WHERE is_active=TRUE`
@@ -582,6 +602,7 @@ func DBListDrivers(ctx context.Context, availableOnly bool) ([]*pb.Driver, error
 	return drivers, rows.Err()
 }
 
+// DBAddDriver inserts a new driver record and returns its ID.
 func DBAddDriver(ctx context.Context, d *pb.Driver, actorID int64) (string, error) {
 	var id string
 	var tgID *int64
@@ -600,6 +621,7 @@ func DBAddDriver(ctx context.Context, d *pb.Driver, actorID int64) (string, erro
 	return id, nil
 }
 
+// DBEditDriver updates an existing driver's details.
 func DBEditDriver(ctx context.Context, d *pb.Driver, actorID int64) error {
 	var tgID *int64
 	if d.TelegramId != 0 {
@@ -621,6 +643,7 @@ func DBEditDriver(ctx context.Context, d *pb.Driver, actorID int64) error {
 	return nil
 }
 
+// DBRemoveDriver soft-deletes a driver by setting them as inactive.
 func DBRemoveDriver(ctx context.Context, id string, actorID int64) error {
 	res, err := pool.Exec(ctx, "UPDATE drivers SET is_active=FALSE WHERE id=$1", id)
 	if err != nil {
@@ -633,6 +656,7 @@ func DBRemoveDriver(ctx context.Context, id string, actorID int64) error {
 	return nil
 }
 
+// DBSetDriverAvailability toggles the available status of a driver.
 func DBSetDriverAvailability(ctx context.Context, driverID string, avail bool, actorID int64) error {
 	res, err := pool.Exec(ctx,
 		"UPDATE drivers SET is_available=$1 WHERE id=$2 AND is_active=TRUE", avail, driverID)
@@ -650,6 +674,7 @@ func DBSetDriverAvailability(ctx context.Context, driverID string, avail bool, a
 	return nil
 }
 
+// DBGetDriverTelegramIDs fetches the Telegram IDs of drivers.
 func DBGetDriverTelegramIDs(ctx context.Context, activeOnly bool) ([]int64, error) {
 	q := "SELECT telegram_id FROM drivers WHERE is_active=TRUE AND telegram_id IS NOT NULL"
 	if activeOnly {
@@ -687,11 +712,11 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 	qdLen := len(req.QuoteData) - 32
 	qd := req.QuoteData[:qdLen]
 	sig := req.QuoteData[qdLen:]
-	
+
 	mac := hmac.New(sha256.New, []byte(os.Getenv("INTERNAL_TOKEN")))
 	mac.Write(qd)
 	expectedSig := mac.Sum(nil)
-	
+
 	if !hmac.Equal(sig, expectedSig) {
 		slog.Warn("quote signature invalid", "user", req.UserId)
 		return "", "", ErrPriceMismatch
@@ -812,7 +837,7 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 		}
 	}
 	_ = brItems.Close()
-	
+
 	// Track promo usage if one was applied
 	if quote.PromoApplied != "" {
 		_, err = tx.Exec(ctx, `
@@ -850,6 +875,7 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 	return orderID, humanRef, tx.Commit(ctx)
 }
 
+// DBGetOrder retrieves an order by its unique ID along with its history and notes.
 func DBGetOrder(ctx context.Context, orderID string) (*pb.Order, error) {
 	o := &pb.Order{}
 	err := pool.QueryRow(ctx, `
@@ -925,6 +951,7 @@ func dbGetOrderNotes(ctx context.Context, orderID string) ([]*pb.OrderNote, erro
 	return notes, rows.Err()
 }
 
+// DBGetUserOrders returns paginated orders for a specific user.
 func DBGetUserOrders(ctx context.Context, userID int64, page, pageSize int32) ([]*pb.Order, int32, error) {
 	if pageSize <= 0 {
 		pageSize = 20
@@ -949,6 +976,7 @@ func DBGetUserOrders(ctx context.Context, userID int64, page, pageSize int32) ([
 	return scanOrdersFlat(rows, true)
 }
 
+// DBGetAllOrders returns paginated orders across all users with optional filtering.
 func DBGetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) ([]*pb.Order, int32, error) {
 	if req.PageSize <= 0 {
 		req.PageSize = 20
@@ -1058,6 +1086,7 @@ func DBUpdateOrderStatus(ctx context.Context, orderID, newStatus, reason string,
 	return userID, tx.Commit(ctx)
 }
 
+// DBCancelOrder cancels an order if it is still within the permissible cancellation window.
 func DBCancelOrder(ctx context.Context, orderID string, userID int64, reason string) error {
 	// Only allow cancel within window (settings-driven)
 	settings, err := GetSystemSettings(ctx)
@@ -1094,6 +1123,7 @@ func DBCancelOrder(ctx context.Context, orderID string, userID int64, reason str
 	return err
 }
 
+// DBAssignDriver assigns a driver to a given order.
 func DBAssignDriver(ctx context.Context, orderID, driverID string, actorID int64) error {
 	res, err := pool.Exec(ctx,
 		"UPDATE orders SET driver_id=$1 WHERE order_id=$2", driverID, orderID)
@@ -1107,6 +1137,7 @@ func DBAssignDriver(ctx context.Context, orderID, driverID string, actorID int64
 	return nil
 }
 
+// DBAddOrderNote appends a text note to an order's history.
 func DBAddOrderNote(ctx context.Context, orderID string, actorID int64, text string) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO order_notes (order_id, actor_id, text) VALUES ($1, $2, $3)`,
@@ -1115,6 +1146,7 @@ func DBAddOrderNote(ctx context.Context, orderID string, actorID int64, text str
 	return err
 }
 
+// DBReportIssue records a new issue report for a specific order.
 func DBReportIssue(ctx context.Context, r *pb.IssueReport) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -1138,6 +1170,7 @@ func DBReportIssue(ctx context.Context, r *pb.IssueReport) error {
 	return tx.Commit(ctx)
 }
 
+// DBResolveIssue marks an open issue on an order as resolved.
 func DBResolveIssue(ctx context.Context, req *pb.ResolveIssueRequest) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -1188,6 +1221,7 @@ func scanOrdersFlat(rows pgx.Rows, withTotal bool) ([]*pb.Order, int32, error) {
 
 // ── Carts ─────────────────────────────────────────────────────────────────────
 
+// DBSaveCart upserts the user's shopping cart items as a JSON string.
 func DBSaveCart(ctx context.Context, userID int64, itemsJSON string) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO carts (user_id, items_json, last_updated) VALUES ($1, $2, $3)
@@ -1198,6 +1232,7 @@ func DBSaveCart(ctx context.Context, userID int64, itemsJSON string) error {
 	return err
 }
 
+// DBGetCart retrieves the JSON string of a user's cart items.
 func DBGetCart(ctx context.Context, userID int64) (string, int64, error) {
 	var j string
 	var ts int64
@@ -1210,11 +1245,13 @@ func DBGetCart(ctx context.Context, userID int64) (string, int64, error) {
 	return j, ts, err
 }
 
+// DBClearCart deletes a user's cart from the database.
 func DBClearCart(ctx context.Context, userID int64) error {
 	_, err := pool.Exec(ctx, "DELETE FROM carts WHERE user_id=$1", userID)
 	return err
 }
 
+// DBExpireCarts deletes all carts that haven't been updated within a given time frame.
 func DBExpireCarts(ctx context.Context, olderThanHours int) error {
 	cutoff := time.Now().Add(-time.Duration(olderThanHours) * time.Hour).Unix()
 	res, err := pool.Exec(ctx, "DELETE FROM carts WHERE last_updated<$1", cutoff)
@@ -1229,6 +1266,7 @@ func DBExpireCarts(ctx context.Context, olderThanHours int) error {
 
 // ── Promotions ────────────────────────────────────────────────────────────────
 
+// DBListPromos retrieves all promotion codes from the database.
 func DBListPromos(ctx context.Context) ([]*pb.Promo, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, code, description, discount_type, discount_value, min_order_value,
@@ -1252,6 +1290,7 @@ func DBListPromos(ctx context.Context) ([]*pb.Promo, error) {
 	return promos, rows.Err()
 }
 
+// DBAddPromo inserts a new promotion code and returns its ID.
 func DBAddPromo(ctx context.Context, p *pb.Promo, actorID int64) (string, error) {
 	var id string
 	err := pool.QueryRow(ctx, `
@@ -1268,6 +1307,7 @@ func DBAddPromo(ctx context.Context, p *pb.Promo, actorID int64) (string, error)
 	return id, nil
 }
 
+// DBRemovePromo deletes a promotion code from the database.
 func DBRemovePromo(ctx context.Context, id string, actorID int64) error {
 	res, err := pool.Exec(ctx, "DELETE FROM promos WHERE id=$1", id)
 	if err != nil {
@@ -1280,6 +1320,7 @@ func DBRemovePromo(ctx context.Context, id string, actorID int64) error {
 	return nil
 }
 
+// DBApplyPromoCode validates a promotion code and calculates its discount effect.
 func DBApplyPromoCode(ctx context.Context, code string, userID int64, cartTotal float64) (*pb.PromoEffect, error) {
 	now := time.Now().Unix()
 	p := &pb.Promo{}
@@ -1339,6 +1380,7 @@ func DBApplyPromoCode(ctx context.Context, code string, userID int64, cartTotal 
 
 // ── Loyalty ───────────────────────────────────────────────────────────────────
 
+// DBGetLoyaltyBalance returns the loyalty points and tier for a user.
 func DBGetLoyaltyBalance(ctx context.Context, userID int64) (*pb.LoyaltyBalance, error) {
 	b := &pb.LoyaltyBalance{UserId: userID}
 	err := pool.QueryRow(ctx,
@@ -1352,6 +1394,7 @@ func DBGetLoyaltyBalance(ctx context.Context, userID int64) (*pb.LoyaltyBalance,
 	return b, err
 }
 
+// DBAdjustLoyalty applies a delta to a user's loyalty points and logs the transaction.
 func DBAdjustLoyalty(ctx context.Context, adj *pb.LoyaltyAdjustment) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -1380,6 +1423,7 @@ func DBAdjustLoyalty(ctx context.Context, adj *pb.LoyaltyAdjustment) error {
 
 // ── Customer profile ──────────────────────────────────────────────────────────
 
+// DBGetProfile fetches a user's customer profile.
 func DBGetProfile(ctx context.Context, userID int64) (*pb.CustomerProfile, error) {
 	p := &pb.CustomerProfile{UserId: userID}
 	err := pool.QueryRow(ctx, `
@@ -1392,6 +1436,7 @@ func DBGetProfile(ctx context.Context, userID int64) (*pb.CustomerProfile, error
 	return p, err
 }
 
+// DBUpsertProfile creates or updates a customer profile.
 func DBUpsertProfile(ctx context.Context, p *pb.CustomerProfile) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO customer_profiles (user_id, display_name, phone, language, birthday)
@@ -1403,6 +1448,7 @@ func DBUpsertProfile(ctx context.Context, p *pb.CustomerProfile) error {
 	return err
 }
 
+// DBListSavedAddresses returns all saved addresses for a specific user.
 func DBListSavedAddresses(ctx context.Context, userID int64) ([]*pb.SavedAddress, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, label, address, lat, lon, is_default
@@ -1423,6 +1469,7 @@ func DBListSavedAddresses(ctx context.Context, userID int64) ([]*pb.SavedAddress
 	return addrs, rows.Err()
 }
 
+// DBSaveAddress upserts an address and updates the default status if needed.
 func DBSaveAddress(ctx context.Context, a *pb.SavedAddress) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -1450,6 +1497,7 @@ func DBSaveAddress(ctx context.Context, a *pb.SavedAddress) error {
 	return tx.Commit(ctx)
 }
 
+// DBDeleteAddress removes a saved address for a user.
 func DBDeleteAddress(ctx context.Context, id int64, userID int64) error {
 	res, err := pool.Exec(ctx,
 		"DELETE FROM saved_addresses WHERE id=$1 AND user_id=$2", id, userID)
@@ -1464,6 +1512,7 @@ func DBDeleteAddress(ctx context.Context, id int64, userID int64) error {
 
 // ── Notification preferences ──────────────────────────────────────────────────
 
+// DBGetNotifPrefs fetches a user's notification preferences.
 func DBGetNotifPrefs(ctx context.Context, userID int64) (*pb.NotifPrefs, error) {
 	p := &pb.NotifPrefs{
 		UserId: userID, OrderUpdates: true, SystemAlerts: true, Promotions: true,
@@ -1478,6 +1527,7 @@ func DBGetNotifPrefs(ctx context.Context, userID int64) (*pb.NotifPrefs, error) 
 	return p, err
 }
 
+// DBSetNotifPrefs upserts a user's notification preferences.
 func DBSetNotifPrefs(ctx context.Context, p *pb.NotifPrefs) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO notif_prefs (user_id, order_updates, promotions, new_products, system_alerts, flash_deals)
@@ -1489,6 +1539,7 @@ func DBSetNotifPrefs(ctx context.Context, p *pb.NotifPrefs) error {
 	return err
 }
 
+// DBGetPendingNotifs retrieves unsent notifications for a user.
 func DBGetPendingNotifs(ctx context.Context, userID int64) ([]*pb.Notif, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, type, text, sent, created_at
@@ -1511,6 +1562,7 @@ func DBGetPendingNotifs(ctx context.Context, userID int64) ([]*pb.Notif, error) 
 	return notifs, rows.Err()
 }
 
+// DBEnqueueNotif adds a new pending notification to a user's queue.
 func DBEnqueueNotif(ctx context.Context, userID int64, ntype, text string) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO pending_notifs (user_id, type, text) VALUES ($1,$2,$3)`,
@@ -1521,6 +1573,7 @@ func DBEnqueueNotif(ctx context.Context, userID int64, ntype, text string) error
 
 // ── Stock subscriptions ───────────────────────────────────────────────────────
 
+// DBSubscribeStock subscribes a user to restock alerts for an item.
 func DBSubscribeStock(ctx context.Context, userID int64, itemID string) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO stock_subscriptions (user_id, item_id) VALUES ($1,$2)
@@ -1530,6 +1583,7 @@ func DBSubscribeStock(ctx context.Context, userID int64, itemID string) error {
 	return err
 }
 
+// DBUnsubscribeStock removes a user's restock subscription for an item.
 func DBUnsubscribeStock(ctx context.Context, userID int64, itemID string) error {
 	_, err := pool.Exec(ctx,
 		"DELETE FROM stock_subscriptions WHERE user_id=$1 AND item_id=$2", userID, itemID)
@@ -1559,6 +1613,7 @@ func notifyStockSubscribers(ctx context.Context, itemID string) {
 
 // ── Admin users ───────────────────────────────────────────────────────────────
 
+// DBListAdmins retrieves a list of all admin users from the database.
 func DBListAdmins(ctx context.Context) ([]*pb.AdminUser, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT telegram_id, username, role, added_by, added_at
@@ -1579,6 +1634,7 @@ func DBListAdmins(ctx context.Context) ([]*pb.AdminUser, error) {
 	return admins, rows.Err()
 }
 
+// DBAddAdmin upserts an admin user with their role and username.
 func DBAddAdmin(ctx context.Context, a *pb.AdminUser, actorID int64) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO admin_users (telegram_id, username, role, added_by)
@@ -1594,6 +1650,7 @@ func DBAddAdmin(ctx context.Context, a *pb.AdminUser, actorID int64) error {
 	return nil
 }
 
+// DBRemoveAdmin deletes an admin user by their Telegram ID.
 func DBRemoveAdmin(ctx context.Context, telegramID int64, actorID int64) error {
 	res, err := pool.Exec(ctx,
 		"DELETE FROM admin_users WHERE telegram_id=$1", telegramID)
@@ -1607,6 +1664,7 @@ func DBRemoveAdmin(ctx context.Context, telegramID int64, actorID int64) error {
 	return nil
 }
 
+// DBIsAdmin checks if a Telegram ID belongs to an admin and returns their role.
 func DBIsAdmin(ctx context.Context, telegramID int64) (bool, string, error) {
 	var role string
 	err := pool.QueryRow(ctx,
@@ -1620,6 +1678,7 @@ func DBIsAdmin(ctx context.Context, telegramID int64) (bool, string, error) {
 
 // ── Audit log ─────────────────────────────────────────────────────────────────
 
+// DBAuditLog asynchronously writes an audit log entry.
 func DBAuditLog(ctx context.Context, actorID int64, action, targetID, detail string) {
 	// fire-and-forget in background to avoid synchronous DB write in hot paths
 	go func() {
@@ -1636,6 +1695,7 @@ func DBAuditLog(ctx context.Context, actorID int64, action, targetID, detail str
 	}()
 }
 
+// DBGetAuditLog retrieves paginated and filtered audit log entries.
 func DBGetAuditLog(ctx context.Context, req *pb.AuditLogRequest) ([]*pb.AuditEntry, int32, error) {
 	if req.PageSize <= 0 {
 		req.PageSize = 50
@@ -1693,6 +1753,7 @@ func DBGetAuditLog(ctx context.Context, req *pb.AuditLogRequest) ([]*pb.AuditEnt
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
 
+// DBGetRevenueSummary aggregates the total revenue and order count within a time range.
 func DBGetRevenueSummary(ctx context.Context, fromTS, toTS int64) (*pb.RevenueSummary, error) {
 	s := &pb.RevenueSummary{}
 	err := pool.QueryRow(ctx, `
@@ -1704,6 +1765,7 @@ func DBGetRevenueSummary(ctx context.Context, fromTS, toTS int64) (*pb.RevenueSu
 	return s, err
 }
 
+// DBGetTopItems fetches the top items by units sold within a specific time range.
 func DBGetTopItems(ctx context.Context, fromTS, toTS int64, limit int32) ([]*pb.TopItemEntry, error) {
 	if limit <= 0 {
 		limit = 10
@@ -1736,6 +1798,7 @@ func DBGetTopItems(ctx context.Context, fromTS, toTS int64, limit int32) ([]*pb.
 	return items, rows.Err()
 }
 
+// DBGetOrderVolumeTrend returns daily order counts for a given time range.
 func DBGetOrderVolumeTrend(ctx context.Context, fromTS, toTS int64) ([]*pb.OrderVolumePoint, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT DATE_TRUNC('day', to_timestamp(created_at)) AS day, COUNT(*)
@@ -1762,6 +1825,7 @@ func DBGetOrderVolumeTrend(ctx context.Context, fromTS, toTS int64) ([]*pb.Order
 	return points, rows.Err()
 }
 
+// DBGetLowStock retrieves items with stock levels below a specified threshold.
 func DBGetLowStock(ctx context.Context, threshold int32) ([]*pb.LowStockEntry, error) {
 	if threshold <= 0 {
 		threshold = 10
@@ -1791,6 +1855,7 @@ func DBGetLowStock(ctx context.Context, threshold int32) ([]*pb.LowStockEntry, e
 
 // ── Background tasks ──────────────────────────────────────────────────────────
 
+// IssueBirthdayRewards enqueues birthday reward notifications for eligible users.
 func IssueBirthdayRewards(ctx context.Context) error {
 	today := time.Now()
 	month := today.Month()
@@ -1821,6 +1886,7 @@ func IssueBirthdayRewards(ctx context.Context) error {
 	return rows.Err()
 }
 
+// CheckLowStockAndAlert checks for items below their restock threshold and alerts admins.
 func CheckLowStockAndAlert(ctx context.Context) error {
 	items, err := DBGetLowStock(ctx, 0) // 0 = use per-item reorder_level
 	if err != nil || len(items) == 0 {
@@ -1838,10 +1904,10 @@ func CheckLowStockAndAlert(ctx context.Context) error {
 				FROM admin_users WHERE role='super_admin'`, msg)
 		}
 	}
-	
+
 	if batch.Len() > 0 {
 		br := pool.SendBatch(ctx, batch)
-		defer br.Close()
+		defer func() { _ = br.Close() }()
 		for i := 0; i < batch.Len(); i++ {
 			if _, err := br.Exec(); err != nil {
 				return err
@@ -1851,6 +1917,7 @@ func CheckLowStockAndAlert(ctx context.Context) error {
 	return nil
 }
 
+// EnforceScheduledMaintenance toggles maintenance mode based on scheduled times.
 func EnforceScheduledMaintenance(ctx context.Context) error {
 	maintUntilStr, err := GetConfigValue(ctx, "maintenance_until")
 	if err != nil || maintUntilStr == "" || maintUntilStr == "0" {
@@ -1901,8 +1968,6 @@ func parseFloat(s string, def float64) float64 {
 	}
 	return v
 }
-
-
 
 func parseInt32(s string, def int32) int32 {
 	if s == "" {
