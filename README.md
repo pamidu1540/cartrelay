@@ -1,10 +1,10 @@
 # 🚚 Logistics Engine
 
-[![Build & Test](https://github.com/pamidu1540/logistics-engine-core/actions/workflows/ci.yml/badge.svg)](https://github.com/pamidu1540/logistics-engine-core/actions)
-[![Latest Release](https://img.shields.io/github/v/release/pamidu1540/logistics-engine-core?color=blue&logo=github)](https://github.com/pamidu1540/logistics-engine-core/releases)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/pamidu1540/logistics-engine-core?filename=engine%2Fgo.mod&logo=go)](https://go.dev/)
-[![Python Version](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/pamidu1540/logistics-engine-core/ci.yml?branch=main&label=CI&logo=github)](https://github.com/pamidu1540/logistics-engine-core/actions)
+[![Latest Tag](https://img.shields.io/github/v/tag/pamidu1540/logistics-engine-core?color=blue&label=Version&logo=github)](https://github.com/pamidu1540/logistics-engine-core/tags)
+[![Go Version](https://img.shields.io/badge/Go-1.25.0-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Python Version](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 
 A high-performance, containerized logistics and e-commerce platform built with Go, Python, and gRPC. It provides a Telegram-based storefront for customers, a robust CLI supervisor for zero-downtime server management, and enterprise-grade Datadog APM tracing.
 
@@ -99,5 +99,5 @@ The stack integrates natively with **Datadog** via a dedicated `datadog-agent` s
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+This software is **Proprietary and Confidential**. All Rights Reserved. See [LICENSE](LICENSE) for details.
 
