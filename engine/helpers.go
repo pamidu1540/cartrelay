@@ -73,8 +73,8 @@ func unmarshalProto(b []byte, m proto.Message) error {
 
 // generateOTP returns a cryptographically random 6-digit string.
 func generateOTP() string {
-	max := big.NewInt(1000000)
-	n, err := rand.Int(rand.Reader, max)
+	maxVal := big.NewInt(1000000)
+	n, err := rand.Int(rand.Reader, maxVal)
 	if err != nil {
 		// Fallback: pseudo-random (should not happen in practice)
 		return "000000"

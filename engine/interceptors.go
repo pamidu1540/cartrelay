@@ -41,10 +41,10 @@ func actorFromCtx(ctx context.Context) int64 {
 // Tokens older than ±5 seconds are rejected for replay protection.
 //
 // Header format:
-//   x-auth-token:    <hex(HMAC-SHA256(key=INTERNAL_TOKEN, msg="method:timestamp"))>
-//   x-actor-id:      <telegram_user_id>   (set by bot; validated against admin_users)
-//   x-actor-role:    <role>               (informational; enforced server-side)
-
+//
+//	x-auth-token:    <hex(HMAC-SHA256(key=INTERNAL_TOKEN, msg="method:timestamp"))>
+//	x-actor-id:      <telegram_user_id>   (set by bot; validated against admin_users)
+//	x-actor-role:    <role>               (informational; enforced server-side)
 func AuthInterceptor(
 	ctx context.Context,
 	req interface{},
@@ -123,38 +123,38 @@ func validateHMACToken(token, method string) bool {
 }
 
 var adminMethods = map[string]bool{
-	"/logistics.LogisticsEngine/AddItem":            true,
-	"/logistics.LogisticsEngine/EditItem":           true,
-	"/logistics.LogisticsEngine/EditItemPrice":      true,
-	"/logistics.LogisticsEngine/EditItemStock":      true,
-	"/logistics.LogisticsEngine/RemoveItem":         true,
-	"/logistics.LogisticsEngine/BulkImportItems":    true,
-	"/logistics.LogisticsEngine/GetAllOrders":       true,
-	"/logistics.LogisticsEngine/UpdateOrderStatus":  true,
-	"/logistics.LogisticsEngine/AssignDriver":       true,
-	"/logistics.LogisticsEngine/AddOrderNote":       true,
-	"/logistics.LogisticsEngine/ResolveOrderIssue":  true,
-	"/logistics.LogisticsEngine/AddWarehouse":       true,
-	"/logistics.LogisticsEngine/EditWarehouse":      true,
-	"/logistics.LogisticsEngine/RemoveWarehouse":    true,
-	"/logistics.LogisticsEngine/AddDriver":          true,
-	"/logistics.LogisticsEngine/EditDriver":         true,
-	"/logistics.LogisticsEngine/RemoveDriver":       true,
-	"/logistics.LogisticsEngine/BroadcastDrivers":   true,
-	"/logistics.LogisticsEngine/AddPromo":           true,
-	"/logistics.LogisticsEngine/EditPromo":          true,
-	"/logistics.LogisticsEngine/RemovePromo":        true,
-	"/logistics.LogisticsEngine/AdjustLoyaltyPoints":true,
-	"/logistics.LogisticsEngine/AddAdmin":           true,
-	"/logistics.LogisticsEngine/RemoveAdmin":        true,
-	"/logistics.LogisticsEngine/ListAdmins":         true,
-	"/logistics.LogisticsEngine/GetAuditLog":        true,
-	"/logistics.LogisticsEngine/SetSystemSettings":  true,
-	"/logistics.LogisticsEngine/ToggleMaintenance":  true,
-	"/logistics.LogisticsEngine/ScheduleMaintenance":true,
-	"/logistics.LogisticsEngine/GetRevenueSummary":  true,
-	"/logistics.LogisticsEngine/GetTopItems":        true,
-	"/logistics.LogisticsEngine/GetOrderVolumeTrend":true,
+	"/logistics.LogisticsEngine/AddItem":             true,
+	"/logistics.LogisticsEngine/EditItem":            true,
+	"/logistics.LogisticsEngine/EditItemPrice":       true,
+	"/logistics.LogisticsEngine/EditItemStock":       true,
+	"/logistics.LogisticsEngine/RemoveItem":          true,
+	"/logistics.LogisticsEngine/BulkImportItems":     true,
+	"/logistics.LogisticsEngine/GetAllOrders":        true,
+	"/logistics.LogisticsEngine/UpdateOrderStatus":   true,
+	"/logistics.LogisticsEngine/AssignDriver":        true,
+	"/logistics.LogisticsEngine/AddOrderNote":        true,
+	"/logistics.LogisticsEngine/ResolveOrderIssue":   true,
+	"/logistics.LogisticsEngine/AddWarehouse":        true,
+	"/logistics.LogisticsEngine/EditWarehouse":       true,
+	"/logistics.LogisticsEngine/RemoveWarehouse":     true,
+	"/logistics.LogisticsEngine/AddDriver":           true,
+	"/logistics.LogisticsEngine/EditDriver":          true,
+	"/logistics.LogisticsEngine/RemoveDriver":        true,
+	"/logistics.LogisticsEngine/BroadcastDrivers":    true,
+	"/logistics.LogisticsEngine/AddPromo":            true,
+	"/logistics.LogisticsEngine/EditPromo":           true,
+	"/logistics.LogisticsEngine/RemovePromo":         true,
+	"/logistics.LogisticsEngine/AdjustLoyaltyPoints": true,
+	"/logistics.LogisticsEngine/AddAdmin":            true,
+	"/logistics.LogisticsEngine/RemoveAdmin":         true,
+	"/logistics.LogisticsEngine/ListAdmins":          true,
+	"/logistics.LogisticsEngine/GetAuditLog":         true,
+	"/logistics.LogisticsEngine/SetSystemSettings":   true,
+	"/logistics.LogisticsEngine/ToggleMaintenance":   true,
+	"/logistics.LogisticsEngine/ScheduleMaintenance": true,
+	"/logistics.LogisticsEngine/GetRevenueSummary":   true,
+	"/logistics.LogisticsEngine/GetTopItems":         true,
+	"/logistics.LogisticsEngine/GetOrderVolumeTrend": true,
 }
 
 // isAdminRPC returns true for RPCs that require admin privileges.
@@ -281,6 +281,7 @@ func getBucket(actorID int64) *tokenBucket {
 	return b
 }
 
+// RateLimitInterceptor enforces a token-bucket rate limit of 30 requests per minute per actor.
 func RateLimitInterceptor(
 	ctx context.Context,
 	req interface{},
@@ -299,11 +300,8 @@ func RateLimitInterceptor(
 	return handler(ctx, req)
 }
 
-// ── Recovery interceptor ──────────────────────────────────────────────────────
-//
-// Converts panics into gRPC Internal errors so one bad request
+// RecoveryInterceptor converts panics into gRPC Internal errors so one bad request
 // cannot crash the entire engine process.
-
 func RecoveryInterceptor(
 	ctx context.Context,
 	req interface{},

@@ -24,6 +24,7 @@ import (
 	pb "logistics-engine/api"
 )
 
+// Version represents the current build version of the engine.
 var Version = "dev"
 
 const socketPath = "/app/sockets/logistics.sock"

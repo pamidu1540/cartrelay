@@ -27,13 +27,14 @@ func fireAndForget(action func(ctx context.Context)) {
 	}()
 }
 
-// Server implements pb.LogisticsEngineServer
+// Server implements pb.LogisticsEngineServer and handles all gRPC API requests.
 type Server struct {
 	pb.UnimplementedLogisticsEngineServer
 }
 
 // ── Health & system ───────────────────────────────────────────────────────────
 
+// CheckHealth handles the CheckHealth gRPC request.
 func (s *Server) CheckHealth(ctx context.Context, _ *pb.Empty) (*pb.HealthStatus, error) {
 	dbStatus := "ok"
 	if err := pool.Ping(ctx); err != nil {
@@ -49,6 +50,7 @@ func (s *Server) CheckHealth(ctx context.Context, _ *pb.Empty) (*pb.HealthStatus
 	}, nil
 }
 
+// ToggleMaintenance handles the ToggleMaintenance gRPC request.
 func (s *Server) ToggleMaintenance(ctx context.Context, _ *pb.Empty) (*pb.StatusResponse, error) {
 	cur, err := GetConfigValue(ctx, "maintenance_mode")
 	if err != nil {
@@ -69,6 +71,7 @@ func (s *Server) ToggleMaintenance(ctx context.Context, _ *pb.Empty) (*pb.Status
 	return &pb.StatusResponse{Success: true, Message: "Maintenance mode " + label}, nil
 }
 
+// ScheduleMaintenance handles the ScheduleMaintenance gRPC request.
 func (s *Server) ScheduleMaintenance(ctx context.Context, req *pb.MaintenanceWindow) (*pb.StatusResponse, error) {
 	if req.StartTs <= 0 || req.EndTs <= req.StartTs {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid maintenance window")
@@ -87,6 +90,7 @@ func (s *Server) ScheduleMaintenance(ctx context.Context, req *pb.MaintenanceWin
 
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
+// GetCatalog handles the GetCatalog gRPC request.
 func (s *Server) GetCatalog(ctx context.Context, req *pb.CatalogRequest) (*pb.CatalogResponse, error) {
 	// Try cache first (catalog_cache.go)
 	if req.SearchQuery == "" && req.CategoryFilter == "" {
@@ -101,6 +105,7 @@ func (s *Server) GetCatalog(ctx context.Context, req *pb.CatalogRequest) (*pb.Ca
 	return &pb.CatalogResponse{Items: items, TotalCount: total}, nil
 }
 
+// GetItem handles the GetItem gRPC request.
 func (s *Server) GetItem(ctx context.Context, req *pb.ItemId) (*pb.Item, error) {
 	items, err := DBGetItemsByIDs(ctx, []string{req.Id})
 	if err != nil {
@@ -113,6 +118,7 @@ func (s *Server) GetItem(ctx context.Context, req *pb.ItemId) (*pb.Item, error) 
 	return it, nil
 }
 
+// AddItem handles the AddItem gRPC request.
 func (s *Server) AddItem(ctx context.Context, item *pb.Item) (*pb.StatusResponse, error) {
 	id, err := DBAddItem(ctx, item, actorFromCtx(ctx))
 	if err != nil {
@@ -122,6 +128,7 @@ func (s *Server) AddItem(ctx context.Context, item *pb.Item) (*pb.StatusResponse
 	return &pb.StatusResponse{Success: true, Message: "Item added", EntityId: id}, nil
 }
 
+// EditItem handles the EditItem gRPC request.
 func (s *Server) EditItem(ctx context.Context, item *pb.Item) (*pb.StatusResponse, error) {
 	if err := DBEditItem(ctx, item, actorFromCtx(ctx)); err != nil {
 		return nil, grpcErr(err)
@@ -130,6 +137,7 @@ func (s *Server) EditItem(ctx context.Context, item *pb.Item) (*pb.StatusRespons
 	return &pb.StatusResponse{Success: true, Message: "Item updated"}, nil
 }
 
+// EditItemPrice handles the EditItemPrice gRPC request.
 func (s *Server) EditItemPrice(ctx context.Context, req *pb.EditPriceRequest) (*pb.StatusResponse, error) {
 	if req.NewPrice < 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "price cannot be negative")
@@ -141,6 +149,7 @@ func (s *Server) EditItemPrice(ctx context.Context, req *pb.EditPriceRequest) (*
 	return &pb.StatusResponse{Success: true, Message: fmt.Sprintf("Price updated to %.2f", req.NewPrice)}, nil
 }
 
+// EditItemStock handles the EditItemStock gRPC request.
 func (s *Server) EditItemStock(ctx context.Context, req *pb.EditStockRequest) (*pb.StatusResponse, error) {
 	if err := DBEditItemStock(ctx, req.ItemId, req.Delta, req.Reason, actorFromCtx(ctx)); err != nil {
 		return nil, grpcErr(err)
@@ -149,6 +158,7 @@ func (s *Server) EditItemStock(ctx context.Context, req *pb.EditStockRequest) (*
 	return &pb.StatusResponse{Success: true, Message: fmt.Sprintf("Stock adjusted by %+d", req.Delta)}, nil
 }
 
+// RemoveItem handles the RemoveItem gRPC request.
 func (s *Server) RemoveItem(ctx context.Context, req *pb.ItemId) (*pb.StatusResponse, error) {
 	if err := DBRemoveItem(ctx, req.Id, actorFromCtx(ctx)); err != nil {
 		return nil, grpcErr(err)
@@ -157,6 +167,7 @@ func (s *Server) RemoveItem(ctx context.Context, req *pb.ItemId) (*pb.StatusResp
 	return &pb.StatusResponse{Success: true, Message: "Item removed"}, nil
 }
 
+// BulkImportItems handles the BulkImportItems gRPC request.
 func (s *Server) BulkImportItems(ctx context.Context, req *pb.BulkImportRequest) (*pb.BulkImportResponse, error) {
 	created, updated, errs := DBBulkImportItems(ctx, req.Items, actorFromCtx(ctx))
 	if len(errs) > 0 {
@@ -168,6 +179,7 @@ func (s *Server) BulkImportItems(ctx context.Context, req *pb.BulkImportRequest)
 
 // ── Cart ──────────────────────────────────────────────────────────────────────
 
+// SaveCart handles the SaveCart gRPC request.
 func (s *Server) SaveCart(ctx context.Context, req *pb.SaveCartRequest) (*pb.StatusResponse, error) {
 	j, err := marshalCartItems(req.Items)
 	if err != nil {
@@ -179,6 +191,7 @@ func (s *Server) SaveCart(ctx context.Context, req *pb.SaveCartRequest) (*pb.Sta
 	return &pb.StatusResponse{Success: true}, nil
 }
 
+// GetCart handles the GetCart gRPC request.
 func (s *Server) GetCart(ctx context.Context, req *pb.UserId) (*pb.CartResponse, error) {
 	j, ts, err := DBGetCart(ctx, req.UserId)
 	if err != nil {
@@ -191,6 +204,7 @@ func (s *Server) GetCart(ctx context.Context, req *pb.UserId) (*pb.CartResponse,
 	return &pb.CartResponse{UserId: req.UserId, Items: items, UpdatedAt: ts}, nil
 }
 
+// ClearCart handles the ClearCart gRPC request.
 func (s *Server) ClearCart(ctx context.Context, req *pb.UserId) (*pb.StatusResponse, error) {
 	if err := DBClearCart(ctx, req.UserId); err != nil {
 		return nil, status.Errorf(codes.Internal, "clear cart: %v", err)
@@ -200,6 +214,7 @@ func (s *Server) ClearCart(ctx context.Context, req *pb.UserId) (*pb.StatusRespo
 
 // ── Quotes ────────────────────────────────────────────────────────────────────
 
+// CalculateQuote handles the CalculateQuote gRPC request.
 func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.QuoteResponse, error) {
 	if req.UserId != 0 && len(req.CartItems) > 0 {
 		storedJSON, _, _ := DBGetCart(ctx, req.UserId)
@@ -334,18 +349,18 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 		nearest.Name, distKM, promoApplied)
 
 	resp := &pb.QuoteResponse{
-		Success:            true,
-		Subtotal:           subtotal,
-		DeliveryFee:        deliveryFee,
-		HeavySurcharge:     heavySurcharge,
-		Tax:                tax,
-		PromoDiscount:      promoDiscount,
-		LoyaltyDiscount:    loyaltyDiscount,
-		GrandTotal:         grandTotal,
-		FormattedReceipt:   receipt,
-		DistanceKm:         distKM,
-		NearestBranch:      nearest.Name,
-		PromoApplied:       promoApplied,
+		Success:             true,
+		Subtotal:            subtotal,
+		DeliveryFee:         deliveryFee,
+		HeavySurcharge:      heavySurcharge,
+		Tax:                 tax,
+		PromoDiscount:       promoDiscount,
+		LoyaltyDiscount:     loyaltyDiscount,
+		GrandTotal:          grandTotal,
+		FormattedReceipt:    receipt,
+		DistanceKm:          distKM,
+		NearestBranch:       nearest.Name,
+		PromoApplied:        promoApplied,
 		LoyaltyPointsEarned: ptsEarned,
 	}
 
@@ -354,7 +369,7 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "marshal quote: %v", err)
 	}
-	
+
 	// Secure the quote with HMAC-SHA256
 	mac := hmac.New(sha256.New, []byte(os.Getenv("INTERNAL_TOKEN")))
 	mac.Write(qd)
@@ -365,6 +380,7 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 
 // ── Orders ────────────────────────────────────────────────────────────────────
 
+// PlaceOrder handles the PlaceOrder gRPC request.
 func (s *Server) PlaceOrder(ctx context.Context, req *pb.OrderRequest) (*pb.OrderResponse, error) {
 	if len(req.QuoteData) == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "quote_data is required")
@@ -417,6 +433,7 @@ func (s *Server) PlaceOrder(ctx context.Context, req *pb.OrderRequest) (*pb.Orde
 	}, nil
 }
 
+// GetOrder handles the GetOrder gRPC request.
 func (s *Server) GetOrder(ctx context.Context, req *pb.OrderId) (*pb.Order, error) {
 	o, err := DBGetOrder(ctx, req.OrderId)
 	if err != nil {
@@ -425,6 +442,7 @@ func (s *Server) GetOrder(ctx context.Context, req *pb.OrderId) (*pb.Order, erro
 	return o, nil
 }
 
+// GetUserOrders handles the GetUserOrders gRPC request.
 func (s *Server) GetUserOrders(ctx context.Context, req *pb.GetUserOrdersRequest) (*pb.OrderListResponse, error) {
 	orders, total, err := DBGetUserOrders(ctx, req.UserId, req.Page, req.PageSize)
 	if err != nil {
@@ -433,6 +451,7 @@ func (s *Server) GetUserOrders(ctx context.Context, req *pb.GetUserOrdersRequest
 	return &pb.OrderListResponse{Orders: orders, TotalCount: total}, nil
 }
 
+// GetAllOrders handles the GetAllOrders gRPC request.
 func (s *Server) GetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) (*pb.OrderListResponse, error) {
 	orders, total, err := DBGetAllOrders(ctx, req)
 	if err != nil {
@@ -441,6 +460,7 @@ func (s *Server) GetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) 
 	return &pb.OrderListResponse{Orders: orders, TotalCount: total}, nil
 }
 
+// UpdateOrderStatus handles the UpdateOrderStatus gRPC request.
 func (s *Server) UpdateOrderStatus(ctx context.Context, req *pb.UpdateStatusRequest) (*pb.StatusResponse, error) {
 	userID, err := DBUpdateOrderStatus(ctx, req.OrderId, req.NewStatus, req.Reason, req.ActorId)
 	if err != nil {
@@ -453,6 +473,7 @@ func (s *Server) UpdateOrderStatus(ctx context.Context, req *pb.UpdateStatusRequ
 	}, nil
 }
 
+// CancelOrder handles the CancelOrder gRPC request.
 func (s *Server) CancelOrder(ctx context.Context, req *pb.CancelOrderRequest) (*pb.StatusResponse, error) {
 	if err := DBCancelOrder(ctx, req.OrderId, req.UserId, req.Reason); err != nil {
 		return nil, grpcErr(err)
@@ -460,6 +481,7 @@ func (s *Server) CancelOrder(ctx context.Context, req *pb.CancelOrderRequest) (*
 	return &pb.StatusResponse{Success: true, Message: "Order cancelled"}, nil
 }
 
+// ReportOrderIssue handles the ReportOrderIssue gRPC request.
 func (s *Server) ReportOrderIssue(ctx context.Context, req *pb.IssueReport) (*pb.StatusResponse, error) {
 	if err := DBReportIssue(ctx, req); err != nil {
 		return nil, status.Errorf(codes.Internal, "report issue: %v", err)
@@ -471,6 +493,7 @@ func (s *Server) ReportOrderIssue(ctx context.Context, req *pb.IssueReport) (*pb
 	return &pb.StatusResponse{Success: true, Message: "Issue reported — our team will review it shortly"}, nil
 }
 
+// ResolveOrderIssue handles the ResolveOrderIssue gRPC request.
 func (s *Server) ResolveOrderIssue(ctx context.Context, req *pb.ResolveIssueRequest) (*pb.StatusResponse, error) {
 	if err := DBResolveIssue(ctx, req); err != nil {
 		return nil, status.Errorf(codes.Internal, "resolve issue: %v", err)
@@ -478,6 +501,7 @@ func (s *Server) ResolveOrderIssue(ctx context.Context, req *pb.ResolveIssueRequ
 	return &pb.StatusResponse{Success: true, Message: "Issue resolved"}, nil
 }
 
+// AssignDriver handles the AssignDriver gRPC request.
 func (s *Server) AssignDriver(ctx context.Context, req *pb.AssignDriverRequest) (*pb.StatusResponse, error) {
 	if err := DBAssignDriver(ctx, req.OrderId, req.DriverId, req.AdminId); err != nil {
 		return nil, grpcErr(err)
@@ -490,6 +514,7 @@ func (s *Server) AssignDriver(ctx context.Context, req *pb.AssignDriverRequest) 
 	return &pb.StatusResponse{Success: true, Message: "Driver assigned"}, nil
 }
 
+// AddOrderNote handles the AddOrderNote gRPC request.
 func (s *Server) AddOrderNote(ctx context.Context, req *pb.OrderNoteRequest) (*pb.StatusResponse, error) {
 	if err := DBAddOrderNote(ctx, req.OrderId, req.AdminId, req.Text); err != nil {
 		return nil, status.Errorf(codes.Internal, "add note: %v", err)
@@ -499,6 +524,7 @@ func (s *Server) AddOrderNote(ctx context.Context, req *pb.OrderNoteRequest) (*p
 
 // ── Warehouses ────────────────────────────────────────────────────────────────
 
+// ListWarehouses handles the ListWarehouses gRPC request.
 func (s *Server) ListWarehouses(ctx context.Context, _ *pb.Empty) (*pb.WarehouseListResponse, error) {
 	whs, err := DBListWarehouses(ctx)
 	if err != nil {
@@ -507,6 +533,7 @@ func (s *Server) ListWarehouses(ctx context.Context, _ *pb.Empty) (*pb.Warehouse
 	return &pb.WarehouseListResponse{Warehouses: whs}, nil
 }
 
+// AddWarehouse handles the AddWarehouse gRPC request.
 func (s *Server) AddWarehouse(ctx context.Context, w *pb.Warehouse) (*pb.StatusResponse, error) {
 	id, err := DBAddWarehouse(ctx, w, actorFromCtx(ctx))
 	if err != nil {
@@ -515,6 +542,7 @@ func (s *Server) AddWarehouse(ctx context.Context, w *pb.Warehouse) (*pb.StatusR
 	return &pb.StatusResponse{Success: true, Message: "Warehouse added", EntityId: id}, nil
 }
 
+// EditWarehouse handles the EditWarehouse gRPC request.
 func (s *Server) EditWarehouse(ctx context.Context, w *pb.Warehouse) (*pb.StatusResponse, error) {
 	if err := DBEditWarehouse(ctx, w, actorFromCtx(ctx)); err != nil {
 		return nil, grpcErr(err)
@@ -522,6 +550,7 @@ func (s *Server) EditWarehouse(ctx context.Context, w *pb.Warehouse) (*pb.Status
 	return &pb.StatusResponse{Success: true, Message: "Warehouse updated"}, nil
 }
 
+// RemoveWarehouse handles the RemoveWarehouse gRPC request.
 func (s *Server) RemoveWarehouse(ctx context.Context, req *pb.WarehouseId) (*pb.StatusResponse, error) {
 	if err := DBRemoveWarehouse(ctx, req.Id, actorFromCtx(ctx)); err != nil {
 		return nil, grpcErr(err)
@@ -531,6 +560,7 @@ func (s *Server) RemoveWarehouse(ctx context.Context, req *pb.WarehouseId) (*pb.
 
 // ── Drivers ───────────────────────────────────────────────────────────────────
 
+// ListDrivers handles the ListDrivers gRPC request.
 func (s *Server) ListDrivers(ctx context.Context, req *pb.ListDriversRequest) (*pb.DriverListResponse, error) {
 	drivers, err := DBListDrivers(ctx, req.AvailableOnly)
 	if err != nil {
@@ -539,6 +569,7 @@ func (s *Server) ListDrivers(ctx context.Context, req *pb.ListDriversRequest) (*
 	return &pb.DriverListResponse{Drivers: drivers}, nil
 }
 
+// AddDriver handles the AddDriver gRPC request.
 func (s *Server) AddDriver(ctx context.Context, d *pb.Driver) (*pb.StatusResponse, error) {
 	id, err := DBAddDriver(ctx, d, actorFromCtx(ctx))
 	if err != nil {
@@ -547,6 +578,7 @@ func (s *Server) AddDriver(ctx context.Context, d *pb.Driver) (*pb.StatusRespons
 	return &pb.StatusResponse{Success: true, Message: "Driver added", EntityId: id}, nil
 }
 
+// EditDriver handles the EditDriver gRPC request.
 func (s *Server) EditDriver(ctx context.Context, d *pb.Driver) (*pb.StatusResponse, error) {
 	if err := DBEditDriver(ctx, d, actorFromCtx(ctx)); err != nil {
 		return nil, grpcErr(err)
@@ -554,6 +586,7 @@ func (s *Server) EditDriver(ctx context.Context, d *pb.Driver) (*pb.StatusRespon
 	return &pb.StatusResponse{Success: true, Message: "Driver updated"}, nil
 }
 
+// RemoveDriver handles the RemoveDriver gRPC request.
 func (s *Server) RemoveDriver(ctx context.Context, req *pb.DriverId) (*pb.StatusResponse, error) {
 	if err := DBRemoveDriver(ctx, req.Id, actorFromCtx(ctx)); err != nil {
 		return nil, grpcErr(err)
@@ -561,6 +594,7 @@ func (s *Server) RemoveDriver(ctx context.Context, req *pb.DriverId) (*pb.Status
 	return &pb.StatusResponse{Success: true, Message: "Driver deactivated"}, nil
 }
 
+// SetDriverAvailability handles the SetDriverAvailability gRPC request.
 func (s *Server) SetDriverAvailability(ctx context.Context, req *pb.DriverAvailability) (*pb.StatusResponse, error) {
 	if err := DBSetDriverAvailability(ctx, req.DriverId, req.IsAvailable, actorFromCtx(ctx)); err != nil {
 		return nil, grpcErr(err)
@@ -572,6 +606,7 @@ func (s *Server) SetDriverAvailability(ctx context.Context, req *pb.DriverAvaila
 	return &pb.StatusResponse{Success: true, Message: "Driver marked " + label}, nil
 }
 
+// BroadcastDrivers handles the BroadcastDrivers gRPC request.
 func (s *Server) BroadcastDrivers(ctx context.Context, req *pb.BroadcastRequest) (*pb.StatusResponse, error) {
 	ids, err := DBGetDriverTelegramIDs(ctx, req.ActiveOnly)
 	if err != nil {
@@ -588,6 +623,7 @@ func (s *Server) BroadcastDrivers(ctx context.Context, req *pb.BroadcastRequest)
 
 // ── Promotions ────────────────────────────────────────────────────────────────
 
+// ListPromos handles the ListPromos gRPC request.
 func (s *Server) ListPromos(ctx context.Context, _ *pb.Empty) (*pb.PromoListResponse, error) {
 	promos, err := DBListPromos(ctx)
 	if err != nil {
@@ -596,6 +632,7 @@ func (s *Server) ListPromos(ctx context.Context, _ *pb.Empty) (*pb.PromoListResp
 	return &pb.PromoListResponse{Promos: promos}, nil
 }
 
+// AddPromo handles the AddPromo gRPC request.
 func (s *Server) AddPromo(ctx context.Context, p *pb.Promo) (*pb.StatusResponse, error) {
 	id, err := DBAddPromo(ctx, p, actorFromCtx(ctx))
 	if err != nil {
@@ -604,6 +641,7 @@ func (s *Server) AddPromo(ctx context.Context, p *pb.Promo) (*pb.StatusResponse,
 	return &pb.StatusResponse{Success: true, Message: "Promo created", EntityId: id}, nil
 }
 
+// EditPromo handles the EditPromo gRPC request.
 func (s *Server) EditPromo(ctx context.Context, p *pb.Promo) (*pb.StatusResponse, error) {
 	_, err := pool.Exec(ctx, `
 		UPDATE promos SET code=$1, description=$2, discount_type=$3, discount_value=$4,
@@ -620,6 +658,7 @@ func (s *Server) EditPromo(ctx context.Context, p *pb.Promo) (*pb.StatusResponse
 	return &pb.StatusResponse{Success: true, Message: "Promo updated"}, nil
 }
 
+// RemovePromo handles the RemovePromo gRPC request.
 func (s *Server) RemovePromo(ctx context.Context, req *pb.PromoId) (*pb.StatusResponse, error) {
 	if err := DBRemovePromo(ctx, req.Id, actorFromCtx(ctx)); err != nil {
 		return nil, grpcErr(err)
@@ -627,6 +666,7 @@ func (s *Server) RemovePromo(ctx context.Context, req *pb.PromoId) (*pb.StatusRe
 	return &pb.StatusResponse{Success: true, Message: "Promo removed"}, nil
 }
 
+// ApplyPromoCode handles the ApplyPromoCode gRPC request.
 func (s *Server) ApplyPromoCode(ctx context.Context, req *pb.ApplyPromoRequest) (*pb.PromoEffect, error) {
 	effect, err := DBApplyPromoCode(ctx, req.PromoCode, req.UserId, req.CartTotal)
 	if err != nil {
@@ -637,6 +677,7 @@ func (s *Server) ApplyPromoCode(ctx context.Context, req *pb.ApplyPromoRequest) 
 
 // ── Loyalty ───────────────────────────────────────────────────────────────────
 
+// GetLoyaltyBalance handles the GetLoyaltyBalance gRPC request.
 func (s *Server) GetLoyaltyBalance(ctx context.Context, req *pb.UserId) (*pb.LoyaltyBalance, error) {
 	bal, err := DBGetLoyaltyBalance(ctx, req.UserId)
 	if err != nil {
@@ -645,6 +686,7 @@ func (s *Server) GetLoyaltyBalance(ctx context.Context, req *pb.UserId) (*pb.Loy
 	return bal, nil
 }
 
+// AdjustLoyaltyPoints handles the AdjustLoyaltyPoints gRPC request.
 func (s *Server) AdjustLoyaltyPoints(ctx context.Context, adj *pb.LoyaltyAdjustment) (*pb.StatusResponse, error) {
 	if err := DBAdjustLoyalty(ctx, adj); err != nil {
 		return nil, status.Errorf(codes.Internal, "adjust loyalty: %v", err)
@@ -657,6 +699,7 @@ func (s *Server) AdjustLoyaltyPoints(ctx context.Context, adj *pb.LoyaltyAdjustm
 
 // ── Customer profile ──────────────────────────────────────────────────────────
 
+// GetProfile handles the GetProfile gRPC request.
 func (s *Server) GetProfile(ctx context.Context, req *pb.UserId) (*pb.CustomerProfile, error) {
 	p, err := DBGetProfile(ctx, req.UserId)
 	if err != nil {
@@ -665,6 +708,7 @@ func (s *Server) GetProfile(ctx context.Context, req *pb.UserId) (*pb.CustomerPr
 	return p, nil
 }
 
+// UpsertProfile handles the UpsertProfile gRPC request.
 func (s *Server) UpsertProfile(ctx context.Context, p *pb.CustomerProfile) (*pb.StatusResponse, error) {
 	if err := DBUpsertProfile(ctx, p); err != nil {
 		return nil, status.Errorf(codes.Internal, "upsert profile: %v", err)
@@ -672,6 +716,7 @@ func (s *Server) UpsertProfile(ctx context.Context, p *pb.CustomerProfile) (*pb.
 	return &pb.StatusResponse{Success: true, Message: "Profile saved"}, nil
 }
 
+// ListSavedAddresses handles the ListSavedAddresses gRPC request.
 func (s *Server) ListSavedAddresses(ctx context.Context, req *pb.UserId) (*pb.AddressListResponse, error) {
 	addrs, err := DBListSavedAddresses(ctx, req.UserId)
 	if err != nil {
@@ -680,6 +725,7 @@ func (s *Server) ListSavedAddresses(ctx context.Context, req *pb.UserId) (*pb.Ad
 	return &pb.AddressListResponse{Addresses: addrs}, nil
 }
 
+// SaveAddress handles the SaveAddress gRPC request.
 func (s *Server) SaveAddress(ctx context.Context, a *pb.SavedAddress) (*pb.StatusResponse, error) {
 	if err := DBSaveAddress(ctx, a); err != nil {
 		return nil, status.Errorf(codes.Internal, "save address: %v", err)
@@ -687,6 +733,7 @@ func (s *Server) SaveAddress(ctx context.Context, a *pb.SavedAddress) (*pb.Statu
 	return &pb.StatusResponse{Success: true, Message: "Address saved"}, nil
 }
 
+// DeleteAddress handles the DeleteAddress gRPC request.
 func (s *Server) DeleteAddress(ctx context.Context, req *pb.AddressId) (*pb.StatusResponse, error) {
 	// user_id must be passed; we rely on RPC caller to supply it via metadata
 	userID := actorFromCtx(ctx)
@@ -698,6 +745,7 @@ func (s *Server) DeleteAddress(ctx context.Context, req *pb.AddressId) (*pb.Stat
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 
+// GetNotifPrefs handles the GetNotifPrefs gRPC request.
 func (s *Server) GetNotifPrefs(ctx context.Context, req *pb.UserId) (*pb.NotifPrefs, error) {
 	p, err := DBGetNotifPrefs(ctx, req.UserId)
 	if err != nil {
@@ -706,6 +754,7 @@ func (s *Server) GetNotifPrefs(ctx context.Context, req *pb.UserId) (*pb.NotifPr
 	return p, nil
 }
 
+// SetNotifPrefs handles the SetNotifPrefs gRPC request.
 func (s *Server) SetNotifPrefs(ctx context.Context, p *pb.NotifPrefs) (*pb.StatusResponse, error) {
 	if err := DBSetNotifPrefs(ctx, p); err != nil {
 		return nil, status.Errorf(codes.Internal, "set notif prefs: %v", err)
@@ -713,6 +762,7 @@ func (s *Server) SetNotifPrefs(ctx context.Context, p *pb.NotifPrefs) (*pb.Statu
 	return &pb.StatusResponse{Success: true, Message: "Notification preferences saved"}, nil
 }
 
+// GetPendingNotifs handles the GetPendingNotifs gRPC request.
 func (s *Server) GetPendingNotifs(ctx context.Context, req *pb.UserId) (*pb.NotifListResponse, error) {
 	notifs, err := DBGetPendingNotifs(ctx, req.UserId)
 	if err != nil {
@@ -723,6 +773,7 @@ func (s *Server) GetPendingNotifs(ctx context.Context, req *pb.UserId) (*pb.Noti
 
 // ── Stock subscriptions ───────────────────────────────────────────────────────
 
+// SubscribeStock handles the SubscribeStock gRPC request.
 func (s *Server) SubscribeStock(ctx context.Context, req *pb.StockSubRequest) (*pb.StatusResponse, error) {
 	if err := DBSubscribeStock(ctx, req.UserId, req.ItemId); err != nil {
 		return nil, status.Errorf(codes.Internal, "subscribe stock: %v", err)
@@ -730,6 +781,7 @@ func (s *Server) SubscribeStock(ctx context.Context, req *pb.StockSubRequest) (*
 	return &pb.StatusResponse{Success: true, Message: "You'll be notified when this item is back in stock"}, nil
 }
 
+// UnsubscribeStock handles the UnsubscribeStock gRPC request.
 func (s *Server) UnsubscribeStock(ctx context.Context, req *pb.StockSubRequest) (*pb.StatusResponse, error) {
 	if err := DBUnsubscribeStock(ctx, req.UserId, req.ItemId); err != nil {
 		return nil, status.Errorf(codes.Internal, "unsubscribe stock: %v", err)
@@ -739,6 +791,7 @@ func (s *Server) UnsubscribeStock(ctx context.Context, req *pb.StockSubRequest) 
 
 // ── Admin users ───────────────────────────────────────────────────────────────
 
+// ListAdmins handles the ListAdmins gRPC request.
 func (s *Server) ListAdmins(ctx context.Context, _ *pb.Empty) (*pb.AdminListResponse, error) {
 	admins, err := DBListAdmins(ctx)
 	if err != nil {
@@ -747,6 +800,7 @@ func (s *Server) ListAdmins(ctx context.Context, _ *pb.Empty) (*pb.AdminListResp
 	return &pb.AdminListResponse{Admins: admins}, nil
 }
 
+// AddAdmin handles the AddAdmin gRPC request.
 func (s *Server) AddAdmin(ctx context.Context, a *pb.AdminUser) (*pb.StatusResponse, error) {
 	if err := DBAddAdmin(ctx, a, actorFromCtx(ctx)); err != nil {
 		return nil, status.Errorf(codes.Internal, "add admin: %v", err)
@@ -755,6 +809,7 @@ func (s *Server) AddAdmin(ctx context.Context, a *pb.AdminUser) (*pb.StatusRespo
 		Message: fmt.Sprintf("Admin %d added with role %s", a.TelegramId, a.Role)}, nil
 }
 
+// RemoveAdmin handles the RemoveAdmin gRPC request.
 func (s *Server) RemoveAdmin(ctx context.Context, req *pb.AdminUserId) (*pb.StatusResponse, error) {
 	if err := DBRemoveAdmin(ctx, req.TelegramId, actorFromCtx(ctx)); err != nil {
 		return nil, grpcErr(err)
@@ -762,6 +817,7 @@ func (s *Server) RemoveAdmin(ctx context.Context, req *pb.AdminUserId) (*pb.Stat
 	return &pb.StatusResponse{Success: true, Message: "Admin removed"}, nil
 }
 
+// GetAuditLog handles the GetAuditLog gRPC request.
 func (s *Server) GetAuditLog(ctx context.Context, req *pb.AuditLogRequest) (*pb.AuditLogResponse, error) {
 	entries, total, err := DBGetAuditLog(ctx, req)
 	if err != nil {
@@ -770,6 +826,7 @@ func (s *Server) GetAuditLog(ctx context.Context, req *pb.AuditLogRequest) (*pb.
 	return &pb.AuditLogResponse{Entries: entries, TotalCount: total}, nil
 }
 
+// GetSystemSettings handles the GetSystemSettings gRPC request.
 func (s *Server) GetSystemSettings(ctx context.Context, _ *pb.Empty) (*pb.SystemSettings, error) {
 	settings, err := GetSystemSettings(ctx)
 	if err != nil {
@@ -778,6 +835,7 @@ func (s *Server) GetSystemSettings(ctx context.Context, _ *pb.Empty) (*pb.System
 	return settings, nil
 }
 
+// SetSystemSettings handles the SetSystemSettings gRPC request.
 func (s *Server) SetSystemSettings(ctx context.Context, req *pb.SystemSettings) (*pb.StatusResponse, error) {
 	if err := SetSystemSettings(ctx, req, actorFromCtx(ctx)); err != nil {
 		return nil, status.Errorf(codes.Internal, "set settings: %v", err)
@@ -787,6 +845,7 @@ func (s *Server) SetSystemSettings(ctx context.Context, req *pb.SystemSettings) 
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
 
+// GetRevenueSummary handles the GetRevenueSummary gRPC request.
 func (s *Server) GetRevenueSummary(ctx context.Context, req *pb.DateRangeRequest) (*pb.RevenueSummary, error) {
 	sum, err := DBGetRevenueSummary(ctx, req.FromTs, req.ToTs)
 	if err != nil {
@@ -795,6 +854,7 @@ func (s *Server) GetRevenueSummary(ctx context.Context, req *pb.DateRangeRequest
 	return sum, nil
 }
 
+// GetTopItems handles the GetTopItems gRPC request.
 func (s *Server) GetTopItems(ctx context.Context, req *pb.TopItemsRequest) (*pb.TopItemsResponse, error) {
 	items, err := DBGetTopItems(ctx, req.FromTs, req.ToTs, req.Limit)
 	if err != nil {
@@ -803,6 +863,7 @@ func (s *Server) GetTopItems(ctx context.Context, req *pb.TopItemsRequest) (*pb.
 	return &pb.TopItemsResponse{Items: items}, nil
 }
 
+// GetOrderVolumeTrend handles the GetOrderVolumeTrend gRPC request.
 func (s *Server) GetOrderVolumeTrend(ctx context.Context, req *pb.DateRangeRequest) (*pb.OrderVolumeTrend, error) {
 	points, err := DBGetOrderVolumeTrend(ctx, req.FromTs, req.ToTs)
 	if err != nil {
@@ -811,6 +872,7 @@ func (s *Server) GetOrderVolumeTrend(ctx context.Context, req *pb.DateRangeReque
 	return &pb.OrderVolumeTrend{Points: points}, nil
 }
 
+// GetLowStockReport handles the GetLowStockReport gRPC request.
 func (s *Server) GetLowStockReport(ctx context.Context, req *pb.LowStockRequest) (*pb.LowStockResponse, error) {
 	items, err := DBGetLowStock(ctx, req.Threshold)
 	if err != nil {

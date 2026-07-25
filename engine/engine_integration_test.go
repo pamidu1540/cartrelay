@@ -47,7 +47,7 @@ func TestInsertOrder_DuplicateIdempotencyKey(t *testing.T) {
 	settings := defaultTestSettings()
 
 	// Insert a minimal item so stock decrement works
-	itemID := mustInsertTestItem(t, ctx, "Test Cola", 100.0, 50)
+	itemID := mustInsertTestItem(ctx, t, "Test Cola", 100.0, 50)
 
 	cart := testCartItem(itemID, 1)
 	idemKey := fmt.Sprintf("idem-test-%d", time.Now().UnixNano())
@@ -75,7 +75,7 @@ func TestUpdateOrderStatus_InvalidTransition(t *testing.T) {
 	ctx := context.Background()
 
 	// Insert a delivered order
-	orderID := mustInsertDeliveredOrder(t, ctx)
+	orderID := mustInsertDeliveredOrder(ctx, t)
 
 	// Attempt to move delivered → pending (illegal)
 	_, err := DBUpdateOrderStatus(ctx, orderID, "pending", "test", 0)
@@ -89,7 +89,7 @@ func TestUpdateOrderStatus_ValidTransition(t *testing.T) {
 	ctx := context.Background()
 	settings := defaultTestSettings()
 
-	itemID := mustInsertTestItem(t, ctx, "Test Item", 50.0, 100)
+	itemID := mustInsertTestItem(ctx, t, "Test Item", 50.0, 100)
 	cart := testCartItem(itemID, 1)
 	req := testOrderRequest(fmt.Sprintf("valid-trans-%d", time.Now().UnixNano()))
 
@@ -143,7 +143,7 @@ func TestGetAllOrders_Pagination(t *testing.T) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func mustInsertTestItem(t *testing.T, ctx context.Context, name string, price float64, stock int) string {
+func mustInsertTestItem(ctx context.Context, t *testing.T, name string, price float64, stock int) string {
 	t.Helper()
 	var id string
 	err := pool.QueryRow(ctx, `
@@ -160,7 +160,7 @@ func mustInsertTestItem(t *testing.T, ctx context.Context, name string, price fl
 	return id
 }
 
-func mustInsertDeliveredOrder(t *testing.T, ctx context.Context) string {
+func mustInsertDeliveredOrder(ctx context.Context, t *testing.T) string {
 	t.Helper()
 	var seq int64
 	_ = pool.QueryRow(ctx, "SELECT nextval('order_ref_seq')").Scan(&seq)
@@ -185,11 +185,11 @@ func mustInsertDeliveredOrder(t *testing.T, ctx context.Context) string {
 
 func defaultTestSettings() *pb.SystemSettings {
 	return &pb.SystemSettings{
-		DeliveryBaseFare:   500,
-		DeliveryRatePerKm:  75,
-		TaxRate:            0.08,
-		LoyaltyEarnRate:    10,
-		LoyaltyRedeemRate:  1,
+		DeliveryBaseFare:    500,
+		DeliveryRatePerKm:   75,
+		TaxRate:             0.08,
+		LoyaltyEarnRate:     10,
+		LoyaltyRedeemRate:   1,
 		CancelWindowMinutes: 5,
 	}
 }

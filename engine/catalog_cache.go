@@ -1,6 +1,6 @@
+// Package main provides in-memory catalog and Mapbox distance caches with
+// singleflight request coalescing for the logistics engine.
 package main
-
-// catalog_cache.go — in-memory catalog and Mapbox distance caches
 
 import (
 	"container/list"
@@ -12,8 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/singleflight"
 	pb "logistics-engine/api"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // ── Catalog cache ─────────────────────────────────────────────────────────────
@@ -29,8 +30,8 @@ type catalogCacheEntry struct {
 }
 
 var (
-	catalogCache   map[string]*catalogCacheEntry // key = "cat:search:page:size"
-	catalogCacheMu sync.RWMutex
+	catalogCache    map[string]*catalogCacheEntry // key = "cat:search:page:size"
+	catalogCacheMu  sync.RWMutex
 	catalogMaxItems int
 	catalogGroup    singleflight.Group
 )
@@ -147,7 +148,7 @@ func quantize(v float64) float64 {
 
 func getMapboxCached(originLat, originLon, destLat, destLon float64) (float64, bool) {
 	key := mapboxCacheKey(originLat, originLon, destLat, destLon)
-	
+
 	mapboxCacheMu.RLock()
 	ele, ok := mapboxCache[key]
 	mapboxCacheMu.RUnlock()
@@ -216,4 +217,3 @@ func evictOldestMapbox(n int) {
 	}
 	slog.Debug("mapbox cache eviction", "evicted", evicted, "remaining", mapboxList.Len())
 }
-
