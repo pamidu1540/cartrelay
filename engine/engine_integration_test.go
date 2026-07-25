@@ -23,26 +23,36 @@ import (
 
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		fmt.Fprintln(os.Stderr, "DATABASE_URL not set — skipping integration tests")
-		os.Exit(0)
-	}
-	if err := InitDatabase(dsn); err != nil {
-		fmt.Fprintf(os.Stderr, "db init failed: %v\n", err)
-		os.Exit(1)
-	}
-	if err := RunMigrations(); err != nil {
-		fmt.Fprintf(os.Stderr, "migrations failed: %v\n", err)
-		os.Exit(1)
+	if dsn != "" {
+		if err := InitDatabase(dsn); err != nil {
+			fmt.Fprintf(os.Stderr, "db init failed: %v\n", err)
+			os.Exit(1)
+		}
+		if err := RunMigrations(); err != nil {
+			fmt.Fprintf(os.Stderr, "migrations failed: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "DATABASE_URL not set — integration tests requiring Postgres will be skipped")
 	}
 	code := m.Run()
-	CloseDatabase()
+	if dsn != "" {
+		CloseDatabase()
+	}
 	os.Exit(code)
+}
+
+func skipIfNoDB(t *testing.T) {
+	t.Helper()
+	if os.Getenv("DATABASE_URL") == "" {
+		t.Skip("DATABASE_URL not set — skipping DB integration test")
+	}
 }
 
 // ── Idempotency key (BUG-012) ─────────────────────────────────────────────────
 
 func TestInsertOrder_DuplicateIdempotencyKey(t *testing.T) {
+	skipIfNoDB(t)
 	ctx := context.Background()
 	settings := defaultTestSettings()
 
@@ -72,6 +82,7 @@ func TestInsertOrder_DuplicateIdempotencyKey(t *testing.T) {
 // ── Status machine (BUG-029) ──────────────────────────────────────────────────
 
 func TestUpdateOrderStatus_InvalidTransition(t *testing.T) {
+	skipIfNoDB(t)
 	ctx := context.Background()
 
 	// Insert a delivered order
@@ -86,6 +97,7 @@ func TestUpdateOrderStatus_InvalidTransition(t *testing.T) {
 }
 
 func TestUpdateOrderStatus_ValidTransition(t *testing.T) {
+	skipIfNoDB(t)
 	ctx := context.Background()
 	settings := defaultTestSettings()
 
@@ -125,6 +137,7 @@ func TestNearestWarehouse_Empty(t *testing.T) {
 // ── Pagination (PERF-002) ─────────────────────────────────────────────────────
 
 func TestGetAllOrders_Pagination(t *testing.T) {
+	skipIfNoDB(t)
 	ctx := context.Background()
 
 	// We rely on orders inserted by other tests; just verify page math.
