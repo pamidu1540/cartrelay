@@ -1,9 +1,25 @@
-Proprietary License
+PROPRIETARY SOFTWARE LICENSE AGREEMENT
 
 Copyright (c) 2026 Pamidu Vidusaka. All Rights Reserved.
 
-This software and associated documentation files (the "Software") are confidential and proprietary to Pamidu Vidusaka. 
+IMPORTANT: PLEASE READ THIS PROPRIETARY SOFTWARE LICENSE AGREEMENT ("AGREEMENT") CAREFULLY BEFORE USING, DOWNLOADING, OR DEPLOYING THIS SOFTWARE.
 
-Unauthorized copying, distribution, modification, public display, or public performance of this Software, via any medium, is strictly prohibited without explicit written permission from the copyright owner.
+1. GRANT OF LICENSE
+Subject to the terms and conditions of this Agreement, the Copyright Owner (Pamidu Vidusaka) grants to the authorized licensee a non-exclusive, non-transferable, revocable, limited license to install and run the Logistics Engine software ("Software") solely for internal business operations on authorized hardware and servers.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+2. RESTRICTIONS & PROHIBITED USES
+Licensee shall NOT, directly or indirectly:
+  a. Copy, modify, adapt, translate, or create derivative works of the Software or any portion thereof.
+  b. Distribute, sell, lease, rent, sublicense, assign, or otherwise transfer the Software, source code, binaries, or access rights to any third party.
+  c. Reverse engineer, decompile, disassemble, or attempt to derive the source code, underlying algorithms, or data structures of compiled binaries.
+  d. Remove, alter, or obscure any proprietary notices, labels, trademarks, or copyright markings.
+  e. Use the Software to provide SaaS, managed services, or multi-tenant hosting to third parties without prior written consent from the Copyright Owner.
+
+3. INTELLECTUAL PROPERTY RIGHTS
+All title, ownership rights, patent rights, copyrights, trade secrets, and intellectual property rights in and to the Software (including Go engine modules, Python bot components, supervisor binaries, gRPC definitions, and documentation) shall remain exclusively with Pamidu Vidusaka.
+
+4. CONFIDENTIALITY & SECURITY
+The Software contains proprietary algorithms, hardware-bound cryptographic logic, and trade secrets. Licensee agrees to protect the Software with the same degree of care used to protect its own confidential information.
+
+5. DISCLAIMER OF WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT OWNER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE.

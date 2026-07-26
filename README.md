@@ -57,21 +57,21 @@ For detailed revision history, see [CHANGELOG.md](CHANGELOG.md).
 
 ### 🚀 Recent Releases
 
+#### [v12.7.0] - 2026-07-26
+- **Security Hardening:** Implemented global rate limiting for anonymous requests, capped token bucket map size (`100,000` limit) to prevent memory DoS, masked log secrets, and upgraded chunked stream encryption to 256-bit AES-256-GCM.
+- **Cache & Skew Optimizations:** Prevented catalog cache stampedes via expired-first LRU eviction; tightened HMAC clock skew tolerance window to $\pm 2\text{s}$.
+- **Parallel Subagent Verification:** Verified 100% full-stack code integrity via specialized subagents (`engine-verifier`, `supervisor-verifier`, `bot-verifier`).
+
 #### [v12.6.0] - 2026-07-25
 - **Dependencies:** Upgraded 80+ Go libraries across `engine` and `supervisor` modules (`pgx/v5`, `grpc`, `datadog-agent`, `bubbletea`, `moby`).
-- **Testing Framework:** Created multi-layer unit test suite (`routing_math_test.go`, `catalog_cache_test.go`, `interceptors_test.go`, `chunked_gcm_test.go`, `conftest.py`) and full-scale Go benchmark suite.
-- **Security & Quality:** Fixed `errcheck` resource closures across all modules, added Go doc comments for 80+ exported symbols, and enforced zero-warning `golangci-lint` and `ruff` pass rates.
-- **CI/CD Pipeline:** Upgraded GitHub Actions `ci.yml` & `release.yml` with Hadolint Dockerfile static analysis and Go 1.25 check-latest workflows.
-
-#### [v12.5.7] - 2026-06-12
-- **Permissions:** Auto-healing root socket permissions helper container for non-root Unix Domain Socket execution.
+- **Testing Framework:** Multi-layer unit test suite and full-scale Go benchmark suite.
 
 ---
 
 ## 🚀 Deployment & CI/CD
 
 - **CI (`ci.yml`)**: On every push to `main`, GitHub Actions automatically tidy Go modules, run `protoc`, execute unit tests, perform `ruff` & `hadolint` linting, and publish multi-stage Docker images to `ghcr.io`.
-- **Release (`release.yml`)**: Triggered by pushing a version tag (e.g., `v12.6.0`). Compiles Linux binaries, signs OTA payloads with Ed25519, and pushes release assets to Cloudflare R2 CDN.
+- **Release (`release.yml`)**: Triggered by pushing a version tag (e.g., `v12.7.0`). Compiles Linux binaries, signs OTA payloads with Ed25519, and pushes release assets to Cloudflare R2 CDN.
 
 ---
 
@@ -83,24 +83,16 @@ Install on a fresh Ubuntu/Debian server:
 sudo bash install.sh
 ```
 
-**Installer steps:**
-1. Validates RAM & disk requirements.
-2. Installs Docker and Docker Compose.
-3. Prompts for License Key, Telegram Bot Token, Admin User IDs, and Datadog API key.
-4. Generates encrypted environment configuration and sets up `logistics.service` `systemd` unit.
-
 ---
 
 ## 💻 Local Development
 
 We use a cross-platform `Taskfile.yml` setup isolated inside a `.tools/` directory.
 
-### Bootstrap Toolchain
 ```powershell
 .\init-dev.ps1
 ```
 
-### Task Commands
 - `task env` - Interactively generate local `.env` configuration.
 - `task up` - Start the Docker Compose stack.
 - `task down` - Stop the local stack.
@@ -113,7 +105,7 @@ We use a cross-platform `Taskfile.yml` setup isolated inside a `.tools/` directo
 ## 🔒 Security Posture
 
 - **Unix Domain Socket Isolation**: Engine and Bot communicate over an internal socket; no public gRPC ports are exposed.
-- **HMAC Request Validation**: Shared token HMAC-SHA256 request signing with $\pm 5\text{s}$ replay protection.
+- **HMAC Request Validation**: Shared token HMAC-SHA256 request signing with $\pm 2\text{s}$ replay protection.
 - **Hardware-Bound Secrets**: Environment variables encrypted at rest using machine hardware identifiers.
 
 ---

@@ -175,7 +175,7 @@ func downloadFile(url string, dst *os.File) error {
 		return fmt.Errorf("download server HTTP %d", resp.StatusCode)
 	}
 
-	encWriter, err := newChunkedGCMWriter(dst, getAES128Key())
+	encWriter, err := newChunkedGCMWriter(dst, getAESKey())
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func verifySignatureStreaming(filePath, sigHex string) error {
 	}
 	defer func() { _ = f.Close() }()
 
-	decReader, err := newChunkedGCMReader(f, getAES128Key())
+	decReader, err := newChunkedGCMReader(f, getAESKey())
 	if err != nil {
 		return fmt.Errorf("init decryption: %w", err)
 	}
@@ -269,7 +269,7 @@ func extractTarballSecure(tarball, destDir string) error {
 	}
 	defer func() { _ = f.Close() }()
 
-	decReader, err := newChunkedGCMReader(f, getAES128Key())
+	decReader, err := newChunkedGCMReader(f, getAESKey())
 	if err != nil {
 		return err
 	}

@@ -68,8 +68,40 @@ func GetCachedCatalog(ctx context.Context, cat, search string, page, pageSize in
 
 		catalogCacheMu.Lock()
 		if len(catalogCache) >= catalogMaxItems {
-			slog.Info("catalog cache eviction", "entries", len(catalogCache))
-			catalogCache = make(map[string]*catalogCacheEntry)
+			// SEC: evict expired entries first; if none expired, evict oldest half
+			now := time.Now()
+			evicted := 0
+			for k, e := range catalogCache {
+				if now.After(e.expiresAt) {
+					delete(catalogCache, k)
+					evicted++
+				}
+			}
+			if evicted == 0 {
+				// No expired entries — evict oldest half by expiry time
+				type kv struct {
+					key string
+					exp time.Time
+				}
+				entries := make([]kv, 0, len(catalogCache))
+				for k, e := range catalogCache {
+					entries = append(entries, kv{k, e.expiresAt})
+				}
+				// Sort by expiry ascending (oldest first)
+				for i := 0; i < len(entries); i++ {
+					for j := i + 1; j < len(entries); j++ {
+						if entries[j].exp.Before(entries[i].exp) {
+							entries[i], entries[j] = entries[j], entries[i]
+						}
+					}
+				}
+				half := len(entries) / 2
+				for _, e := range entries[:half] {
+					delete(catalogCache, e.key)
+				}
+				evicted = half
+			}
+			slog.Info("catalog cache eviction", "evicted", evicted, "remaining", len(catalogCache))
 		}
 		catalogCache[key] = &catalogCacheEntry{
 			resp:      resp,

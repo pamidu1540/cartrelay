@@ -87,7 +87,7 @@ def admin_only(func: Callable) -> Callable:
             return
 
         try:
-            now = time.time()
+            now = time.monotonic()
             if now - context.bot_data.get('_admins_time', 0.0) < 60:
                 admin_ids = context.bot_data['_admins_list']
             else:
@@ -121,7 +121,7 @@ def role_required(*roles: str) -> Callable:
             if not user:
                 return
             try:
-                now = time.time()
+                now = time.monotonic()
                 if now - context.bot_data.get('_admin_map_time', 0.0) < 60:
                     admin_map = context.bot_data['_admin_map']
                 else:
@@ -156,7 +156,7 @@ def check_maintenance(func: Callable) -> Callable:
     @functools.wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
-            now = time.time()
+            now = time.monotonic()
             if now - context.bot_data.get('_health_time', 0.0) < 60:
                 is_maintenance = context.bot_data['_health_status']
             else:
