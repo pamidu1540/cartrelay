@@ -93,7 +93,7 @@ func AuthInterceptor(
 }
 
 // validateHMACToken checks the HMAC for the current and adjacent seconds
-// to tolerate clock skew (±5 seconds) between bot and engine.
+// to tolerate clock skew (±2 seconds) between bot and engine.
 func validateHMACToken(token, method string) bool {
 	secret := []byte(os.Getenv("INTERNAL_TOKEN"))
 	now := time.Now().Unix()
@@ -107,7 +107,7 @@ func validateHMACToken(token, method string) bool {
 		return true
 	}
 
-	for offset := int64(-5); offset <= 5; offset++ {
+	for offset := int64(-2); offset <= 2; offset++ {
 		if offset == 0 {
 			continue
 		}
@@ -241,9 +241,20 @@ func min64(a, b float64) float64 {
 	return b
 }
 
+const maxRateBuckets = 100_000 // SEC: cap map size to prevent memory exhaustion DoS
+
 var (
 	rateBuckets   = make(map[int64]*tokenBucket)
 	rateBucketsMu sync.Mutex
+
+	// globalBucket is used for requests without an actor ID (actorID == 0)
+	// so anonymous/system requests are still rate-limited.
+	globalBucket = &tokenBucket{
+		tokens:   60,
+		capacity: 60,
+		rate:     1.0, // 60 per minute
+		lastFill: time.Now(),
+	}
 )
 
 func init() {
@@ -266,10 +277,18 @@ func init() {
 }
 
 func getBucket(actorID int64) *tokenBucket {
+	if actorID == 0 {
+		return globalBucket
+	}
 	rateBucketsMu.Lock()
 	defer rateBucketsMu.Unlock()
 	if b, ok := rateBuckets[actorID]; ok {
 		return b
+	}
+	// SEC: reject new buckets if map is at capacity to prevent memory exhaustion
+	if len(rateBuckets) >= maxRateBuckets {
+		slog.Warn("rate bucket map at capacity, using global bucket", "actor", actorID)
+		return globalBucket
 	}
 	b := &tokenBucket{
 		tokens:   30,
@@ -281,7 +300,8 @@ func getBucket(actorID int64) *tokenBucket {
 	return b
 }
 
-// RateLimitInterceptor enforces a token-bucket rate limit of 30 requests per minute per actor.
+// RateLimitInterceptor enforces a token-bucket rate limit per actor.
+// Anonymous requests (actorID == 0) use a shared global bucket.
 func RateLimitInterceptor(
 	ctx context.Context,
 	req interface{},
@@ -289,9 +309,6 @@ func RateLimitInterceptor(
 	handler grpc.UnaryHandler,
 ) (interface{}, error) {
 	actorID := actorFromCtx(ctx)
-	if actorID == 0 {
-		return handler(ctx, req)
-	}
 	if !getBucket(actorID).allow() {
 		slog.Warn("rate limit exceeded", "actor", actorID, "method", info.FullMethod)
 		return nil, status.Errorf(codes.ResourceExhausted,

@@ -57,8 +57,9 @@ def make_auth_token(method: str) -> str:
     """Generate HMAC-SHA256 token matching interceptors.go validateHMACToken."""
     now = int(time.time())
     msg = f"{method}:{now}".encode()
-    token = hmac.HMAC(INTERNAL_TOKEN.encode(), msg, hashlib.sha256).hexdigest()
-    return token
+    # SEC: read token from env on each call to avoid holding secret in module-level variable
+    token = os.getenv("INTERNAL_TOKEN", "")
+    return hmac.HMAC(token.encode(), msg, hashlib.sha256).hexdigest()
 
 
 # ── Channel wrapper ────────────────────────────────────────────────────────────

@@ -38,7 +38,7 @@ func TestValidateHMACToken_ClockSkew(t *testing.T) {
 	defer func() { _ = os.Unsetenv("INTERNAL_TOKEN") }()
 
 	method := "/logistics.LogisticsEngine/GetCatalog"
-	skewedTime := time.Now().Unix() - 3 // 3 seconds ago (within +-5s tolerance)
+	skewedTime := time.Now().Unix() - 2 // 2 seconds ago (within ±2s tolerance)
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(fmt.Sprintf("%s:%d", method, skewedTime)))

@@ -86,7 +86,6 @@ func main() {
 	}
 
 	// ── Background tasks ─────────────────────────────────────────────────────
-	// ── Background tasks ─────────────────────────────────────────────────────
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 
 	go runEvery(bgCtx, 6*time.Hour, "cart-expiry", func() {
@@ -210,10 +209,11 @@ func main() {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 func tokenPrefix(t string) string {
-	if len(t) <= 8 {
+	if len(t) <= 4 {
 		return strings.Repeat("*", len(t))
 	}
-	return t[:8] + "…"
+	// SEC: only show last 4 characters to avoid leaking secret material in logs
+	return "…" + t[len(t)-4:]
 }
 
 func logLevel() slog.Level {

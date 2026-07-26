@@ -182,13 +182,15 @@ func (c *chunkedGCMReader) Read(p []byte) (n int, err error) {
 	return n, nil
 }
 
-func getAES128Key() []byte {
+// getAESKey derives a 32-byte AES-256 key from the INTERNAL_TOKEN environment variable
+// using SHA-256. The full 32-byte hash is used for AES-256-GCM encryption.
+func getAESKey() []byte {
 	token := os.Getenv("INTERNAL_TOKEN")
 	if token == "" {
 		panic("INTERNAL_TOKEN environment variable must be set")
 	}
 	h := sha256.Sum256([]byte(token))
-	return h[:16]
+	return h[:] // Full 32 bytes for AES-256
 }
 
 func decryptEnvFile(path string) ([]byte, error) {
@@ -198,7 +200,7 @@ func decryptEnvFile(path string) ([]byte, error) {
 	}
 	machineID := strings.TrimSpace(string(machineIDBytes))
 	h := sha256.Sum256([]byte(machineID))
-	key := h[:16]
+	key := h[:] // Full 32 bytes for AES-256
 
 	// #nosec G304 -- path is validated/derived configuration path
 	data, err := os.ReadFile(path)
