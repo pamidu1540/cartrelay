@@ -259,6 +259,135 @@ class TestHMACToken:
         )
 
 
+# ── Role required tests ───────────────────────────────────────────────────────
+
+class TestRoleRequired:
+    """Test role_required decorator."""
+
+    @pytest.fixture
+    def mock_update(self):
+        update = MagicMock()
+        update.effective_user.id = 12345
+        update.effective_message.reply_text = AsyncMock()
+        return update
+
+    @pytest.fixture
+    def mock_context(self):
+        context = MagicMock()
+        context.bot_data = {}
+        context.user_data = {}
+        return context
+
+    @pytest.fixture
+    def mock_handler(self):
+        return AsyncMock(return_value="SUCCESS")
+
+    @pytest.mark.asyncio
+    async def test_allows_super_admin(self, mock_update, mock_context, mock_handler):
+        from middleware import role_required
+
+        @role_required("manager")
+        async def handler(update, context):
+            return await mock_handler(update, context)
+
+        with patch("middleware.pool") as mock_pool:
+            mock_pool.call = AsyncMock()
+            mock_admin = MagicMock()
+            mock_admin.telegram_id = 12345
+            mock_admin.role = "super_admin"
+            mock_pool.call.return_value = MagicMock(admins=[mock_admin])
+
+            result = await handler(mock_update, mock_context)
+
+            assert result == "SUCCESS"
+            mock_update.effective_message.reply_text.assert_not_called()
+            assert mock_context.user_data["_role"] == "super_admin"
+
+    @pytest.mark.asyncio
+    async def test_allows_specified_role(self, mock_update, mock_context, mock_handler):
+        from middleware import role_required
+
+        @role_required("driver", "manager")
+        async def handler(update, context):
+            return await mock_handler(update, context)
+
+        with patch("middleware.pool") as mock_pool:
+            mock_pool.call = AsyncMock()
+            mock_admin = MagicMock()
+            mock_admin.telegram_id = 12345
+            mock_admin.role = "driver"
+            mock_pool.call.return_value = MagicMock(admins=[mock_admin])
+
+            result = await handler(mock_update, mock_context)
+
+            assert result == "SUCCESS"
+            mock_update.effective_message.reply_text.assert_not_called()
+            assert mock_context.user_data["_role"] == "driver"
+
+    @pytest.mark.asyncio
+    async def test_blocks_unauthorized_role(self, mock_update, mock_context, mock_handler):
+        from middleware import role_required
+
+        @role_required("manager")
+        async def handler(update, context):
+            return await mock_handler(update, context)
+
+        with patch("middleware.pool") as mock_pool:
+            mock_pool.call = AsyncMock()
+            mock_admin = MagicMock()
+            mock_admin.telegram_id = 12345
+            mock_admin.role = "driver"
+            mock_pool.call.return_value = MagicMock(admins=[mock_admin])
+
+            result = await handler(mock_update, mock_context)
+
+            assert result is None
+            mock_handler.assert_not_called()
+            mock_update.effective_message.reply_text.assert_called_once_with(
+                "🚫 This action requires role: manager"
+            )
+
+    @pytest.mark.asyncio
+    async def test_uses_cached_admin_map(self, mock_update, mock_context, mock_handler):
+        from middleware import role_required
+        import time
+
+        @role_required("manager")
+        async def handler(update, context):
+            return await mock_handler(update, context)
+
+        # Seed cache
+        mock_context.bot_data["_admin_map_time"] = time.monotonic()
+        mock_context.bot_data["_admin_map"] = {12345: "manager"}
+
+        with patch("middleware.pool") as mock_pool:
+            result = await handler(mock_update, mock_context)
+
+            assert result == "SUCCESS"
+            mock_pool.call.assert_not_called()
+            mock_update.effective_message.reply_text.assert_not_called()
+            assert mock_context.user_data["_role"] == "manager"
+
+    @pytest.mark.asyncio
+    async def test_pool_call_failure_blocks(self, mock_update, mock_context, mock_handler):
+        from middleware import role_required
+
+        @role_required("manager")
+        async def handler(update, context):
+            return await mock_handler(update, context)
+
+        with patch("middleware.pool") as mock_pool:
+            mock_pool.call = AsyncMock(side_effect=Exception("Network error"))
+
+            result = await handler(mock_update, mock_context)
+
+            assert result is None
+            mock_handler.assert_not_called()
+            mock_update.effective_message.reply_text.assert_called_once_with(
+                "⚠️ Could not verify role."
+            )
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 class AsyncMock(MagicMock):
