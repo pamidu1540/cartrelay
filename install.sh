@@ -634,9 +634,12 @@ start_services() {
 
       local decrypted=false
       local tmp_tar="${temp_restore_dir}/restore.tar.gz"
+      local fallback_key
+      fallback_key=$(cat /etc/machine-id 2>/dev/null || true)
+      fallback_key="${fallback_key:-$(hostname)}"
 
       # Try decrypting using default keys sequentially until one succeeds
-      for pass in "$current_token" "$current_bot_token" "logistics_secure_fallback_key_2026"; do
+      for pass in "$current_token" "$current_bot_token" "$fallback_key"; do
         if [[ -n "$pass" ]]; then
           # 1. Try AES-GCM-256 via Python first
           if python3 -c "import cryptography" &>/dev/null; then
@@ -764,7 +767,10 @@ backup_current_deployment() {
     # Secure and encrypt the backup into a single secure tarball
     local secure_backup_file="${INSTALL_DIR}/backups/pre-install-$(date +%Y%m%d-%H%M%S).tar.gz.enc"
     local enc_pass="${INTERNAL_TOKEN:-$TELEGRAM_BOT_TOKEN}"
-    enc_pass="${enc_pass:-logistics_secure_fallback_key_2026}"
+    local fallback_key
+    fallback_key=$(cat /etc/machine-id 2>/dev/null || true)
+    fallback_key="${fallback_key:-$(hostname)}"
+    enc_pass="${enc_pass:-$fallback_key}"
 
     # Prepare compressed tarball first (to save storage!)
     local tmp_tar="${INSTALL_DIR}/backups/pre-install-$$.tar.gz"
