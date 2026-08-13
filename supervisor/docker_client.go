@@ -196,11 +196,15 @@ func (s *statusResponse) Reset()                      { *s = statusResponse{} }
 func (s *statusResponse) String() string              { return s.Message }
 func (s *statusResponse) ProtoReflect() proto.Message { return nil }
 
+// logisticsSocketPath is the default path to the engine's gRPC socket.
+// It can be overridden in tests.
+var logisticsSocketPath = "/app/sockets/logistics.sock"
+
 // GRPCToggleMaintenance dials the engine socket and calls ToggleMaintenance.
 // Uses google.golang.org/protobuf/types/known/emptypb for the request and a
 // minimal local struct for the response — no dependency on logistics-engine/api.
 func GRPCToggleMaintenance() (bool, error) {
-	socketPath := "/app/sockets/logistics.sock"
+	socketPath := logisticsSocketPath
 	token := os.Getenv("INTERNAL_TOKEN")
 	if token == "" {
 		return false, fmt.Errorf("INTERNAL_TOKEN not set")
