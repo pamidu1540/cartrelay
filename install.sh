@@ -360,6 +360,7 @@ services:
   postgres:
     init: true
     image: postgres:16-alpine
+    container_name: logistics_postgres
     restart: unless-stopped
     command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=8MB", "-c", "effective_cache_size=64MB"]
     environment:
