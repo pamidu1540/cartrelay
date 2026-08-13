@@ -3,6 +3,7 @@ package main
 // license_verifier.go — license validation
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -21,11 +22,11 @@ func VerifyLicense() error {
 		if os.Getenv("DEV_BYPASS_SECRET") != "" {
 			slog.Error("DEV_BYPASS_SECRET is set in production — refusing to start. " +
 				"Remove it from your .env file.")
-			os.Exit(2)
+			return fmt.Errorf("refusing to start in production with bypass secrets")
 		}
 		if os.Getenv("SKIP_LICENSE_CHECK") != "" {
 			slog.Error("SKIP_LICENSE_CHECK is set in production — refusing to start.")
-			os.Exit(2)
+			return fmt.Errorf("refusing to start in production with bypass secrets")
 		}
 	}
 
@@ -41,7 +42,7 @@ func VerifyLicense() error {
 		if strings.Contains(upper, pat) {
 			slog.Error("LICENSE_PUBLIC_KEY appears to be a placeholder value — refusing to start",
 				"key_prefix", pubKey[:min(len(pubKey), 20)])
-			os.Exit(1)
+			return fmt.Errorf("LICENSE_PUBLIC_KEY appears to be a placeholder value")
 		}
 	}
 
@@ -51,6 +52,9 @@ func VerifyLicense() error {
 	return nil
 }
 
+// LicenseCheckInterval is the interval for the background license checker. It is a variable to allow mocking in tests.
+var LicenseCheckInterval = 6 * time.Hour
+
 // StartLicenseBackgroundChecker periodically re-validates the license.
 // On failure it calls shutdown() which triggers GracefulStop.
 func StartLicenseBackgroundChecker(shutdown func()) {
@@ -59,7 +63,7 @@ func StartLicenseBackgroundChecker(shutdown func()) {
 	}
 
 	go func() {
-		ticker := time.NewTicker(6 * time.Hour)
+		ticker := time.NewTicker(LicenseCheckInterval)
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := VerifyLicense(); err != nil {
