@@ -117,6 +117,22 @@ We use a cross-platform `Taskfile.yml` setup isolated inside a `.tools/` directo
 - `/bot/` - Python Telegram Bot, SMI handlers, cart manager, rate limiter.
 - `/webui/gateway/` - FastAPI Web UI bridge.
 - `/.github/workflows/` - CI/CD automated pipelines.
+- `/.jules/setup.sh` - Google Jules VM setup script.
+- `AGENTS.md` - AI Agent & Jules instruction guide.
+- `install.sh` - Host installation script.
+
+---
+
+## 🤖 Google Jules Integration
+
+This repository is pre-configured for **Google Jules** (Google's asynchronous AI coding agent).
+
+1. **Agent Context**: Jules automatically loads [`AGENTS.md`](AGENTS.md) for architectural guidelines, protobuf code generation procedures, and linting/testing expectations.
+2. **Initial VM Setup**: In your Jules web interface under **Configuration**, set the setup command to:
+   ```bash
+   bash .jules/setup.sh
+   ```
+   This pre-installs `protobuf-compiler`, Go tools (`protoc-gen-go`, `govulncheck`), and Python `uv` environment before running tasks.
 
 ---
 
