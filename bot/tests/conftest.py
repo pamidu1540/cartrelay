@@ -12,6 +12,7 @@ import pytest
 
 # Ensure src/ is on python path for tests
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "engine/src"))
 
 
 class AsyncMock(MagicMock):

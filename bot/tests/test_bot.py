@@ -393,3 +393,119 @@ class TestRoleRequired:
 class AsyncMock(MagicMock):
     async def __call__(self, *args, **kwargs):
         return super().__call__(*args, **kwargs)
+
+
+# ── Admin Only tests ──────────────────────────────────────────────────────────
+
+class TestAdminOnly:
+    """Tests for the admin_only decorator."""
+
+    @pytest.mark.asyncio
+    async def test_allows_admin(self):
+        from middleware import admin_only
+
+        mock_func = AsyncMock()
+        decorated_func = admin_only(mock_func)
+
+        update = MagicMock()
+        update.effective_user.id = 123
+        context = MagicMock()
+        context.bot_data = {}
+
+        mock_resp = MagicMock()
+        mock_admin = MagicMock()
+        mock_admin.telegram_id = 123
+        mock_resp.admins = [mock_admin]
+
+        with patch("middleware.pool") as mock_pool:
+            mock_pool.call = AsyncMock(return_value=mock_resp)
+            await decorated_func(update, context)
+
+        mock_func.assert_called_once_with(update, context)
+        assert context.bot_data['_admins_list'] == {123}
+
+    @pytest.mark.asyncio
+    async def test_blocks_non_admin(self):
+        from middleware import admin_only
+
+        mock_func = AsyncMock()
+        decorated_func = admin_only(mock_func)
+
+        update = MagicMock()
+        update.effective_user.id = 456
+        update.effective_message.reply_text = AsyncMock()
+        context = MagicMock()
+        context.bot_data = {}
+
+        mock_resp = MagicMock()
+        mock_admin = MagicMock()
+        mock_admin.telegram_id = 123
+        mock_resp.admins = [mock_admin]
+
+        with patch("middleware.pool") as mock_pool:
+            mock_pool.call = AsyncMock(return_value=mock_resp)
+            await decorated_func(update, context)
+
+        mock_func.assert_not_called()
+        update.effective_message.reply_text.assert_called_once_with("🚫 Admin access required.")
+
+    @pytest.mark.asyncio
+    async def test_uses_cache(self):
+        from middleware import admin_only
+        import time
+
+        mock_func = AsyncMock()
+        decorated_func = admin_only(mock_func)
+
+        update = MagicMock()
+        update.effective_user.id = 123
+        context = MagicMock()
+        context.bot_data = {
+            '_admins_time': time.monotonic(),
+            '_admins_list': {123}
+        }
+
+        with patch("middleware.pool") as mock_pool:
+            mock_pool.call = AsyncMock()
+            await decorated_func(update, context)
+
+        mock_pool.call.assert_not_called()
+        mock_func.assert_called_once_with(update, context)
+
+    @pytest.mark.asyncio
+    async def test_handles_grpc_error(self):
+        from middleware import admin_only
+
+        mock_func = AsyncMock()
+        decorated_func = admin_only(mock_func)
+
+        update = MagicMock()
+        update.effective_user.id = 123
+        update.effective_message.reply_text = AsyncMock()
+        context = MagicMock()
+        context.bot_data = {}
+
+        with patch("middleware.pool") as mock_pool:
+            mock_pool.call = AsyncMock(side_effect=Exception("grpc error"))
+            await decorated_func(update, context)
+
+        mock_func.assert_not_called()
+        update.effective_message.reply_text.assert_called_once_with("⚠️ Could not verify admin status.")
+
+    @pytest.mark.asyncio
+    async def test_returns_early_if_no_user(self):
+        from middleware import admin_only
+
+        mock_func = AsyncMock()
+        decorated_func = admin_only(mock_func)
+
+        update = MagicMock()
+        update.effective_user = None
+        context = MagicMock()
+
+        with patch("middleware.pool") as mock_pool:
+            mock_pool.call = AsyncMock()
+            await decorated_func(update, context)
+
+        mock_pool.call.assert_not_called()
+        mock_func.assert_not_called()
