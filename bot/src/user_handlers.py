@@ -621,7 +621,7 @@ async def cmd_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def _show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int) -> int:
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
 
     if not items:
         await _safe_reply(update, context,
@@ -707,7 +707,7 @@ async def cb_qty_minus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await query.answer()
     item_id = query.data.split(":", 1)[1]
     user_id = update.effective_user.id
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
     current = next((ci.quantity for ci in items if ci.item_id == item_id), 0)
     if current <= 1:
         await _cart(context).remove_item(user_id, item_id)
@@ -735,7 +735,7 @@ async def cb_clear_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def _refresh_cart_message(query, context, user_id: int) -> None:
     """Re-render the cart inline message after a mutation."""
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
     if not items:
         await query.edit_message_text("🛒 Your cart is empty.")
         return
@@ -788,7 +788,7 @@ async def cb_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await query.answer()
     user_id = update.effective_user.id
 
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
     if not items:
         await send_or_edit_main_menu(update, context, "🛒 Your cart is empty. Use /catalog to add items.")
         return ConversationHandler.END
@@ -931,7 +931,7 @@ async def msg_delivery_address(update: Update, context: ContextTypes.DEFAULT_TYP
 async def _proceed_to_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Calculate quote and show promo / loyalty options."""
     user_id = update.effective_user.id
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
 
     try:
         quote = await pool.call(
@@ -1004,7 +1004,7 @@ async def msg_promo_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await delete_user_message(update, context)
     code = update.effective_message.text.strip().upper()
     user_id = update.effective_user.id
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
 
     try:
         # Recalculate quote with promo
@@ -1101,7 +1101,7 @@ async def cb_confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     await query.answer()
     user = update.effective_user
-    items = await _cart(context).get(user.id)
+    items = await _cart(context).get_cart(user.id)
     quote: pb.QuoteResponse = context.user_data.get("quote")
 
     if not quote or not items:
