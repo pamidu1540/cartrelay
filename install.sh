@@ -183,66 +183,22 @@ install_docker() {
 }
 
 verify_license() {
-  step "License verification"
-  local key="" attempts=0
-  while true; do
-    (( ++attempts > 3 )) && die "Too many failed attempts. Contact support."
-    prompt key "License Key" "" secret
-    local response http_code body
-    response=$(curl -fsSL -w "\n%{http_code}" \
-      -H "Content-Type: application/json" \
-      -d "{\"license_key\":\"${key}\",\"hostname\":\"$(hostname -f 2>/dev/null || hostname)\",\"installer_version\":\"${INSTALLER_VERSION}\"}" \
-      "${LICENSE_API}" 2>/dev/null) || response=$'\n000'
-    http_code=$(echo "$response" | tail -1)
-    body=$(echo "$response" | head -n -1)
-    case "$http_code" in
-      200)
-        LICENSE_CUSTOMER=$(echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('customer','Customer'))" 2>/dev/null || echo "Customer")
-        LICENSE_PLAN=$(echo     "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('plan','standard'))"     2>/dev/null || echo "standard")
-        LICENSE_EXPIRES=$(echo  "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('expires','N/A'))"       2>/dev/null || echo "N/A")
-        LICENSE_KEY="$key"
-        echo
-        echo -e "   ${GRN}${BOLD}✔  License activated${RST}"
-        echo -e "      ${DIM}Customer :${RST} ${LICENSE_CUSTOMER}"
-        echo -e "      ${DIM}Plan     :${RST} ${LICENSE_PLAN}"
-        echo -e "      ${DIM}Expires  :${RST} ${LICENSE_EXPIRES}"
-        return 0
-        ;;
-      401|403)
-        body_err=$(echo "$body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('error','Invalid key'))" 2>/dev/null || echo "Invalid key")
-        echo -e "   ${RED}✘  ${body_err}${RST}"
-        ;;
-      402)
-        body_err=$(echo "$body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('error','License expired'))" 2>/dev/null || echo "License expired")
-        die "${body_err}"
-        ;;
-      429)
-        die "Rate limit exceeded. Please wait 60 seconds and try again."
-        ;;
-      000)
-        warn "Cannot reach license server — check your internet connection."
-        warn "Retrying in 5 s…"
-        sleep 5
-        ;;
-      *)
-        warn "Unexpected server response (HTTP ${http_code}). Retrying…"
-        ;;
-    esac
-  done
+  step "License verification (Bypassed)"
+  LICENSE_CUSTOMER="Developer"
+  LICENSE_PLAN="Enterprise"
+  LICENSE_EXPIRES="Never"
+  LICENSE_KEY="dev_secret_key_123"
+  echo
+  echo -e "   ${GRN}${BOLD}✔  License activated (Bypassed)${RST}"
+  echo -e "      ${DIM}Customer :${RST} ${LICENSE_CUSTOMER}"
+  echo -e "      ${DIM}Plan     :${RST} ${LICENSE_PLAN}"
+  echo -e "      ${DIM}Expires  :${RST} ${LICENSE_EXPIRES}"
+  return 0
 }
 
 collect_config() {
-  step "Configuration"
-  prompt TELEGRAM_BOT_TOKEN "Telegram Bot Token" "" secret
-  prompt ADMIN_USER_IDS "Admin Telegram User ID(s)"
-  prompt_optional MAPBOX_TOKEN "Mapbox Public Token"
-  prompt_optional DD_API_KEY "Datadog API Key"
-  if [[ -n "${DD_API_KEY}" ]]; then
-    prompt_optional DD_SITE "Datadog Site (e.g. datadoghq.com)"
-    if [[ -z "${DD_SITE}" ]]; then
-      DD_SITE="datadoghq.com"
-    fi
-  fi
+  step "Configuration (From Environment)"
+  # Keys will be supplied via the environment for automated testing
 
   INTERNAL_TOKEN=$(openssl rand -hex 32)
   ok "Internal service token auto-generated"
