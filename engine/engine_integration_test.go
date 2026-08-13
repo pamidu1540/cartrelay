@@ -13,6 +13,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"testing"
@@ -215,6 +217,10 @@ func testOrderRequest(idemKey string) *pb.OrderRequest {
 	// Minimal request — quote_data bypass for unit test
 	quote := &pb.QuoteResponse{GrandTotal: 200}
 	qd, _ := marshalProto(quote)
+	mac := hmac.New(sha256.New, []byte(os.Getenv("INTERNAL_TOKEN")))
+	mac.Write(qd)
+	qd = append(qd, mac.Sum(nil)...)
+
 	return &pb.OrderRequest{
 		UserId:          999999,
 		Username:        "testuser",
