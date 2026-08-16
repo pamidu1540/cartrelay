@@ -67,14 +67,3 @@ async def send_or_edit_main_menu(
         context.user_data["last_bot_msg_id"] = msg.message_id
     except Exception as e:
         logger.error(f"Failed to send main menu: {e}")
-
-async def flash_toast(update: Update, text: str, show_alert: bool = False) -> None:
-    """
-    Show a temporary toast notification using answer_callback_query.
-    Only works if triggered by a callback query.
-    """
-    if update.callback_query:
-        try:
-            await update.callback_query.answer(text=text, show_alert=show_alert)
-        except Exception as e:
-            logger.debug(f"Failed to show toast: {e}")
