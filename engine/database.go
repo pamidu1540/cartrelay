@@ -1591,24 +1591,28 @@ func DBUnsubscribeStock(ctx context.Context, userID int64, itemID string) error 
 }
 
 func notifyStockSubscribers(ctx context.Context, itemID string) {
-	// Fetch item name for the notification text.
-	var name string
-	_ = pool.QueryRow(ctx, "SELECT name FROM items WHERE id=$1", itemID).Scan(&name)
-	msg := fmt.Sprintf("✅ Good news! *%s* is back in stock. Tap /start to order.", name)
-
-	// Bulk-insert one notification row per subscriber in a single query,
-	// eliminating the previous N+1 pattern (one INSERT per subscriber).
+	// Consolidate SELECT, INSERT, and DELETE into a single database round-trip
+	// using Common Table Expressions (CTEs).
+	// This prevents the N+1 issue of multiple queries when resolving the restock logic.
 	_, _ = pool.Exec(ctx, `
+		WITH item_info AS (
+			SELECT name FROM items WHERE id = $1
+		),
+		deleted_subs AS (
+			DELETE FROM stock_subscriptions
+			WHERE item_id = $1
+			RETURNING user_id
+		)
 		INSERT INTO pending_notifs (user_id, type, text)
-		SELECT user_id, 'stock_restored', $2
-		FROM stock_subscriptions
-		WHERE item_id = $1
+		SELECT
+			d.user_id,
+			'stock_restored',
+			'✅ Good news! *' || i.name || '* is back in stock. Tap /start to order.'
+		FROM deleted_subs d
+		CROSS JOIN item_info i
 		ON CONFLICT DO NOTHING`,
-		itemID, msg,
+		itemID,
 	)
-
-	// Remove subscriptions after notifying.
-	_, _ = pool.Exec(ctx, "DELETE FROM stock_subscriptions WHERE item_id=$1", itemID)
 }
 
 // ── Admin users ───────────────────────────────────────────────────────────────
