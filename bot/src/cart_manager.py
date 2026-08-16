@@ -117,15 +117,18 @@ class CartManager:
         """Add qty of item_id to the cart. Returns updated cart."""
         async with self._acquire_user_lock(user_id):
             items = await self.get_cart(user_id)
+            found = False
             for ci in items:
                 if ci.item_id == item_id:
                     ci.quantity += qty
-                    if ci.quantity <= 0:
-                        items = [i for i in items if i.item_id != item_id]
-                    await self.set_items(user_id, items)
-                    return items
-            if qty > 0:
+                    found = True
+
+            if found:
+                # Remove if any quantity became <= 0
+                items = [i for i in items if i.quantity > 0]
+            elif qty > 0:
                 items.append(pb.CartItem(item_id=item_id, quantity=qty, note=note))
+
             await self.set_items(user_id, items)
             return items
 
