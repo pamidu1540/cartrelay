@@ -372,17 +372,18 @@ func FetchCatalogItems(ctx context.Context, catFilter, search string, page, page
 	}
 	offset := page * pageSize
 
-	where := "deleted_at IS NULL AND is_available = TRUE"
+	var where strings.Builder
+	where.WriteString("deleted_at IS NULL AND is_available = TRUE")
 	args := []any{}
 	n := 1
 
 	if catFilter != "" {
-		where += fmt.Sprintf(" AND category = $%d", n)
+		fmt.Fprintf(&where, " AND category = $%d", n)
 		args = append(args, catFilter)
 		n++
 	}
 	if search != "" {
-		where += fmt.Sprintf(" AND name ILIKE $%d", n)
+		fmt.Fprintf(&where, " AND name ILIKE $%d", n)
 		args = append(args, "%"+search+"%")
 		n++
 	}
@@ -396,7 +397,7 @@ func FetchCatalogItems(ctx context.Context, catFilter, search string, page, page
 		FROM items
 		WHERE %s
 		ORDER BY is_featured DESC, category, name
-		LIMIT $%d OFFSET $%d`, where, n, n+1),
+		LIMIT $%d OFFSET $%d`, where.String(), n, n+1),
 		args...,
 	)
 	if err != nil {
@@ -573,14 +574,15 @@ func DBRemoveWarehouse(ctx context.Context, id string, actorID int64) error {
 
 // DBListDrivers retrieves active drivers, optionally filtering by availability.
 func DBListDrivers(ctx context.Context, availableOnly bool) ([]*pb.Driver, error) {
-	q := `SELECT id, name, phone, telegram_id, vehicle_type, zone, is_available, is_active
-	      FROM drivers WHERE is_active=TRUE`
+	var q strings.Builder
+	q.WriteString(`SELECT id, name, phone, telegram_id, vehicle_type, zone, is_available, is_active
+	      FROM drivers WHERE is_active=TRUE`)
 	if availableOnly {
-		q += " AND is_available=TRUE"
+		q.WriteString(" AND is_available=TRUE")
 	}
-	q += " ORDER BY name"
+	q.WriteString(" ORDER BY name")
 
-	rows, err := pool.Query(ctx, q)
+	rows, err := pool.Query(ctx, q.String())
 	if err != nil {
 		return nil, err
 	}
@@ -676,11 +678,12 @@ func DBSetDriverAvailability(ctx context.Context, driverID string, avail bool, a
 
 // DBGetDriverTelegramIDs fetches the Telegram IDs of drivers.
 func DBGetDriverTelegramIDs(ctx context.Context, activeOnly bool) ([]int64, error) {
-	q := "SELECT telegram_id FROM drivers WHERE is_active=TRUE AND telegram_id IS NOT NULL"
+	var q strings.Builder
+	q.WriteString("SELECT telegram_id FROM drivers WHERE is_active=TRUE AND telegram_id IS NOT NULL")
 	if activeOnly {
-		q += " AND is_available=TRUE"
+		q.WriteString(" AND is_available=TRUE")
 	}
-	rows, err := pool.Query(ctx, q)
+	rows, err := pool.Query(ctx, q.String())
 	if err != nil {
 		return nil, err
 	}
@@ -983,27 +986,28 @@ func DBGetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) ([]*pb.Ord
 	}
 	offset := req.Page * req.PageSize
 
-	where := "1=1"
+	var where strings.Builder
+	where.WriteString("1=1")
 	args := []any{}
 	n := 1
 
 	if req.StatusFilter != "" {
-		where += fmt.Sprintf(" AND o.status=$%d", n)
+		fmt.Fprintf(&where, " AND o.status=$%d", n)
 		args = append(args, req.StatusFilter)
 		n++
 	}
 	if req.DriverFilter != "" {
-		where += fmt.Sprintf(" AND o.driver_id=$%d", n)
+		fmt.Fprintf(&where, " AND o.driver_id=$%d", n)
 		args = append(args, req.DriverFilter)
 		n++
 	}
 	if req.FromTs > 0 {
-		where += fmt.Sprintf(" AND o.created_at>=$%d", n)
+		fmt.Fprintf(&where, " AND o.created_at>=$%d", n)
 		args = append(args, req.FromTs)
 		n++
 	}
 	if req.ToTs > 0 {
-		where += fmt.Sprintf(" AND o.created_at<=$%d", n)
+		fmt.Fprintf(&where, " AND o.created_at<=$%d", n)
 		args = append(args, req.ToTs)
 		n++
 	}
@@ -1018,7 +1022,7 @@ func DBGetAllOrders(ctx context.Context, req *pb.GetAllOrdersRequest) ([]*pb.Ord
 		LEFT JOIN drivers d ON d.id = o.driver_id
 		WHERE %s
 		ORDER BY o.created_at DESC
-		LIMIT $%d OFFSET $%d`, where, n, n+1),
+		LIMIT $%d OFFSET $%d`, where.String(), n, n+1),
 		args...,
 	)
 	if err != nil {
@@ -1702,27 +1706,28 @@ func DBGetAuditLog(ctx context.Context, req *pb.AuditLogRequest) ([]*pb.AuditEnt
 	}
 	offset := req.Page * req.PageSize
 
-	where := "1=1"
+	var where strings.Builder
+	where.WriteString("1=1")
 	args := []any{}
 	n := 1
 
 	if req.ActorFilter != 0 {
-		where += fmt.Sprintf(" AND actor_id=$%d", n)
+		fmt.Fprintf(&where, " AND actor_id=$%d", n)
 		args = append(args, req.ActorFilter)
 		n++
 	}
 	if req.ActionFilter != "" {
-		where += fmt.Sprintf(" AND action ILIKE $%d", n)
+		fmt.Fprintf(&where, " AND action ILIKE $%d", n)
 		args = append(args, "%"+req.ActionFilter+"%")
 		n++
 	}
 	if req.FromTs > 0 {
-		where += fmt.Sprintf(" AND ts>=$%d", n)
+		fmt.Fprintf(&where, " AND ts>=$%d", n)
 		args = append(args, req.FromTs)
 		n++
 	}
 	if req.ToTs > 0 {
-		where += fmt.Sprintf(" AND ts<=$%d", n)
+		fmt.Fprintf(&where, " AND ts<=$%d", n)
 		args = append(args, req.ToTs)
 		n++
 	}
@@ -1731,7 +1736,7 @@ func DBGetAuditLog(ctx context.Context, req *pb.AuditLogRequest) ([]*pb.AuditEnt
 	rows, err := pool.Query(ctx, fmt.Sprintf(`
 		SELECT id, ts, actor_id, action, target_id, detail, count(*) over()
 		FROM audit_log WHERE %s
-		ORDER BY ts DESC LIMIT $%d OFFSET $%d`, where, n, n+1),
+		ORDER BY ts DESC LIMIT $%d OFFSET $%d`, where.String(), n, n+1),
 		args...,
 	)
 	if err != nil {
