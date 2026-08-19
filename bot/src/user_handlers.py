@@ -1778,7 +1778,7 @@ async def _edit_address_list(query, user_id: int) -> None:
     )
 
 
-async def cb_address_default(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def cb_address_default(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     addr_id = int(query.data.split(":", 1)[1])
@@ -1806,7 +1806,7 @@ async def cb_address_default(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.answer(f"⚠️ {e}", show_alert=True)
 
 
-async def cb_address_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def cb_address_delete(update: Update, _context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     addr_id = int(query.data.split(":", 1)[1])
