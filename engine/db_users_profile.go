@@ -378,18 +378,25 @@ func DBGetOrderVolumeTrend(ctx context.Context, fromTS, toTS int64) ([]*pb.Order
 	return points, rows.Err()
 }
 
-// DBGetLowStock retrieves items with stock levels below a specified threshold.
+// DBGetLowStock retrieves items with stock levels below a specified threshold (or per-item reorder_level if threshold <= 0).
 func DBGetLowStock(ctx context.Context, threshold int32) ([]*pb.LowStockEntry, error) {
-	if threshold <= 0 {
-		threshold = 10
+	var query string
+	var args []any
+	if threshold > 0 {
+		query = `
+			SELECT id, name, stock, reorder_level
+			FROM items
+			WHERE deleted_at IS NULL AND stock <= $1
+			ORDER BY stock ASC`
+		args = []any{threshold}
+	} else {
+		query = `
+			SELECT id, name, stock, reorder_level
+			FROM items
+			WHERE deleted_at IS NULL AND stock <= reorder_level
+			ORDER BY stock ASC`
 	}
-	rows, err := pool.Query(ctx, `
-		SELECT id, name, stock, reorder_level
-		FROM items
-		WHERE deleted_at IS NULL AND stock <= $1
-		ORDER BY stock ASC`,
-		threshold,
-	)
+	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

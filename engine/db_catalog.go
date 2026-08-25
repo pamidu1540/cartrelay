@@ -89,8 +89,9 @@ func DBEditItemStock(ctx context.Context, itemID string, delta int32, reason str
 	}
 	// Notify stock subscribers if restocked (delta > 0)
 	if delta > 0 {
-		// #nosec G118 -- background stock notification must outlive request context
-		go notifyStockSubscribers(context.Background(), itemID)
+		fireAndForget(func(bgCtx context.Context) {
+			notifyStockSubscribers(bgCtx, itemID)
+		})
 	}
 	DBAuditLog(ctx, actorID, "edit_stock", itemID, fmt.Sprintf("delta=%+d reason=%q", delta, reason))
 	return nil

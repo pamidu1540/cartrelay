@@ -275,10 +275,19 @@ func (s *Server) PlaceOrder(ctx context.Context, req *pb.OrderRequest) (*pb.Orde
 }
 
 // GetOrder handles the GetOrder gRPC request.
+// It verifies that the caller owns the order or is an admin (actor_id == 0 for internal calls).
 func (s *Server) GetOrder(ctx context.Context, req *pb.OrderId) (*pb.Order, error) {
 	o, err := DBGetOrder(ctx, req.OrderId)
 	if err != nil {
 		return nil, grpcErr(err)
+	}
+	actor := actorFromCtx(ctx)
+	if actor != 0 && actor != o.UserId {
+		// Check if actor is an admin
+		isAdmin, _, _ := DBIsAdmin(ctx, actor)
+		if !isAdmin {
+			return nil, status.Errorf(codes.PermissionDenied, "order belongs to another user")
+		}
 	}
 	return o, nil
 }

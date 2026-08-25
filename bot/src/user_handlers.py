@@ -31,9 +31,6 @@ from api import logistics_pb2 as pb
 from grpc_client import pool
 from middleware import check_maintenance, rate_limit
 
-if TYPE_CHECKING:
-    from cart_manager import CartManager
-
 logger = logging.getLogger(__name__)
 
 # ConversationHandler states (imported from main.py at runtime via context)
@@ -302,7 +299,6 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return False
 
     async def _fetch_cat():
-        global _cached_categories
         now = time.time()
         if now - getattr(context.bot_data, '_cat_time', 0.0) < 300:
             return context.bot_data['_cat_list']
@@ -621,7 +617,7 @@ async def cmd_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def _show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int) -> int:
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
 
     if not items:
         await _safe_reply(update, context,
@@ -707,7 +703,7 @@ async def cb_qty_minus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await query.answer()
     item_id = query.data.split(":", 1)[1]
     user_id = update.effective_user.id
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
     current = next((ci.quantity for ci in items if ci.item_id == item_id), 0)
     if current <= 1:
         await _cart(context).remove_item(user_id, item_id)
@@ -735,7 +731,7 @@ async def cb_clear_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def _refresh_cart_message(query, context, user_id: int) -> None:
     """Re-render the cart inline message after a mutation."""
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
     if not items:
         await query.edit_message_text("🛒 Your cart is empty.")
         return
@@ -788,7 +784,7 @@ async def cb_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await query.answer()
     user_id = update.effective_user.id
 
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
     if not items:
         await send_or_edit_main_menu(update, context, "🛒 Your cart is empty. Use /catalog to add items.")
         return ConversationHandler.END
@@ -931,7 +927,7 @@ async def msg_delivery_address(update: Update, context: ContextTypes.DEFAULT_TYP
 async def _proceed_to_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Calculate quote and show promo / loyalty options."""
     user_id = update.effective_user.id
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
 
     try:
         quote = await pool.call(
@@ -1004,7 +1000,7 @@ async def msg_promo_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await delete_user_message(update, context)
     code = update.effective_message.text.strip().upper()
     user_id = update.effective_user.id
-    items = await _cart(context).get(user_id)
+    items = await _cart(context).get_cart(user_id)
 
     try:
         # Recalculate quote with promo
@@ -1101,7 +1097,7 @@ async def cb_confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     await query.answer()
     user = update.effective_user
-    items = await _cart(context).get(user.id)
+    items = await _cart(context).get_cart(user.id)
     quote: pb.QuoteResponse = context.user_data.get("quote")
 
     if not quote or not items:
@@ -1817,6 +1813,7 @@ async def cb_address_delete(update: Update, _context: ContextTypes.DEFAULT_TYPE)
             lambda stub, meta: stub.DeleteAddress(
                 pb.AddressId(id=addr_id), metadata=meta
             ),
+            user_id=user_id,
         )
         await query.answer("🗑 Address deleted", show_alert=True)
         await _edit_address_list(query, user_id)
@@ -2180,6 +2177,7 @@ async def cb_confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 lambda stub, meta, _addr=addr: stub.DeleteAddress(
                     pb.AddressId(id=_addr.id), metadata=meta
                 ),
+                user_id=user_id,
             )
 
         await query.edit_message_text(
@@ -2228,9 +2226,11 @@ async def poll_notifications(app) -> None:
         await asyncio.sleep(30)
         try:
             # Fetch all admin IDs to notify them too
+            # Use user_id=0 as internal system actor — the HMAC token authenticates the bot
             admin_resp = await pool.call(
                 "/logistics.LogisticsEngine/ListAdmins",
                 lambda stub, meta: stub.ListAdmins(pb.Empty(), metadata=meta),
+                user_id=0,
             )
             user_ids = {a.telegram_id for a in admin_resp.admins}
             user_ids.update(app.user_data.keys())
@@ -2289,7 +2289,7 @@ async def cb_issue_submit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             lambda stub, meta: stub.UpdateOrderStatus(
                 pb.UpdateStatusRequest(
                     order_id=order_id,
-                    status="issue",
+                    new_status="issue",
                     reason=f"Customer reported issue: {issue_type}"
                 ),
                 metadata=meta,

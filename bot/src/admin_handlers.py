@@ -131,10 +131,6 @@ async def cb_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     elif section == "lowstock":
         await cmd_low_stock(update, context)
         return ConversationHandler.END
-    elif section == "additem":
-        return await cmd_add_item(update, context)
-    elif section == "bulkimport":
-        return await cmd_bulk_import(update, context)
     return ConversationHandler.END
 
 
@@ -483,6 +479,7 @@ async def cb_bulk_import_start(update: Update, context: ContextTypes.DEFAULT_TYP
         "Upload a CSV with columns:\n"
         "`name, price, stock, category, description`\n\n"
         "Send the CSV file now:",
+        parse_mode=ParseMode.MARKDOWN,
     )
     return STATE_CSV_UPLOAD
 

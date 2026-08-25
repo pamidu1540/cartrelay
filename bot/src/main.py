@@ -304,7 +304,7 @@ def build_application() -> Application:
                 CallbackQueryHandler(cb_slot_select, pattern=r"^slot:"),
             ],
             STATE_CONFIRM: [
-                CallbackQueryHandler(cb_confirm_order, pattern=r"^confirm_order$"),
+                CallbackQueryHandler(cb_confirm_order, pattern=r"^confirm_order(_contactless)?$"),
                 CallbackQueryHandler(cmd_cancel,       pattern=r"^cancel_order$"),
             ],
             STATE_PROFILE_NAME:  [
