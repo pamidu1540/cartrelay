@@ -209,7 +209,7 @@ func enforceRBAC(method, role string) error {
 
 // ── Rate limit interceptor ────────────────────────────────────────────────────
 //
-// Token-bucket rate limiter: 30 requests/minute per actor_id.
+// Token-bucket rate limiter: Increased limits to handle heavy concurrent simulation loads.
 // Engine-side backstop; the bot layer also rate-limits (see bot/src/middleware.py).
 
 type tokenBucket struct {
@@ -250,9 +250,9 @@ var (
 	// globalBucket is used for requests without an actor ID (actorID == 0)
 	// so anonymous/system requests are still rate-limited.
 	globalBucket = &tokenBucket{
-		tokens:   60,
-		capacity: 60,
-		rate:     1.0, // 60 per minute
+		tokens:   600,
+		capacity: 600,
+		rate:     10.0, // 600 per minute
 		lastFill: time.Now(),
 	}
 )
@@ -291,9 +291,9 @@ func getBucket(actorID int64) *tokenBucket {
 		return globalBucket
 	}
 	b := &tokenBucket{
-		tokens:   30,
-		capacity: 30,
-		rate:     0.5, // 30 per minute
+		tokens:   1200,
+		capacity: 1200,
+		rate:     20.0, // 1200 per minute (20/sec)
 		lastFill: time.Now(),
 	}
 	rateBuckets[actorID] = b

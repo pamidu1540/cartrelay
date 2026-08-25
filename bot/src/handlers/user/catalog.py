@@ -294,7 +294,10 @@ async def cb_item_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             callback_data=f"stock_notify:{item_id}",
         )])
 
-    kb.append([InlineKeyboardButton("⬅ Back to Catalog", callback_data=f"cat_select:{item.category or 'all'}:0")])
+    kb.append([
+        InlineKeyboardButton("⬅ Back to Catalog", callback_data=f"cat_select:{item.category or 'all'}:0"),
+        InlineKeyboardButton("🏠 Home", callback_data="home"),
+    ])
 
     if item.photo_file_id:
         try:
@@ -322,7 +325,9 @@ async def cb_add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Add item to cart and confirm."""
     query = update.callback_query
     await query.answer()
-    _, item_id, qty_str = query.data.split(":")
+    parts = query.data.split(":")
+    item_id = parts[1]
+    qty_str = parts[2] if len(parts) > 2 else "1"
     user_id = update.effective_user.id
 
     items = await _cart(context).add_item(user_id, item_id, int(qty_str))
@@ -336,6 +341,9 @@ async def cb_add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         [
             InlineKeyboardButton("🛍 My Cart", callback_data="checkout"),
             InlineKeyboardButton("⬅ Back to Catalog", callback_data="cat_select:all:0"),
+        ],
+        [
+            InlineKeyboardButton("🏠 Home", callback_data="home"),
         ],
     ]
     try:

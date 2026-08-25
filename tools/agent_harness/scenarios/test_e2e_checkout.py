@@ -103,7 +103,7 @@ async def test_e2e_customer_catalog_and_cart_journey():
             user_id=88001,
             items=[pb.CartItem(item_id="ITEM-001", quantity=1)],
         )
-        add_btn = session.find_button("add_to_cart:ITEM-001")
+        add_btn = session.find_button("add_to_cart:ITEM-001") or session.find_button("add_to_cart:ITEM-001:1")
         assert add_btn is not None
         screen = await session.click(add_btn)
         assert any("Add More" in b for b in session.list_button_labels())

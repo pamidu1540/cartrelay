@@ -290,6 +290,7 @@ def build_application(bot: Any = None) -> Application:
             CommandHandler("addaddress", cmd_add_address),
             CallbackQueryHandler(cb_profile_edit, pattern=r"^profile_edit:"),
             CallbackQueryHandler(cb_checkout, pattern=r"^checkout$"),
+            CallbackQueryHandler(cb_use_promo, pattern=r"^promo:"),
         ],
         states={
             STATE_ADDRESS: [
@@ -480,6 +481,8 @@ def build_application(bot: Any = None) -> Application:
     app.add_handler(CallbackQueryHandler(cb_remove_item,        pattern=r"^cart_remove:"))
     app.add_handler(CallbackQueryHandler(cb_clear_cart,         pattern=r"^cart_clear$"))
     app.add_handler(CallbackQueryHandler(cb_checkout,           pattern=r"^checkout$"))
+    app.add_handler(CallbackQueryHandler(cb_use_promo,          pattern=r"^promo:"))
+    app.add_handler(CallbackQueryHandler(cmd_start,             pattern=r"^home$"))
     app.add_handler(CallbackQueryHandler(cb_order_detail,       pattern=r"^order_detail:"))
     app.add_handler(CallbackQueryHandler(cb_reorder,            pattern=r"^reorder:"))
     app.add_handler(CallbackQueryHandler(cb_confirm_cancel,     pattern=r"^confirm_cancel:"))

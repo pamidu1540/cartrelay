@@ -751,8 +751,12 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
         await _reply(update, context, "❌ Please enter a valid non-negative number for minimum order value:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_PROMO_DEF
+    except grpc.RpcError as e:
+        await _reply(update, context, f"❌ Failed to create promo: {e.details()}")
+        return ConversationHandler.END
     except Exception as e:
         await _reply(update, context, f"❌ Failed to create promo: {e}")
+        return ConversationHandler.END
 
     await cmd_promos(update, context)
     return ConversationHandler.END
@@ -1007,7 +1011,7 @@ async def cmd_remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 # ── System Settings ───────────────────────────────────────────────────────────
 
 @admin_only
-async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE, success_msg: str = "") -> None:
     """A-057/A-060: Display current system settings."""
     try:
         s = await pool.call(
@@ -1019,7 +1023,10 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await _rpc_error(update, context, e)
         return
 
-    text = (
+    text = ""
+    if success_msg:
+        text += f"{success_msg}\n\n"
+    text += (
         "⚙️ *System Settings*\n\n"
         f"• *Base Fare:* LKR {s.delivery_base_fare:.0f}\n"
         f"• *Rate Per Km:* LKR {s.delivery_rate_per_km:.0f}\n"
@@ -1132,7 +1139,9 @@ async def msg_settings_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
             lambda stub, meta: stub.SetSystemSettings(s, metadata=meta),
             user_id=update.effective_user.id,
         )
-        await _reply(update, context, f"✅ Setting *{key}* updated successfully!")
+        success_msg = f"✅ Setting *{key}* updated successfully!"
+        await cmd_settings(update, context, success_msg=success_msg)
+        return ConversationHandler.END
     except Exception as e:
         await _reply(update, context, f"❌ Failed to save settings: {e}")
 

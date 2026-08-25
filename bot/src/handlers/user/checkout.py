@@ -193,6 +193,8 @@ async def _proceed_to_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     user_lon=context.user_data.get("delivery_lon", 0),
                     cart_items=items,
                     user_id=user_id,
+                    promo_code=context.user_data.get("promo_code", ""),
+                    loyalty_redeem=context.user_data.get("loyalty_redeem", 0),
                 ),
                 metadata=meta,
             ),
@@ -256,33 +258,42 @@ async def msg_promo_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     items = await _cart(context).get_cart(user_id)
 
-    try:
-        quote = await pool.call(
-            "/logistics.LogisticsEngine/CalculateQuote",
-            lambda stub, meta: stub.CalculateQuote(
-                pb.QuoteRequest(
-                    user_lat=context.user_data.get("delivery_lat", 0),
-                    user_lon=context.user_data.get("delivery_lon", 0),
-                    cart_items=items,
-                    user_id=user_id,
-                    promo_code=code,
-                    loyalty_redeem=context.user_data.get("loyalty_redeem", 0),
-                ),
-                metadata=meta,
-            ),
-            user_id=user_id,
-        )
-        if quote.promo_applied:
-            context.user_data["quote"] = quote
-            context.user_data["promo_code"] = code
-            await _safe_reply(update, context,
-                f"✅ Promo *{code}* applied! You save LKR {quote.promo_discount:.0f}")
-        else:
-            await send_or_edit_main_menu(update, context, "❌ Invalid or expired promo code.")
-    except grpc.RpcError as e:
-        await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
+    context.user_data["promo_code"] = code
 
-    return await _show_time_slots(update, context)
+    if "delivery_lat" in context.user_data:
+        try:
+            quote = await pool.call(
+                "/logistics.LogisticsEngine/CalculateQuote",
+                lambda stub, meta: stub.CalculateQuote(
+                    pb.QuoteRequest(
+                        user_lat=context.user_data.get("delivery_lat", 0),
+                        user_lon=context.user_data.get("delivery_lon", 0),
+                        cart_items=items,
+                        user_id=user_id,
+                        promo_code=code,
+                        loyalty_redeem=context.user_data.get("loyalty_redeem", 0),
+                    ),
+                    metadata=meta,
+                ),
+                user_id=user_id,
+            )
+            if quote.promo_applied:
+                context.user_data["quote"] = quote
+                await _safe_reply(update, context,
+                    f"✅ Promo *{code}* applied! You save LKR {quote.promo_discount:.0f}")
+            else:
+                context.user_data.pop("promo_code", None)
+                await send_or_edit_main_menu(update, context, "❌ Invalid or expired promo code.")
+        except grpc.RpcError as e:
+            context.user_data.pop("promo_code", None)
+            await send_or_edit_main_menu(update, context, f"⚠️ {e.details()}")
+
+        return await _show_time_slots(update, context)
+    else:
+        from handlers.user.cart import _show_cart
+        await _safe_reply(update, context, f"✅ Promo code *{code}* added. It will be applied at checkout.")
+        await _show_cart(update, context, user_id)
+        return ConversationHandler.END
 
 
 async def _show_time_slots(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

@@ -90,9 +90,14 @@ async def _show_cart(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id
     except Exception:
         pass
 
+    kb.append([InlineKeyboardButton("🏷 Apply Promo Code", callback_data="promo:enter")])
     kb.append([
         InlineKeyboardButton("🗑 Clear Cart", callback_data="cart_clear"),
         InlineKeyboardButton("✅ Checkout",  callback_data="checkout"),
+    ])
+    kb.append([
+        InlineKeyboardButton("⬅ Back to Catalog", callback_data="cat_select:all:0"),
+        InlineKeyboardButton("🏠 Home", callback_data="home"),
     ])
 
     msg = update.effective_message
@@ -184,9 +189,14 @@ async def _refresh_cart_message(query, context, user_id: int) -> None:
             InlineKeyboardButton("🗑", callback_data=f"cart_remove:{ci.item_id}"),
         ])
     lines.append(f"\n*Subtotal: LKR {subtotal:.0f}*")
+    kb.append([InlineKeyboardButton("🏷 Apply Promo Code", callback_data="promo:enter")])
     kb.append([
         InlineKeyboardButton("🗑 Clear", callback_data="cart_clear"),
         InlineKeyboardButton("✅ Checkout", callback_data="checkout"),
+    ])
+    kb.append([
+        InlineKeyboardButton("⬅ Back to Catalog", callback_data="cat_select:all:0"),
+        InlineKeyboardButton("🏠 Home", callback_data="home"),
     ])
     await query.edit_message_text(
         "\n".join(lines),
