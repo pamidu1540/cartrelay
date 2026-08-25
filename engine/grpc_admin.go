@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -183,6 +184,9 @@ func (s *Server) ListPromos(ctx context.Context, _ *pb.Empty) (*pb.PromoListResp
 func (s *Server) AddPromo(ctx context.Context, p *pb.Promo) (*pb.StatusResponse, error) {
 	id, err := DBAddPromo(ctx, p, actorFromCtx(ctx))
 	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key value") || strings.Contains(err.Error(), "unique constraint") {
+			return nil, status.Errorf(codes.InvalidArgument, "a promo with this code already exists")
+		}
 		return nil, status.Errorf(codes.Internal, "add promo: %v", err)
 	}
 	return &pb.StatusResponse{Success: true, Message: "Promo created", EntityId: id}, nil
