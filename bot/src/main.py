@@ -15,6 +15,7 @@ except ImportError:
 
 import asyncio
 import logging
+from typing import Any
 
 from telegram import Update
 from telegram.ext import (
@@ -265,16 +266,15 @@ logger = logging.getLogger(__name__)
 
 # ── Application factory ────────────────────────────────────────────────────────
 
-def build_application() -> Application:
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
+def build_application(bot: Any = None) -> Application:
+    builder = ApplicationBuilder().post_init(post_init).post_shutdown(post_shutdown)
+    if bot is not None:
+        builder = builder.bot(bot).updater(None)
+    else:
+        token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        builder = builder.token(token)
 
-    app = (
-        ApplicationBuilder()
-        .token(token)
-        .post_init(post_init)
-        .post_shutdown(post_shutdown)
-        .build()
-    )
+    app = builder.build()
 
     # Attach cart manager to bot_data for access across handlers
     app.bot_data["cart_manager"] = CartManager()
