@@ -58,7 +58,8 @@ class CartManager:
                 del self._local[user_id]
                 return None
             self._local.move_to_end(user_id)
-            return list(items)
+            # Deep copy to prevent in-place mutation from corrupting the cache
+            return [pb.CartItem(item_id=ci.item_id, quantity=ci.quantity, note=ci.note) for ci in items]
         return None
 
     def _set_local(self, user_id: int, items: list[pb.CartItem]):

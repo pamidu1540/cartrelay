@@ -76,12 +76,12 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	var existing string
+	var existing, existingRef string
 	err = tx.QueryRow(ctx,
-		"SELECT order_id FROM orders WHERE idempotency_key=$1", idempKey,
-	).Scan(&existing)
+		"SELECT order_id, human_ref FROM orders WHERE idempotency_key=$1", idempKey,
+	).Scan(&existing, &existingRef)
 	if err == nil {
-		return existing, "", ErrDuplicateOrder
+		return existing, existingRef, ErrDuplicateOrder
 	}
 
 	// Decrement stock for each cart item via pgx.Batch
@@ -157,15 +157,41 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 	}
 	_ = brItems.Close()
 
-	// Track promo usage if one was applied
+	// Track promo usage if one was applied and re-verify limits
 	if quote.PromoApplied != "" {
-		_, err = tx.Exec(ctx, `
-			INSERT INTO promo_usage (promo_id, user_id, order_id)
-			SELECT id, $1, $2 FROM promos WHERE code=$3`,
-			req.UserId, orderID, quote.PromoApplied,
-		)
-		if err != nil {
-			slog.Warn("failed to track promo usage", "order", orderID, "promo", quote.PromoApplied, "err", err)
+		var promoID string
+		var maxUses, usesCount, perUserLimit int32
+		var isActive bool
+		err = tx.QueryRow(ctx, `
+			SELECT id, max_uses, uses_count, per_user_limit, is_active
+			FROM promos WHERE code=$1 FOR UPDATE`,
+			quote.PromoApplied,
+		).Scan(&promoID, &maxUses, &usesCount, &perUserLimit, &isActive)
+		if err == nil && isActive {
+			if maxUses > 0 && usesCount >= maxUses {
+				return "", "", errors.New("promo has reached maximum uses")
+			}
+			if perUserLimit > 0 {
+				var userUses int32
+				_ = tx.QueryRow(ctx,
+					"SELECT COUNT(*) FROM promo_usage WHERE promo_id=$1 AND user_id=$2",
+					promoID, req.UserId,
+				).Scan(&userUses)
+				if userUses >= perUserLimit {
+					return "", "", errors.New("promo limit exceeded for this user")
+				}
+			}
+			_, err = tx.Exec(ctx, `
+				INSERT INTO promo_usage (promo_id, user_id, order_id)
+				VALUES ($1, $2, $3)`,
+				promoID, req.UserId, orderID,
+			)
+			if err != nil {
+				slog.Warn("failed to track promo usage", "order", orderID, "promo", quote.PromoApplied, "err", err)
+			}
+			_, _ = tx.Exec(ctx, "UPDATE promos SET uses_count = uses_count + 1 WHERE id=$1", promoID)
+		} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("failed to re-validate promo", "order", orderID, "promo", quote.PromoApplied, "err", err)
 		}
 	}
 

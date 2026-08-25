@@ -153,7 +153,7 @@ func DBAdjustLoyalty(ctx context.Context, adj *pb.LoyaltyAdjustment) error {
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO loyalty (user_id, points) VALUES ($1, $2)
+		INSERT INTO loyalty (user_id, points) VALUES ($1, GREATEST(0, $2))
 		ON CONFLICT (user_id) DO UPDATE SET points = GREATEST(0, loyalty.points + $2)`,
 		adj.UserId, adj.Delta,
 	)
