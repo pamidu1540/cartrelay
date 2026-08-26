@@ -170,6 +170,47 @@ class ScreenStateTracker:
             self.message_lookup[(chat_id, msg_id)] = record
             return record
 
+    def _record_bot_message_unlocked(
+        self,
+        chat_id: int,
+        text: str,
+        reply_markup: Any = None,
+        parse_mode: str | None = None,
+        photo_file_id: str | None = None,
+    ) -> ChatMessageRecord:
+        msg_id = self._get_next_id()
+        inline_kb = _extract_inline_buttons(reply_markup)
+        reply_kb = _extract_reply_buttons(reply_markup)
+
+        record = ChatMessageRecord(
+            id=msg_id,
+            chat_id=chat_id,
+            user_id=0,
+            text=text,
+            parse_mode=parse_mode,
+            inline_keyboard=inline_kb,
+            reply_keyboard=reply_kb,
+            photo_file_id=photo_file_id,
+            is_bot=True,
+        )
+        self.messages.setdefault(chat_id, []).append(record)
+        self.message_lookup[(chat_id, msg_id)] = record
+
+        # Update active screen state
+        screen = self.screens.setdefault(chat_id, ScreenState(chat_id=chat_id, user_id=chat_id))
+        screen.active_message_id = msg_id
+        screen.text = text
+        screen.parse_mode = parse_mode
+        screen.inline_keyboard = inline_kb
+        if isinstance(reply_markup, ReplyKeyboardMarkup):
+            screen.reply_keyboard = reply_kb
+        elif isinstance(reply_markup, ReplyKeyboardRemove):
+            screen.reply_keyboard = []
+        screen.photo_file_id = photo_file_id
+        screen.last_action_timestamp = time.time()
+
+        return record
+
     async def record_bot_message(
         self,
         chat_id: int,
@@ -179,38 +220,13 @@ class ScreenStateTracker:
         photo_file_id: str | None = None,
     ) -> ChatMessageRecord:
         async with self._lock:
-            msg_id = self._get_next_id()
-            inline_kb = _extract_inline_buttons(reply_markup)
-            reply_kb = _extract_reply_buttons(reply_markup)
-
-            record = ChatMessageRecord(
-                id=msg_id,
+            return self._record_bot_message_unlocked(
                 chat_id=chat_id,
-                user_id=0,
                 text=text,
+                reply_markup=reply_markup,
                 parse_mode=parse_mode,
-                inline_keyboard=inline_kb,
-                reply_keyboard=reply_kb,
                 photo_file_id=photo_file_id,
-                is_bot=True,
             )
-            self.messages.setdefault(chat_id, []).append(record)
-            self.message_lookup[(chat_id, msg_id)] = record
-
-            # Update active screen state
-            screen = self.screens.setdefault(chat_id, ScreenState(chat_id=chat_id, user_id=chat_id))
-            screen.active_message_id = msg_id
-            screen.text = text
-            screen.parse_mode = parse_mode
-            screen.inline_keyboard = inline_kb
-            if isinstance(reply_markup, ReplyKeyboardMarkup):
-                screen.reply_keyboard = reply_kb
-            elif isinstance(reply_markup, ReplyKeyboardRemove):
-                screen.reply_keyboard = []
-            screen.photo_file_id = photo_file_id
-            screen.last_action_timestamp = time.time()
-
-            return record
 
     async def record_message_edit(
         self,
@@ -224,7 +240,7 @@ class ScreenStateTracker:
             record = self.message_lookup.get((chat_id, message_id))
             if not record:
                 # If message was not found, create one
-                return await self.record_bot_message(chat_id, text or "", reply_markup, parse_mode)
+                return self._record_bot_message_unlocked(chat_id, text or "", reply_markup, parse_mode)
 
             if text is not None:
                 record.text = text
@@ -543,3 +559,14 @@ def make_user_update(
     tracker.messages.setdefault(user_id, []).append(record)
     tracker.message_lookup[(user_id, msg_id)] = record
     return update, record
+
+
+# Compatibility polyfill for handlers that access message.bot or query.bot directly
+try:
+    if not hasattr(CallbackQuery, "bot"):
+        CallbackQuery.bot = property(lambda self: self.get_bot())
+    if not hasattr(Message, "bot"):
+        Message.bot = property(lambda self: self.get_bot())
+except Exception:
+    pass
+

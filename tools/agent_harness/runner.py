@@ -4,6 +4,7 @@ runner.py — Lifecycle manager and Dispatcher for the Bot Application within th
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -16,6 +17,8 @@ if str(BOT_SRC) not in sys.path:
     sys.path.insert(0, str(BOT_SRC))
 
 # Set test environment defaults if not provided
+os.environ.setdefault("TESTING", "1")
+os.environ.setdefault("RPC_TIMEOUT", "0.2")
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "123456:MOCK_TOKEN_FOR_AGENT_HARNESS")
 os.environ.setdefault("ENGINE_GRPC_ADDR", "127.0.0.1:50051")
 os.environ.setdefault("BOT_HMAC_SECRET", "dev-secret-key-32-chars-minimum!!")
@@ -24,10 +27,50 @@ from telegram.ext import Application  # noqa: E402
 
 import main as bot_main  # noqa: E402
 from api import logistics_pb2 as pb  # noqa: E402
-from grpc_client import pool  # noqa: E402
+from grpc_client import ChannelPool, pool  # noqa: E402
 from tools.agent_harness.mock_bot import MockTelegramBot, ScreenState, make_user_update, tracker  # noqa: E402
 
 logger = logging.getLogger("agent_harness.runner")
+
+
+# Default smart mock fallback for ChannelPool.call
+_real_pool_call = ChannelPool.call
+
+
+async def _mock_pool_fallback(self, method_name: str, coro_factory=None, *args, **kwargs) -> Any:
+    user_id = kwargs.get("user_id", 0)
+    if "GetCatalog" in method_name:
+        return pb.CatalogResponse(items=[], total_count=0)
+    elif "GetProfile" in method_name:
+        return pb.CustomerProfile(user_id=user_id, display_name="Test User", phone="0771234567", language="en")
+    elif "ListSavedAddresses" in method_name:
+        return pb.AddressListResponse(addresses=[])
+    elif "GetCart" in method_name:
+        return pb.CartResponse(user_id=user_id, items=[])
+    elif "SaveCart" in method_name:
+        return pb.CartResponse(user_id=user_id, items=[])
+    elif "GetLoyaltyBalance" in method_name:
+        return pb.LoyaltyBalance(user_id=user_id, points=0, tier="Bronze")
+    elif "GetNotifPrefs" in method_name:
+        return pb.NotifPrefs(user_id=user_id, order_updates=True, system_alerts=True)
+    elif "ListAdmins" in method_name:
+        return pb.AdminListResponse(admins=[])
+    elif "ListOrders" in method_name or "GetUserOrders" in method_name:
+        return pb.OrderListResponse(orders=[], total_count=0)
+    elif "PlaceOrder" in method_name:
+        return pb.OrderResponse(success=True, order_id="ORD-20260826-0099", human_ref="ORD-20260826-0099", message="Order placed successfully")
+    elif "GetOrder" in method_name:
+        return pb.Order(order_id="ORD-20260826-0099", human_ref="ORD-20260826-0099", status="pending", total=2500.0)
+    elif "ListWarehouses" in method_name:
+        return pb.WarehouseListResponse(warehouses=[])
+    elif "ListDrivers" in method_name:
+        return pb.DriverListResponse(drivers=[])
+    elif "GetSystemSettings" in method_name:
+        return pb.SystemSettings(delivery_base_fare=250.0, free_delivery_threshold=5000.0, tax_rate=0.05)
+    return pb.StatusResponse(success=True, message="OK")
+
+
+pool.call = lambda method_name, coro_factory=None, *args, **kwargs: _mock_pool_fallback(pool, method_name, coro_factory, *args, **kwargs)
 
 
 class AgentTestHarness:
@@ -37,13 +80,17 @@ class AgentTestHarness:
         self.bot: MockTelegramBot = MockTelegramBot()
         self.app: Application | None = None
         self._is_running: bool = False
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     async def start(self) -> None:
         """Initialises the bot application, handlers, and gRPC connection pool."""
-        if self._is_running:
+        current_loop = asyncio.get_running_loop()
+        if self._is_running and self._loop == current_loop and self.app:
             return
 
         logger.info("Initializing Agent Test Harness application...")
+        self.bot = MockTelegramBot()
+        self._loop = current_loop
         # Build standard bot application with custom mock bot
         self.app = bot_main.build_application(bot=self.bot)
 
@@ -140,6 +187,10 @@ class AgentTestHarness:
         """Resets chat screens, messages, and in-memory cart cache."""
         tracker.reset(user_id)
         if self.app:
+            self.app.bot_data.pop("_admins_list", None)
+            self.app.bot_data.pop("_admins_time", None)
+            self.app.bot_data.pop("_health_status", None)
+            self.app.bot_data.pop("_health_time", None)
             cart_manager = self.app.bot_data.get("cart_manager")
             if cart_manager and user_id is not None:
                 await cart_manager.invalidate_local(user_id)

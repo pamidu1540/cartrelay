@@ -351,11 +351,16 @@ async def cmd_addresses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     context.user_data["last_bot_msg_id"] = msg.message_id
 
 
-async def _edit_address_list(query, user_id: int) -> None:
+async def _edit_address_list(target, user_id: int, context: ContextTypes.DEFAULT_TYPE | None = None) -> None:
     async def edit_msg(text, **kwargs):
-        chat_id = query.message.chat_id if hasattr(query, "message") and query.message is not None else query.chat_id
-        message_id = query.message.message_id if hasattr(query, "message") and query.message is not None else query.message_id
-        return await query.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, **kwargs)
+        bot = getattr(target, "bot", None)
+        if bot is None and hasattr(target, "get_bot"):
+            bot = target.get_bot()
+        if bot is None and context is not None:
+            bot = context.bot
+        chat_id = target.message.chat_id if hasattr(target, "message") and target.message is not None else getattr(target, "chat_id", None)
+        message_id = target.message.message_id if hasattr(target, "message") and target.message is not None else getattr(target, "message_id", None)
+        return await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, **kwargs)
 
     try:
         resp = await pool.call(

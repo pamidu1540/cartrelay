@@ -384,9 +384,10 @@ async def cb_confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     await _cart(context).clear(user.id)
 
+    order_ref = getattr(resp, "human_ref", None) or getattr(resp, "order_id", "ORDER")
     confirmation = (
         f"🎉 *Order Placed!*\n\n"
-        f"*{resp.human_ref}*\n\n"
+        f"*{order_ref}*\n\n"
         f"{quote.formatted_receipt}\n\n"
         f"🔐 Delivery OTP: *check /orders for your confirmation code*\n\n"
         f"We'll send you updates as your order progresses."
