@@ -41,10 +41,10 @@ INTERNAL_TOKEN: str = os.getenv("INTERNAL_TOKEN", "")
 TLS_CERT_FILE: str = os.getenv("TLS_CERT_FILE", "")
 
 # Retry settings
-RETRY_ATTEMPTS: int = 3
-RETRY_BASE_DELAY: float = 0.5   # seconds; doubles each attempt
-RETRY_MAX_DELAY: float = 4.0
-RPC_TIMEOUT: float = 10.0
+RETRY_ATTEMPTS: int = 1 if os.getenv("TESTING") else 3
+RETRY_BASE_DELAY: float = 0.05 if os.getenv("TESTING") else 0.5
+RETRY_MAX_DELAY: float = 0.1 if os.getenv("TESTING") else 4.0
+RPC_TIMEOUT: float = float(os.getenv("RPC_TIMEOUT", "0.5" if os.getenv("TESTING") else "10.0"))
 
 # Circuit breaker
 CB_FAILURE_THRESHOLD: int = 5   # consecutive failures to trip
