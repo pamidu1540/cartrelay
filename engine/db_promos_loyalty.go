@@ -176,14 +176,21 @@ func IssueBirthdayRewards(ctx context.Context) error {
 	today := time.Now()
 	month := today.Month()
 	day := today.Day()
+	yearStart := time.Date(today.Year(), 1, 1, 0, 0, 0, 0, time.UTC).Unix()
 
-	// Find users whose birthday is today (compare month/day of epoch)
+	// Find users whose birthday is today (compare month/day of epoch) who haven't already received one this year
 	rows, err := pool.Query(ctx, `
-		SELECT user_id FROM customer_profiles
-		WHERE birthday > 0
-		AND EXTRACT(MONTH FROM to_timestamp(birthday)) = $1
-		AND EXTRACT(DAY   FROM to_timestamp(birthday)) = $2`,
-		month, day,
+		SELECT cp.user_id FROM customer_profiles cp
+		WHERE cp.birthday > 0
+		AND EXTRACT(MONTH FROM to_timestamp(cp.birthday)) = $1
+		AND EXTRACT(DAY   FROM to_timestamp(cp.birthday)) = $2
+		AND NOT EXISTS (
+			SELECT 1 FROM pending_notifs pn
+			WHERE pn.user_id = cp.user_id
+			AND pn.type = 'birthday'
+			AND pn.created_at >= $3
+		)`,
+		month, day, yearStart,
 	)
 	if err != nil {
 		return err

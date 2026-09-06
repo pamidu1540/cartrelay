@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v12.8.0] - 2026-09-06
+
+### ⚡ Message Handling & Initial Step Optimizations
+- **Zero-Flicker SMI Transitions:** Optimized `send_or_edit_main_menu` to run previous message deletion concurrently in the background (`asyncio.create_task`), eliminating UI blank screen delays and halving message transition latency.
+- **Smart Reply Keyboard Handling:** Added instant detection for `ReplyKeyboardMarkup` and `ReplyKeyboardRemove` to bypass failed `edit_message_text` network attempts and streamline custom keyboard rendering.
+- **Sub-100ms `/start` Performance:** Cached warehouse and catalog setup verification (60s TTL) and onboarded status in memory to bypass redundant gRPC calls for returning users.
+- **Streamlined Onboarding Wizard:** Staged user profile data in memory to eliminate intermediate gRPC roundtrips, and replaced flashing dummy keyboard cleaning messages with clean `ReplyKeyboardRemove()`.
+- **Cached Catalog & Checkout Queries:** Cached warehouse verification for catalog commands; cached user address selections to eliminate redundant `ListSavedAddresses` gRPC calls; parallelized quote calculation and loyalty balance lookup via `asyncio.gather`.
+
+### 🛡️ Bot Hardening & Telegram API Fixes
+- **Telegram `query.answer` Duplicate Call Bug Fix:** Removed redundant initial empty `query.answer()` calls before alert toasts across callback handlers in `management.py`, `profile.py`, `checkout.py`, `orders.py`, and `cart.py`, preventing Telegram `BadRequest: Query is too old or query id is invalid` errors.
+- **Non-Text Input Safety Guards:** Guarded against `None` message text across all wizard input states (`name`, `price`, `stock`, `category`, `description`, `promo_code`, `broadcast`, `driver`, `warehouse`, `settings`), preventing unhandled `AttributeError` exceptions when attachments, stickers, or photos are received.
+
+### ⚙️ Engine & Supervisor Bug Fixes
+- **Scheduled Maintenance Window Enforcement:** Fixed premature activation of scheduled maintenance by storing and enforcing both `maintenance_from` and `maintenance_until` boundaries.
+- **Notification Spam Loop Remediation:** Wrapped `pending_notifs` retrieval in a row-level locking transaction (`FOR UPDATE`) and batch updated `sent = TRUE`, eliminating the 30-second infinite resend loop.
+- **Auto-Dispatch Query Fix:** Fixed SQL column reference from `id` to `order_id` in `orders` table existence checks.
+- **Saved Address Deduplication:** Added explicit update vs. insert branching in `DBSaveAddress` to prevent duplicate row creation on edits.
+- **Catalog Date Window & Active Checks:** Enforced active item status and date windows in `CalculateQuote` and `FetchCatalogItems`.
+- **Birthday Voucher Deduplication:** Added current calendar year verification to prevent duplicate birthday voucher assignments on engine restarts.
+- **Supervisor OTA Root Extraction:** Resolved tarball extraction failure when encountering `.` root path entries.
+
+### 📦 System Stack & Package Release
+- **Python 3.13 Runtime:** Upgraded Python stack to 3.13 across bot service, Dockerfiles, pyproject.toml, and CI workflows.
+- **Package Release:** Built and released `logistics-bot` package version `12.8.0`.
+
+---
+
 ## [v12.7.0] - 2026-07-26
 
 ### 🛡️ Full-Stack Security Remediations

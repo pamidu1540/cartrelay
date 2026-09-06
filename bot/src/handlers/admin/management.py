@@ -173,7 +173,6 @@ async def cmd_warehouses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def cb_wh_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     wh_id = query.data.split(":", 1)[1]
     try:
         resp = await pool.call(
@@ -222,9 +221,15 @@ async def cmd_add_warehouse(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def msg_warehouse_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
+    msg = update.effective_message
+    if not msg or not msg.text:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
+        await _reply(update, context, "❌ Please enter a valid text name for the warehouse:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_WH_NAME
+
     flow = context.user_data.get("new_wh_flow")
     if flow is None:
-        text = update.effective_message.text.strip()
+        text = msg.text.strip()
         if "|" in text:
             name, addr = text.split("|", 1)
             context.user_data["new_wh"] = {"name": name.strip(), "address": addr.strip()}
@@ -234,7 +239,7 @@ async def msg_warehouse_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
         flow = {}
         context.user_data["new_wh_flow"] = flow
 
-    text = update.effective_message.text.strip()
+    text = msg.text.strip()
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="wh_add:cancel")]]
     if "name" not in flow:
         flow["name"] = text
@@ -266,7 +271,7 @@ async def msg_warehouse_coords(update: Update, context: ContextTypes.DEFAULT_TYP
         lat = msg.location.latitude
         lon = msg.location.longitude
     else:
-        text = msg.text.strip()
+        text = msg.text.strip() if msg.text else ""
         try:
             lat_s, lon_s = text.split(",", 1)
             lat, lon = float(lat_s.strip()), float(lon_s.strip())
@@ -360,7 +365,6 @@ async def cmd_drivers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def cb_driver_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     drv_id = query.data.split(":", 1)[1]
     try:
         resp = await pool.call(
@@ -409,28 +413,42 @@ async def cmd_add_driver(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def msg_driver_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
+    msg = update.effective_message
+    if not msg or not msg.text:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")]]
+        await _reply(update, context, "❌ Please enter driver's name in text:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_DRV_NAME
+
     flow = context.user_data.get("new_driver_flow")
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")]]
+    name = msg.text.strip()
     if flow is None:
-        context.user_data.setdefault("new_driver", {})["name"] = update.effective_message.text.strip()
+        context.user_data.setdefault("new_driver", {})["name"] = name
         await _reply(update, context, "Enter driver's *phone number*:", reply_markup=InlineKeyboardMarkup(kb))
         return STATE_DRV_PHONE
 
-    flow["name"] = update.effective_message.text.strip()
+    flow["name"] = name
     await _reply(update, context, "Step 2/3 — Enter driver's *phone number*:", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_DRV_PHONE
 
 
 async def msg_driver_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
+    msg = update.effective_message
+    if not msg or not msg.text:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="driver_add:cancel")]]
+        await _reply(update, context, "❌ Please enter driver's phone number in text:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_DRV_PHONE
+
+    phone = msg.text.strip()
     flow = context.user_data.get("new_driver_flow")
     if flow is None:
-        context.user_data["new_driver"]["phone"] = update.effective_message.text.strip()
+        context.user_data.setdefault("new_driver", {})["phone"] = phone
         d = context.user_data.pop("new_driver", {})
         flow = d
         context.user_data["new_driver_flow"] = flow
 
-    flow["phone"] = update.effective_message.text.strip()
+    flow["phone"] = phone
 
     kb = [
         [
@@ -505,7 +523,11 @@ async def cmd_broadcast_drivers(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def msg_broadcast_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
-    text = update.effective_message.text.strip()
+    msg = update.effective_message
+    if not msg or not msg.text:
+        await _reply(update, context, "❌ Please enter text to broadcast:")
+        return STATE_BROADCAST
+    text = msg.text.strip()
     try:
         resp = await pool.call(
             "/logistics.LogisticsEngine/BroadcastDrivers",
@@ -567,7 +589,6 @@ async def cmd_promos(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def cb_promo_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     promo_id = query.data.split(":", 1)[1]
     try:
         resp = await pool.call(
@@ -598,7 +619,9 @@ async def cb_promo_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     context.user_data["new_promo_flow"] = {}
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
-    await query.edit_message_text(
+    await send_or_edit_main_menu(
+        update,
+        context,
         "🏷 *Create Promo Code Wizard*\n\nStep 1/4 — Enter the *Promo Code* (e.g. SAVE10):",
         reply_markup=InlineKeyboardMarkup(kb),
     )
@@ -630,7 +653,9 @@ async def cb_promo_flow_type(update: Update, context: ContextTypes.DEFAULT_TYPE)
     flow["discount_type"] = dtype
     friendly = "percentage value (e.g. 10 for 10% off, must be 1-100)" if dtype == "percent" else "LKR discount amount (e.g. 200, must be positive)"
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
-    await query.edit_message_text(
+    await send_or_edit_main_menu(
+        update,
+        context,
         f"Step 3/4 — Enter the *{friendly}*:",
         reply_markup=InlineKeyboardMarkup(kb),
     )
@@ -639,9 +664,15 @@ async def cb_promo_flow_type(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
+    msg = update.effective_message
+    if not msg or not msg.text:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="promo_add:cancel")]]
+        await _reply(update, context, "❌ Please enter text for promo configuration:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_PROMO_DEF
+
+    text = msg.text.strip()
     flow = context.user_data.get("new_promo_flow")
     if flow is None:
-        text = update.effective_message.text.strip()
         if "|" in text:
             parts = [p.strip() for p in text.split("|")]
             if len(parts) >= 3:
@@ -679,7 +710,7 @@ async def msg_promo_def(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         flow = {}
         context.user_data["new_promo_flow"] = flow
 
-    text = update.effective_message.text.strip()
+    text = msg.text.strip()
     if "code" not in flow:
         code = text.upper()
         if not code.isalnum():
@@ -790,7 +821,11 @@ async def cmd_adjust_loyalty(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def msg_loyalty_adjustment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
-    parts = [p.strip() for p in update.effective_message.text.split("|")]
+    msg = update.effective_message
+    if not msg or not msg.text:
+        await _reply(update, context, "❌ Format: `user_id | delta | reason`")
+        return STATE_LOYALTY_ADJ
+    parts = [p.strip() for p in msg.text.split("|")]
     if len(parts) < 3:
         await _reply(update, context, "❌ Format: `user_id | delta | reason`")
         return STATE_LOYALTY_ADJ
@@ -856,7 +891,6 @@ async def cmd_admins(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def cb_admin_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     tg_id = int(query.data.split(":", 1)[1])
     try:
         resp = await pool.call(
@@ -893,9 +927,13 @@ async def cmd_add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def msg_new_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
+    msg = update.effective_message
+    if not msg or not msg.text:
+        await _reply(update, context, "❌ Please enter valid text input:")
+        return STATE_NEW_ADMIN
+    text = msg.text.strip()
     flow = context.user_data.get("new_admin_flow")
     if flow is None:
-        text = update.effective_message.text.strip()
         if "|" in text:
             parts = [p.strip() for p in text.split("|")]
             if len(parts) >= 3:
@@ -921,7 +959,7 @@ async def msg_new_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         flow = {}
         context.user_data["new_admin_flow"] = flow
 
-    text = update.effective_message.text.strip()
+    text = msg.text.strip()
     if "telegram_id" not in flow:
         try:
             tg_id = int(text)
@@ -1092,7 +1130,13 @@ async def msg_settings_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await _reply(update, context, "❌ Setting session expired.")
         return ConversationHandler.END
 
-    val_text = update.effective_message.text.strip()
+    msg = update.effective_message
+    if not msg or not msg.text:
+        context.user_data["editing_setting_key"] = key
+        await _reply(update, context, "❌ Please enter a text value:")
+        return STATE_SETTINGS_VAL
+
+    val_text = msg.text.strip()
     try:
         s = await pool.call(
             "/logistics.LogisticsEngine/GetSystemSettings",
@@ -1308,7 +1352,11 @@ async def cmd_schedule_maintenance(update: Update, context: ContextTypes.DEFAULT
 
 async def msg_maintenance_window(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
-    text  = update.effective_message.text.strip()
+    msg = update.effective_message
+    if not msg or not msg.text:
+        await _reply(update, context, "❌ Format: `start | end | reason`")
+        return STATE_MAINT_WINDOW
+    text  = msg.text.strip()
     parts = [p.strip() for p in text.split("|")]
     if len(parts) < 2:
         await _reply(update, context, "❌ Format: `start | end | reason`")

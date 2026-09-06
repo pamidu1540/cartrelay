@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"time"
 
@@ -113,17 +114,39 @@ func InsertOrder(ctx context.Context, req *pb.OrderRequest, cartItems []*pb.Cart
 	}
 	_ = br.Close()
 
+	// Redeem loyalty points if specified in quote
+	var pointsToRedeem int32
+	if quote.LoyaltyDiscount > 0 && settings != nil && settings.LoyaltyRedeemRate > 0 {
+		pointsToRedeem = int32(math.Round(quote.LoyaltyDiscount * float64(settings.LoyaltyRedeemRate)))
+	}
+	if pointsToRedeem > 0 {
+		var currentPoints int32
+		err = tx.QueryRow(ctx, "SELECT points FROM loyalty WHERE user_id=$1 FOR UPDATE", req.UserId).Scan(&currentPoints)
+		if err != nil || currentPoints < pointsToRedeem {
+			return "", "", fmt.Errorf("insufficient loyalty points: have %d, need %d", currentPoints, pointsToRedeem)
+		}
+		_, err = tx.Exec(ctx, "UPDATE loyalty SET points = points - $1 WHERE user_id=$2", pointsToRedeem, req.UserId)
+		if err != nil {
+			return "", "", fmt.Errorf("deduct loyalty: %w", err)
+		}
+		_, _ = tx.Exec(ctx, `
+			INSERT INTO loyalty_log (user_id, delta, reason, actor_id)
+			VALUES ($1, $2, $3, $4)`,
+			req.UserId, -pointsToRedeem, fmt.Sprintf("order_%s_redemption", humanRef), req.UserId,
+		)
+	}
+
 	// Insert order
 	var orderID string
 	err = tx.QueryRow(ctx, `
 		INSERT INTO orders (human_ref, user_id, username, status, total, receipt,
 		                    order_notes, delivery_address, scheduled_for, contactless,
-		                    recipient_name, delivery_otp, idempotency_key)
-		VALUES ($1,$2,$3,'pending',$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		                    recipient_name, delivery_otp, idempotency_key, loyalty_redeemed)
+		VALUES ($1,$2,$3,'pending',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING order_id`,
 		humanRef, req.UserId, req.Username, req.ExpectedTotal, req.ReceiptText,
 		req.OrderNotes, req.DeliveryAddress, req.ScheduledFor,
-		req.Contactless, req.RecipientName, deliveryOTP, idempKey,
+		req.Contactless, req.RecipientName, deliveryOTP, idempKey, pointsToRedeem,
 	).Scan(&orderID)
 	if err != nil {
 		if isPGUniqueViolation(err) {
@@ -423,6 +446,35 @@ func DBUpdateOrderStatus(ctx context.Context, orderID, newStatus, reason string,
 		orderID, newStatus, actorID, reason,
 	); err != nil {
 		return 0, err
+	}
+
+	if newStatus == "cancelled" {
+		// Restore inventory for items in this order
+		_, err = tx.Exec(ctx, `
+			UPDATE items i
+			SET stock = i.stock + oi.quantity
+			FROM order_items oi
+			WHERE oi.order_id = $1 AND oi.item_id = i.id`,
+			orderID,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("restore stock: %w", err)
+		}
+
+		// Refund redeemed loyalty points if any
+		var loyaltyRedeemed int32
+		_ = tx.QueryRow(ctx, "SELECT loyalty_redeemed FROM orders WHERE order_id=$1", orderID).Scan(&loyaltyRedeemed)
+		if loyaltyRedeemed > 0 {
+			_, _ = tx.Exec(ctx, `
+				UPDATE loyalty SET points = points + $1 WHERE user_id = $2`,
+				loyaltyRedeemed, userID,
+			)
+			_, _ = tx.Exec(ctx, `
+				INSERT INTO loyalty_log (user_id, delta, reason, actor_id)
+				VALUES ($1, $2, $3, $4)`,
+				userID, loyaltyRedeemed, fmt.Sprintf("order_%s_cancellation_refund", orderID), actorID,
+			)
+		}
 	}
 
 	DBAuditLog(ctx, actorID, "update_status", orderID,

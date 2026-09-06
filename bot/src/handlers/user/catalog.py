@@ -8,12 +8,13 @@ import asyncio
 import logging
 import math
 import time
+from typing import Any
 
 import grpc
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
-from message_manager import send_or_edit_main_menu
+from message_manager import delete_user_message, send_or_edit_main_menu
 
 from api import logistics_pb2 as pb
 from grpc_client import pool
@@ -29,34 +30,29 @@ logger = logging.getLogger(__name__)
 @check_maintenance
 async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """U-011: Show category buttons for browsing."""
-    try:
-        await update.effective_message.delete()
-    except Exception:
-        pass
-
-    try:
-        await context.bot.delete_message(
-            chat_id=update.effective_chat.id,
-            message_id=context.user_data.get("last_bot_msg_id", 0),
-        )
-    except Exception:
-        pass
+    await delete_user_message(update, context)
 
     disclaimer = ""
 
     async def _fetch_wh():
+        now = time.time()
+        if now - context.bot_data.get("_wh_time", 0.0) < 300:
+            return context.bot_data.get("_wh_has", True)
         try:
             r = await pool.call(
                 "/logistics.LogisticsEngine/ListWarehouses",
                 lambda stub, meta: stub.ListWarehouses(pb.Empty(), metadata=meta),
             )
-            return len(r.warehouses) > 0
+            has = len(r.warehouses) > 0
+            context.bot_data["_wh_time"] = now
+            context.bot_data["_wh_has"] = has
+            return has
         except Exception:
             return False
 
     async def _fetch_cat():
         now = time.time()
-        if now - getattr(context.bot_data, "_cat_time", 0.0) < 300:
+        if now - context.bot_data.get("_cat_time", 0.0) < 300:
             return context.bot_data["_cat_list"]
         resp = await pool.call(
             "/logistics.LogisticsEngine/GetCatalog",
@@ -74,11 +70,11 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         categories = await cat_task
         has_cat = len(categories) > 0
     except grpc.RpcError as e:
-        msg = await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"⚠️ Could not load catalog: {e.details()}",
+        await send_or_edit_main_menu(
+            update,
+            context,
+            f"⚠️ Could not load catalog: {e.details()}",
         )
-        context.user_data["last_bot_msg_id"] = msg.message_id
         return
 
     if not has_wh or not has_cat:
@@ -93,13 +89,12 @@ async def cmd_catalog(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     kb.append([InlineKeyboardButton("🔍 All Items", callback_data="cat_select:all:0")])
     kb.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="profile_edit:back_to_main")])
 
-    msg = await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=f"{disclaimer}🛒 *Browse our catalog*\nChoose a category:",
+    await send_or_edit_main_menu(
+        update,
+        context,
+        f"{disclaimer}🛒 *Browse our catalog*\nChoose a category:",
         reply_markup=InlineKeyboardMarkup(kb),
-        parse_mode=ParseMode.MARKDOWN,
     )
-    context.user_data["last_bot_msg_id"] = msg.message_id
 
 
 async def cb_category_select(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -124,20 +119,27 @@ async def cb_catalog_page(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def _show_catalog_page(query, cat_filter: str, page: int) -> None:
     """U-019 / BUG-019: paginated catalog, 10 items per page."""
+    bot = getattr(query, "bot", None)
+    if bot is None and hasattr(query, "get_bot"):
+        bot = query.get_bot()
+
     if query.message and query.message.photo:
+        chat_id = query.message.chat_id
         try:
             await query.message.delete()
         except Exception:
             pass
-        query = await query.bot.send_message(
-            chat_id=query.message.chat_id,
-            text="⌛ Loading catalog...",
-        )
+        if bot:
+            query = await bot.send_message(
+                chat_id=chat_id,
+                text="⌛ Loading catalog...",
+            )
 
     async def edit_msg(text, **kwargs):
-        chat_id = query.message.chat_id if hasattr(query, "message") and query.message is not None else query.chat_id
-        message_id = query.message.message_id if hasattr(query, "message") and query.message is not None else query.message_id
-        return await query.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, **kwargs)
+        chat_id = query.message.chat_id if hasattr(query, "message") and query.message is not None else getattr(query, "chat_id", None)
+        message_id = query.message.message_id if hasattr(query, "message") and query.message is not None else getattr(query, "message_id", None)
+        if bot:
+            return await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, **kwargs)
 
     try:
         resp = await pool.call(
@@ -366,11 +368,16 @@ async def cb_stock_notify(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer(f"⚠️ {e.details()}", show_alert=True)
 
 
-async def _show_catalog_categories_helper(query) -> None:
+_cat_cache: dict[str, Any] = {"time": 0.0, "list": []}
+
+
+async def _show_catalog_categories_helper(query, context: ContextTypes.DEFAULT_TYPE | None = None) -> None:
+    bot_data = context.bot_data if context else None
     try:
         now = time.time()
-        if now - getattr(query.bot.data, "_cat_time", 0.0) < 300:
-            categories = query.bot.data["_cat_list"]
+        cached_time = bot_data.get("_cat_time", 0.0) if bot_data else _cat_cache["time"]
+        if now - cached_time < 300:
+            categories = bot_data["_cat_list"] if bot_data else _cat_cache["list"]
         else:
             resp = await pool.call(
                 "/logistics.LogisticsEngine/GetCatalog",
@@ -379,18 +386,33 @@ async def _show_catalog_categories_helper(query) -> None:
                 ),
             )
             categories = sorted({it.category for it in resp.items if it.is_available})
-            query.bot.data["_cat_time"] = now
-            query.bot.data["_cat_list"] = categories
+            if bot_data is not None:
+                bot_data["_cat_time"] = now
+                bot_data["_cat_list"] = categories
+            _cat_cache["time"] = now
+            _cat_cache["list"] = categories
     except grpc.RpcError as e:
-        await query.edit_message_text(f"⚠️ Could not load catalog: {e.details()}")
+        err_msg = f"⚠️ Could not load catalog: {e.details()}"
+        if hasattr(query, "edit_message_text"):
+            await query.edit_message_text(err_msg)
+        elif hasattr(query, "edit_text"):
+            await query.edit_text(err_msg)
         return
 
     kb = [[InlineKeyboardButton(f"📂 {cat}", callback_data=f"cat_select:{cat}:0")]
           for cat in categories]
     kb.append([InlineKeyboardButton("🔍 All Items", callback_data="cat_select:all:0")])
     kb.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="profile_edit:back_to_main")])
-    await query.edit_message_text(
-        "🛒 *Browse our catalog*\nChoose a category:",
-        reply_markup=InlineKeyboardMarkup(kb),
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    text = "🛒 *Browse our catalog*\nChoose a category:"
+    if hasattr(query, "edit_message_text"):
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    elif hasattr(query, "edit_text"):
+        await query.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode=ParseMode.MARKDOWN,
+        )

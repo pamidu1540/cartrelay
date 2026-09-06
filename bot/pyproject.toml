@@ -1,7 +1,7 @@
 [project]
 name = "logistics-bot"
-version = "5.0.0"
-requires-python = ">=3.11"
+version = "12.8.0"
+requires-python = ">=3.13"
 dependencies = [
     "python-telegram-bot[job-queue]>=22.7.0",
     "grpcio>=1.80.0",
@@ -31,7 +31,7 @@ build-backend = "setuptools.build_meta"
 [tool.ruff]
 line-length = 120
 exclude = ["src/api"]
-target-version = "py312"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]

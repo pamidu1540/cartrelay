@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: logistics-bot
-Version: 5.0.0
-Requires-Python: >=3.11
+Version: 12.8.0
+Requires-Python: >=3.13
 Requires-Dist: python-telegram-bot[job-queue]>=22.7.0
 Requires-Dist: grpcio>=1.80.0
 Requires-Dist: grpcio-tools>=1.80.0

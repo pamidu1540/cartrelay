@@ -120,7 +120,8 @@ func FetchCatalogItems(ctx context.Context, catFilter, search string, page, page
 	}
 	offset := page * pageSize
 
-	where := "deleted_at IS NULL AND is_available = TRUE"
+	now := time.Now().Unix()
+	where := fmt.Sprintf("deleted_at IS NULL AND is_available = TRUE AND (available_from = 0 OR available_from <= %d) AND (available_until = 0 OR available_until >= %d)", now, now)
 	args := []any{}
 	n := 1
 

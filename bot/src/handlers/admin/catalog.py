@@ -68,7 +68,17 @@ async def cb_item_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def msg_item_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
-    context.user_data.setdefault("new_item", {})["name"] = update.effective_message.text.strip()
+    msg = update.effective_message
+    if not msg or not msg.text:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+        await _reply(update, context, "❌ Please enter a valid text name for the item:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_ITEM_NAME
+    name = msg.text.strip()
+    if not name:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+        await _reply(update, context, "❌ Name cannot be empty. Please enter the item name:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_ITEM_NAME
+    context.user_data.setdefault("new_item", {})["name"] = name
     kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
     await _reply(update, context, "Step 2/6 — Enter the *price* (LKR, numbers only):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_PRICE
@@ -76,8 +86,13 @@ async def msg_item_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def msg_item_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
+    msg = update.effective_message
+    if not msg or not msg.text:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+        await _reply(update, context, "❌ Please enter a valid positive number for price:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_ITEM_PRICE
     try:
-        price = float(update.effective_message.text.strip())
+        price = float(msg.text.strip())
         if price < 0:
             raise ValueError("negative price")
     except ValueError:
@@ -92,8 +107,13 @@ async def msg_item_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def msg_item_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
+    msg = update.effective_message
+    if not msg or not msg.text:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+        await _reply(update, context, "❌ Please enter a valid non-negative integer for stock:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_ITEM_STOCK
     try:
-        stock = int(update.effective_message.text.strip())
+        stock = int(msg.text.strip())
         if stock < 0:
             raise ValueError("negative stock")
     except ValueError:
@@ -137,19 +157,22 @@ async def cb_item_category_callback(update: Update, context: ContextTypes.DEFAUL
         cat = cat[:50]
 
     context.user_data.setdefault("new_item", {})["category"] = cat
-    await send_or_edit_main_menu(update, context, f"✅ Category set to: *{cat}*")
-
     kb = [
         [InlineKeyboardButton("⏩ Skip Photo", callback_data="item_photo_skip")],
         [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")],
     ]
-    await send_or_edit_main_menu(update, context, "Step 5/6 — Send the item *photo* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
+    await send_or_edit_main_menu(update, context, f"✅ Category set to: *{cat}*\n\nStep 5/6 — Send the item *photo* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_PHOTO
 
 
 async def msg_item_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
-    cat = update.effective_message.text.strip()
+    msg = update.effective_message
+    if not msg or not msg.text:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+        await _reply(update, context, "❌ Please enter a valid text category name:", reply_markup=InlineKeyboardMarkup(kb))
+        return STATE_ITEM_CATEGORY
+    cat = msg.text.strip()
     if len(cat) > 50:
         cat = cat[:50]
     context.user_data.setdefault("new_item", {})["category"] = cat
@@ -164,13 +187,11 @@ async def msg_item_category(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def cb_item_photo_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    await send_or_edit_main_menu(update, context, "⏩ Photo skipped.")
-
     kb = [
         [InlineKeyboardButton("⏩ Skip Description", callback_data="item_desc_skip")],
         [InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")],
     ]
-    await send_or_edit_main_menu(update, context, "Step 6/6 — Enter the item *description* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
+    await send_or_edit_main_menu(update, context, "⏩ Photo skipped.\n\nStep 6/6 — Enter the item *description* (or tap skip):", reply_markup=InlineKeyboardMarkup(kb))
     return STATE_ITEM_DESC
 
 
@@ -220,7 +241,8 @@ async def cb_item_desc_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def msg_item_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
-    text = update.effective_message.text.strip()
+    msg = update.effective_message
+    text = msg.text.strip() if (msg and msg.text) else "skip"
     if text.lower() != "skip":
         context.user_data.setdefault("new_item", {})["description"] = text
 
@@ -261,7 +283,15 @@ async def cmd_edit_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 @admin_only
 async def msg_edit_item_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
-    item_id = update.effective_message.text.strip()
+    msg = update.effective_message
+    if not msg or not msg.text:
+        kb = [[InlineKeyboardButton("❌ Cancel", callback_data="item_add:cancel")]]
+        await _reply(update, context,
+            "❌ Please enter a valid text **item ID**:",
+            reply_markup=InlineKeyboardMarkup(kb),
+        )
+        return STATE_EDIT_ITEM_ID
+    item_id = msg.text.strip()
     try:
         item = await pool.call(
             "/logistics.LogisticsEngine/GetItem",
@@ -373,7 +403,9 @@ async def cmd_bulk_import(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cb_bulk_import_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(
+    await send_or_edit_main_menu(
+        update,
+        context,
         "📥 *Bulk Import Items*\n\n"
         "Upload a CSV with columns:\n"
         "`name, price, stock, category, description`\n\n"
