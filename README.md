@@ -3,7 +3,7 @@
 [![CI Status](https://img.shields.io/github/actions/workflow/status/pamidu1540/logistics-engine-core/ci.yml?branch=main&label=CI&logo=github)](https://github.com/pamidu1540/logistics-engine-core/actions)
 [![Latest Tag](https://img.shields.io/github/v/tag/pamidu1540/logistics-engine-core?color=blue&label=Version&logo=github)](https://github.com/pamidu1540/logistics-engine-core/tags)
 [![Go Version](https://img.shields.io/badge/Go-1.25.0-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![Python Version](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Python Version](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 
 A high-performance, containerized logistics and e-commerce platform built with Go, Python, and gRPC. It provides a Telegram-based storefront for customers, a robust CLI supervisor for zero-downtime server management, and enterprise-grade Datadog APM tracing.
@@ -21,7 +21,7 @@ The system is composed of several microservices orchestrated via Docker Compose:
    - Dynamic Mapbox driving distance and Haversine fallback calculations.
    - **Performance Optimizations:** `singleflight` request coalescing, `errgroup` concurrency, and LRU spatial caching.
 
-2. **Bot (Python 3.11+ / python-telegram-bot)**
+2. **Bot (Python 3.13+ / python-telegram-bot)**
    The user-facing Telegram frontend communicating with the Engine via gRPC:
    - **Customer Flow:** Browse catalog, add items to cart, share GPS locations, view dynamic quotes, place orders.
    - **Admin Flow:** Manage catalog items, update stock/pricing, assign drivers, resolve order issues.
@@ -57,6 +57,12 @@ For detailed revision history, see [CHANGELOG.md](CHANGELOG.md).
 
 ### 🚀 Recent Releases
 
+#### [v12.8.0] - 2026-09-06
+- **Message Handling & Latency Optimizations:** Implemented concurrent background message deletion eliminating UI screen flicker, bypass for custom keyboard edit failures, sub-100ms `/start` cache, streamlined onboarding wizard, and parallelized quote + loyalty lookups.
+- **Bot Hardening:** Fixed duplicate Telegram `query.answer` errors and added non-text message input validation guards across all admin wizard states.
+- **Engine & Supervisor Bug Fixes:** Fixed scheduled maintenance window enforcement, notification spam loop via row-level locks, auto-dispatch column reference, address edit deduplication, catalog date window verification, birthday reward voucher deduplication, and supervisor tarball root extraction.
+- **Stack & Package Release:** Upgraded Python stack to 3.13 across all components and released `logistics-bot` package version `12.8.0`.
+
 #### [v12.7.0] - 2026-07-26
 - **Security Hardening:** Implemented global rate limiting for anonymous requests, capped token bucket map size (`100,000` limit) to prevent memory DoS, masked log secrets, and upgraded chunked stream encryption to 256-bit AES-256-GCM.
 - **Cache & Skew Optimizations:** Prevented catalog cache stampedes via expired-first LRU eviction; tightened HMAC clock skew tolerance window to $\pm 2\text{s}$.
@@ -71,7 +77,7 @@ For detailed revision history, see [CHANGELOG.md](CHANGELOG.md).
 ## 🚀 Deployment & CI/CD
 
 - **CI (`ci.yml`)**: On every push to `main`, GitHub Actions automatically tidy Go modules, run `protoc`, execute unit tests, perform `ruff` & `hadolint` linting, and publish multi-stage Docker images to `ghcr.io`.
-- **Release (`release.yml`)**: Triggered by pushing a version tag (e.g., `v12.7.0`). Compiles Linux binaries, signs OTA payloads with Ed25519, and pushes release assets to Cloudflare R2 CDN.
+- **Release (`release.yml`)**: Triggered by pushing a version tag (e.g., `v12.8.0`). Compiles Linux binaries, signs OTA payloads with Ed25519, and pushes release assets to Cloudflare R2 CDN.
 
 ---
 

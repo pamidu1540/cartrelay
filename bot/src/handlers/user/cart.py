@@ -130,7 +130,6 @@ async def cb_qty_minus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def cb_remove_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     item_id = query.data.split(":", 1)[1]
     user_id = update.effective_user.id
     await _cart(context).remove_item(user_id, item_id)

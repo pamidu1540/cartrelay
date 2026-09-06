@@ -298,7 +298,8 @@ func extractTarballSecure(tarball, destDir string) error {
 
 		// #nosec G305 -- zipslip checked via strings.Contains \"..\", HasPrefix validation
 		target := filepath.Join(destDir, header.Name)
-		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) {
+		cleanDest := filepath.Clean(destDir)
+		if target != cleanDest && !strings.HasPrefix(target, cleanDest+string(os.PathSeparator)) {
 			return fmt.Errorf("invalid path: %s", header.Name)
 		}
 

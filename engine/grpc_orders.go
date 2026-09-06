@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -125,11 +126,15 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 		distKM = mapboxKM
 	}
 
+	now := time.Now().Unix()
 	var subtotal, totalVol float64
 	for _, ci := range req.CartItems {
 		it, ok := itemMap[ci.ItemId]
 		if !ok {
 			return nil, status.Errorf(codes.NotFound, "item %s not found", ci.ItemId)
+		}
+		if !it.IsAvailable || (it.AvailableFrom > 0 && now < it.AvailableFrom) || (it.AvailableUntil > 0 && now > it.AvailableUntil) {
+			return nil, status.Errorf(codes.FailedPrecondition, "item %s is currently not available", it.Name)
 		}
 		if it.Stock < int32(ci.Quantity) {
 			return nil, status.Errorf(codes.ResourceExhausted,
@@ -165,7 +170,7 @@ func (s *Server) CalculateQuote(ctx context.Context, req *pb.QuoteRequest) (*pb.
 
 	// Loyalty redemption
 	var loyaltyDiscount float64
-	if req.LoyaltyRedeem > 0 {
+	if req.LoyaltyRedeem > 0 && settings != nil && settings.LoyaltyRedeemRate > 0 {
 		bal, _ := DBGetLoyaltyBalance(ctx, req.UserId)
 		redeemPts := req.LoyaltyRedeem
 		if redeemPts > bal.Points {
@@ -400,7 +405,7 @@ func notifyDriver(ctx context.Context, driverID, orderID string) {
 // autoDispatch assigns the nearest available driver to a newly placed order.
 func autoDispatch(ctx context.Context, orderID string) {
 	var exists bool
-	_ = pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM orders WHERE id=$1)", orderID).Scan(&exists)
+	_ = pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM orders WHERE order_id=$1)", orderID).Scan(&exists)
 	if !exists {
 		return
 	}

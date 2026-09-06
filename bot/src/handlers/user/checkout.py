@@ -4,6 +4,7 @@ checkout.py — Checkout flow, address selection, promo codes, delivery time-slo
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -15,7 +16,6 @@ from telegram import (
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
     Update,
 )
 from telegram.constants import ParseMode
@@ -62,6 +62,11 @@ async def cb_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     except Exception:
         saved = []
 
+    context.user_data["_saved_addrs"] = {
+        str(a.id): {"address": a.address, "lat": a.lat, "lon": a.lon}
+        for a in saved
+    }
+
     kb = []
     for a in saved[:5]:
         label = "⭐ " + a.label if a.is_default else a.label
@@ -103,22 +108,28 @@ async def cb_address_select(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return STATE_ADDRESS
 
     user_id = update.effective_user.id
-    try:
-        addr_resp = await pool.call(
-            "/logistics.LogisticsEngine/ListSavedAddresses",
-            lambda stub, meta: stub.ListSavedAddresses(
-                pb.UserId(user_id=user_id), metadata=meta
-            ),
-            user_id=user_id,
-        )
-        addr_map = {str(a.id): a for a in addr_resp.addresses}
-        addr = addr_map.get(addr_id)
-        if addr:
-            context.user_data["delivery_address"] = addr.address
-            context.user_data["delivery_lat"] = addr.lat
-            context.user_data["delivery_lon"] = addr.lon
-    except Exception:
-        pass
+    cached_addr = context.user_data.get("_saved_addrs", {}).get(addr_id)
+    if cached_addr:
+        context.user_data["delivery_address"] = cached_addr["address"]
+        context.user_data["delivery_lat"] = cached_addr["lat"]
+        context.user_data["delivery_lon"] = cached_addr["lon"]
+    else:
+        try:
+            addr_resp = await pool.call(
+                "/logistics.LogisticsEngine/ListSavedAddresses",
+                lambda stub, meta: stub.ListSavedAddresses(
+                    pb.UserId(user_id=user_id), metadata=meta
+                ),
+                user_id=user_id,
+            )
+            addr_map = {str(a.id): a for a in addr_resp.addresses}
+            addr = addr_map.get(addr_id)
+            if addr:
+                context.user_data["delivery_address"] = addr.address
+                context.user_data["delivery_lat"] = addr.lat
+                context.user_data["delivery_lon"] = addr.lon
+        except Exception:
+            pass
 
     return await _proceed_to_quote(update, context)
 
@@ -127,11 +138,6 @@ async def msg_delivery_address(update: Update, context: ContextTypes.DEFAULT_TYP
     await delete_user_message(update, context)
     msg = update.effective_message
     user_id = update.effective_user.id
-
-    try:
-        await msg.delete()
-    except Exception:
-        pass
 
     lat = float(os.environ.get("DEFAULT_LAT", "6.9271"))
     lon = float(os.environ.get("DEFAULT_LON", "79.8612"))
@@ -160,21 +166,21 @@ async def msg_delivery_address(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception:
             pass
     else:
+        if not msg.text:
+            reply_kb = [
+                [KeyboardButton("📍 Share Location", request_location=True)],
+            ]
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="⚠️ Please enter a text address or tap Share Location below:",
+                reply_markup=ReplyKeyboardMarkup(reply_kb, resize_keyboard=True, one_time_keyboard=True),
+            )
+            return STATE_ADDRESS
         addr_text = msg.text.strip()
 
     context.user_data["delivery_address"] = addr_text
     context.user_data["delivery_lat"] = lat
     context.user_data["delivery_lon"] = lon
-
-    try:
-        rm_msg = await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="📍 Location recorded.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=rm_msg.message_id)
-    except Exception:
-        pass
 
     return await _proceed_to_quote(update, context)
 
@@ -184,8 +190,8 @@ async def _proceed_to_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_id = update.effective_user.id
     items = await _cart(context).get_cart(user_id)
 
-    try:
-        quote = await pool.call(
+    async def _fetch_quote():
+        return await pool.call(
             "/logistics.LogisticsEngine/CalculateQuote",
             lambda stub, meta: stub.CalculateQuote(
                 pb.QuoteRequest(
@@ -198,8 +204,28 @@ async def _proceed_to_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             ),
             user_id=user_id,
         )
-    except grpc.RpcError as e:
-        await send_or_edit_main_menu(update, context, f"⚠️ Could not calculate quote: {e.details()}")
+
+    async def _fetch_loyalty():
+        return await pool.call(
+            "/logistics.LogisticsEngine/GetLoyaltyBalance",
+            lambda stub, meta: stub.GetLoyaltyBalance(
+                pb.UserId(user_id=user_id), metadata=meta
+            ),
+            user_id=user_id,
+        )
+
+    try:
+        quote_resp, bal_resp = await asyncio.gather(_fetch_quote(), _fetch_loyalty(), return_exceptions=True)
+        if isinstance(quote_resp, Exception):
+            if isinstance(quote_resp, grpc.RpcError):
+                await send_or_edit_main_menu(update, context, f"⚠️ Could not calculate quote: {quote_resp.details()}")
+            else:
+                await send_or_edit_main_menu(update, context, f"⚠️ Could not calculate quote: {quote_resp}")
+            return ConversationHandler.END
+        quote = quote_resp
+        bal = bal_resp if not isinstance(bal_resp, Exception) else None
+    except Exception as e:
+        await send_or_edit_main_menu(update, context, f"⚠️ Could not calculate quote: {e}")
         return ConversationHandler.END
 
     context.user_data["quote"] = quote
@@ -209,21 +235,11 @@ async def _proceed_to_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         [InlineKeyboardButton("⏩ Skip Promo",       callback_data="promo:skip")],
     ]
 
-    try:
-        bal = await pool.call(
-            "/logistics.LogisticsEngine/GetLoyaltyBalance",
-            lambda stub, meta: stub.GetLoyaltyBalance(
-                pb.UserId(user_id=user_id), metadata=meta
-            ),
-            user_id=user_id,
-        )
-        if bal.points > 0:
-            kb.insert(0, [InlineKeyboardButton(
-                f"🎁 Use {bal.points} loyalty points",
-                callback_data=f"promo:loyalty:{bal.points}",
-            )])
-    except Exception:
-        pass
+    if bal and bal.points > 0:
+        kb.insert(0, [InlineKeyboardButton(
+            f"🎁 Use {bal.points} loyalty points",
+            callback_data=f"promo:loyalty:{bal.points}",
+        )])
 
     text = (
         quote.formatted_receipt
@@ -236,9 +252,9 @@ async def _proceed_to_quote(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def cb_use_promo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
-    await query.answer()
 
     if query.data == "promo:enter":
+        await query.answer()
         await send_or_edit_main_menu(update, context, "🏷 Enter your promo code:")
         return STATE_PROMO_CODE
 
@@ -246,13 +262,22 @@ async def cb_use_promo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         pts = int(query.data.split(":")[-1])
         context.user_data["loyalty_redeem"] = pts
         await query.answer(f"✅ {pts} loyalty points will be applied at checkout")
+    else:
+        await query.answer()
 
     return await _show_time_slots(update, context)
 
 
 async def msg_promo_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
-    code = update.effective_message.text.strip().upper()
+    msg = update.effective_message
+    if not msg or not msg.text:
+        await send_or_edit_main_menu(update, context, "⚠️ Please enter a valid text promo code:")
+        return STATE_PROMO_CODE
+    code = msg.text.strip().upper()
+    if not code:
+        await send_or_edit_main_menu(update, context, "⚠️ Please enter a non-empty promo code:")
+        return STATE_PROMO_CODE
     user_id = update.effective_user.id
     items = await _cart(context).get_cart(user_id)
 
@@ -364,7 +389,7 @@ async def cb_confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             lambda stub, meta: stub.PlaceOrder(
                 pb.OrderRequest(
                     user_id=user.id,
-                    username=user.username or user.first_name,
+                    username=user.username or user.first_name or "Customer",
                     quote_data=quote.quote_data,
                     expected_total=quote.grand_total,
                     receipt_text=quote.formatted_receipt,

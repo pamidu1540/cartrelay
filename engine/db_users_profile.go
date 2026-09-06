@@ -77,15 +77,28 @@ func DBSaveAddress(ctx context.Context, a *pb.SavedAddress) error {
 			return err
 		}
 	}
-	_, err = tx.Exec(ctx, `
-		INSERT INTO saved_addresses (user_id, label, address, lat, lon, is_default)
-		VALUES ($1,$2,$3,$4,$5,$6)
-		ON CONFLICT (id) DO UPDATE
-		  SET label=$2, address=$3, lat=$4, lon=$5, is_default=$6`,
-		a.UserId, a.Label, a.Address, a.Lat, a.Lon, a.IsDefault,
-	)
-	if err != nil {
-		return err
+	if a.Id > 0 {
+		res, err := tx.Exec(ctx, `
+			UPDATE saved_addresses
+			SET label=$1, address=$2, lat=$3, lon=$4, is_default=$5
+			WHERE id=$6 AND user_id=$7`,
+			a.Label, a.Address, a.Lat, a.Lon, a.IsDefault, a.Id, a.UserId,
+		)
+		if err != nil {
+			return err
+		}
+		if res.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+	} else {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO saved_addresses (user_id, label, address, lat, lon, is_default)
+			VALUES ($1,$2,$3,$4,$5,$6)`,
+			a.UserId, a.Label, a.Address, a.Lat, a.Lon, a.IsDefault,
+		)
+		if err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }
@@ -132,11 +145,18 @@ func DBSetNotifPrefs(ctx context.Context, p *pb.NotifPrefs) error {
 	return err
 }
 
-// DBGetPendingNotifs retrieves unsent notifications for a user.
+// DBGetPendingNotifs retrieves unsent notifications for a user and marks them as sent.
 func DBGetPendingNotifs(ctx context.Context, userID int64) ([]*pb.Notif, error) {
-	rows, err := pool.Query(ctx, `
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	rows, err := tx.Query(ctx, `
 		SELECT id, user_id, type, text, sent, created_at
-		FROM pending_notifs WHERE user_id=$1 AND NOT sent ORDER BY created_at`,
+		FROM pending_notifs WHERE user_id=$1 AND NOT sent ORDER BY created_at
+		FOR UPDATE`,
 		userID,
 	)
 	if err != nil {
@@ -145,14 +165,32 @@ func DBGetPendingNotifs(ctx context.Context, userID int64) ([]*pb.Notif, error) 
 	defer rows.Close()
 
 	var notifs []*pb.Notif
+	var ids []int64
 	for rows.Next() {
 		n := &pb.Notif{}
 		if err := rows.Scan(&n.Id, &n.UserId, &n.Type, &n.Text, &n.Sent, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		notifs = append(notifs, n)
+		ids = append(ids, n.Id)
 	}
-	return notifs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+
+	if len(ids) > 0 {
+		_, err = tx.Exec(ctx, `
+			UPDATE pending_notifs SET sent=TRUE
+			WHERE id = ANY($1)`,
+			ids,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return notifs, tx.Commit(ctx)
 }
 
 // DBEnqueueNotif adds a new pending notification to a user's queue.

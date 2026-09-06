@@ -58,10 +58,10 @@ async def cmd_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("⬅ Older", callback_data=f"orders_page:{page - 1}"))
+        nav.append(InlineKeyboardButton("⬅ Newer", callback_data=f"orders_page:{page - 1}"))
     total_pages = (resp.total_count + 4) // 5
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("Newer ➡", callback_data=f"orders_page:{page + 1}"))
+        nav.append(InlineKeyboardButton("Older ➡", callback_data=f"orders_page:{page + 1}"))
     if nav:
         kb.append(nav)
 
@@ -117,7 +117,6 @@ async def cb_order_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cb_reorder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """U-002: Pre-fill cart with items from a past order."""
     query = update.callback_query
-    await query.answer()
     order_id = query.data.split(":", 1)[1]
     user_id = update.effective_user.id
 

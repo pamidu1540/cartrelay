@@ -116,16 +116,24 @@ func EnforceScheduledMaintenance(ctx context.Context) error {
 		return nil
 	}
 
+	maintFromStr, _ := GetConfigValue(ctx, "maintenance_from")
+	maintFrom, _ := strconv.ParseInt(maintFromStr, 10, 64)
+
 	now := time.Now().Unix()
 	modeStr, _ := GetConfigValue(ctx, "maintenance_mode")
 
-	if now < maintUntil && modeStr != "true" {
-		_ = SetConfigValue(ctx, "maintenance_mode", "true")
-		slog.Info("scheduled maintenance window started")
-	} else if now >= maintUntil && modeStr == "true" {
-		_ = SetConfigValue(ctx, "maintenance_mode", "false")
+	if now >= maintFrom && now < maintUntil {
+		if modeStr != "true" {
+			_ = SetConfigValue(ctx, "maintenance_mode", "true")
+			slog.Info("scheduled maintenance window started", "from", maintFrom, "until", maintUntil)
+		}
+	} else if now >= maintUntil {
+		if modeStr == "true" {
+			_ = SetConfigValue(ctx, "maintenance_mode", "false")
+			slog.Info("scheduled maintenance window ended", "until", maintUntil)
+		}
 		_ = SetConfigValue(ctx, "maintenance_until", "0")
-		slog.Info("scheduled maintenance window ended")
+		_ = SetConfigValue(ctx, "maintenance_from", "0")
 	}
 	return nil
 }

@@ -82,13 +82,12 @@ async def cmd_all_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if nav:
         kb.append(nav)
 
-    msg = update.effective_message
-    if msg:
-        await msg.reply_text(
-            "\n".join(lines),
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=InlineKeyboardMarkup(kb),
-        )
+    await _reply(
+        update,
+        context,
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(kb),
+    )
 
 
 async def cb_admin_order_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -180,9 +179,10 @@ async def cb_admin_update_status(update: Update, context: ContextTypes.DEFAULT_T
 
 async def msg_status_reason(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
+    msg = update.effective_message
+    reason = msg.text.strip() if (msg and msg.text) else "Status updated by admin"
     order_id   = context.user_data.pop("pending_status_order", "")
     new_status = context.user_data.pop("pending_status_value", "")
-    reason     = update.effective_message.text.strip()
     actor_id   = update.effective_user.id
 
     try:
@@ -248,11 +248,12 @@ async def cb_do_assign(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     parts = query.data.split(":")
     order_id = parts[1]
     driver_id = parts[2]
+    admin_id = update.effective_user.id if update.effective_user else 0
     try:
         await pool.call(
             "/logistics.LogisticsEngine/AssignDriver",
             lambda stub, meta: stub.AssignDriver(
-                pb.AssignDriverRequest(order_id=order_id, driver_id=driver_id),
+                pb.AssignDriverRequest(order_id=order_id, driver_id=driver_id, admin_id=admin_id),
                 metadata=meta,
             ),
             user_id=update.effective_user.id,
@@ -272,7 +273,11 @@ async def cmd_order_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def msg_order_search_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
-    q = update.effective_message.text.strip().lower()
+    msg = update.effective_message
+    if not msg or not msg.text:
+        await _reply(update, context, "❌ Please enter a text search query:")
+        return STATE_ORDER_SEARCH
+    q = msg.text.strip().lower()
     try:
         resp = await pool.call(
             "/logistics.LogisticsEngine/GetAllOrders",
@@ -314,8 +319,12 @@ async def cmd_add_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def msg_note_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
+    msg = update.effective_message
+    if not msg or not msg.text:
+        await _reply(update, context, "❌ Please enter note text:")
+        return STATE_NOTE_TEXT
     order_id = context.user_data.pop("note_order_id", "")
-    text     = update.effective_message.text.strip()
+    text     = msg.text.strip()
     actor_id = update.effective_user.id
     try:
         await pool.call(
@@ -381,11 +390,17 @@ async def cb_do_resolve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     parts = query.data.split(":")
     order_id = parts[1]
     resolution = parts[2]
+    admin_id = update.effective_user.id if update.effective_user else 0
     try:
         await pool.call(
             "/logistics.LogisticsEngine/ResolveOrderIssue",
             lambda stub, meta: stub.ResolveOrderIssue(
-                pb.ResolveOrderIssueRequest(order_id=order_id, resolution=resolution, admin_notes=""),
+                pb.ResolveIssueRequest(
+                    order_id=order_id,
+                    admin_id=admin_id,
+                    resolution=resolution,
+                    note="",
+                ),
                 metadata=meta,
             ),
             user_id=update.effective_user.id,

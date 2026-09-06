@@ -509,3 +509,175 @@ class TestAdminOnly:
 
         mock_pool.call.assert_not_called()
         mock_func.assert_not_called()
+
+
+class TestBugFixes:
+    """Verification tests for recent bug fixes."""
+
+    @pytest.mark.asyncio
+    async def test_send_or_edit_main_menu_markdown_error_fallback(self):
+        """Verify that markdown parsing errors fall back to sending plain text."""
+        from message_manager import send_or_edit_main_menu
+
+        update = MagicMock()
+        update.callback_query = None
+        update.effective_chat.id = 12345
+        context = MagicMock()
+        context.user_data = {}
+
+        # First call fails with parse error, second call (fallback) succeeds
+        sent_msg = MagicMock(message_id=999)
+        context.bot.send_message = AsyncMock(
+            side_effect=[Exception("Can't parse entities: unclosed entity"), sent_msg]
+        )
+
+        await send_or_edit_main_menu(update, context, "Bad *markdown _text")
+
+        assert context.bot.send_message.call_count == 2
+        # First attempt used markdown
+        assert context.bot.send_message.call_args_list[0].kwargs.get("parse_mode") is not None
+        # Fallback attempt used plain text (parse_mode=None)
+        assert context.bot.send_message.call_args_list[1].kwargs.get("parse_mode") is None
+        assert context.user_data["last_bot_msg_id"] == 999
+
+    @pytest.mark.asyncio
+    async def test_show_catalog_categories_helper_with_message(self):
+        """Verify _show_catalog_categories_helper works with Message objects."""
+        from handlers.user.catalog import _show_catalog_categories_helper
+
+        msg = MagicMock()
+        msg.edit_text = AsyncMock()
+        # Ensure it does NOT have edit_message_text
+        del msg.edit_message_text
+
+        with patch("handlers.user.catalog.pool") as mock_pool:
+            mock_item = MagicMock(category="Electronics", is_available=True)
+            mock_pool.call = AsyncMock(return_value=MagicMock(items=[mock_item]))
+
+            await _show_catalog_categories_helper(msg)
+
+            msg.edit_text.assert_called_once()
+            call_text = msg.edit_text.call_args[0][0]
+            assert "Browse our catalog" in call_text
+
+    @pytest.mark.asyncio
+    async def test_admin_orders_resolve_issue_request_proto(self):
+        """Verify cb_do_resolve uses the correct protobuf message ResolveIssueRequest."""
+        from handlers.admin.orders import cb_do_resolve
+
+        update = MagicMock()
+        update.callback_query.data = "do_resolve:ORD-1234:refunded"
+        update.callback_query.answer = AsyncMock()
+        update.effective_user.id = 55555
+        context = MagicMock()
+
+        with patch("handlers.admin.orders.pool") as mock_pool, \
+             patch("handlers.admin.orders.send_or_edit_main_menu"):
+            mock_pool.call = AsyncMock()
+
+            await cb_do_resolve(update, context)
+
+            mock_pool.call.assert_called_once()
+            call_args = mock_pool.call.call_args
+            assert call_args[0][0] == "/logistics.LogisticsEngine/ResolveOrderIssue"
+            # Verify the inner stub function builds ResolveIssueRequest without error
+            mock_stub = MagicMock()
+            call_args[0][1](mock_stub, None)
+            req = mock_stub.ResolveOrderIssue.call_args[0][0]
+            from api import logistics_pb2 as pb
+            assert isinstance(req, pb.ResolveIssueRequest)
+            assert req.order_id == "ORD-1234"
+            assert req.resolution == "refunded"
+            assert req.admin_id == 55555
+
+    @pytest.mark.asyncio
+    async def test_admin_orders_assign_driver_request_proto(self):
+        """Verify cb_do_assign includes admin_id in AssignDriverRequest."""
+        from handlers.admin.orders import cb_do_assign
+
+        update = MagicMock()
+        update.callback_query.data = "do_assign:ORD-9999:DRV-1"
+        update.callback_query.answer = AsyncMock()
+        update.effective_user.id = 77777
+        context = MagicMock()
+
+        with patch("handlers.admin.orders.pool") as mock_pool, \
+             patch("handlers.admin.orders.send_or_edit_main_menu"):
+            mock_pool.call = AsyncMock()
+
+            await cb_do_assign(update, context)
+
+            mock_pool.call.assert_called_once()
+            call_args = mock_pool.call.call_args
+            assert call_args[0][0] == "/logistics.LogisticsEngine/AssignDriver"
+            mock_stub = MagicMock()
+            call_args[0][1](mock_stub, None)
+            req = mock_stub.AssignDriver.call_args[0][0]
+            from api import logistics_pb2 as pb
+            assert isinstance(req, pb.AssignDriverRequest)
+            assert req.order_id == "ORD-9999"
+            assert req.driver_id == "DRV-1"
+            assert req.admin_id == 77777
+
+    @pytest.mark.asyncio
+    async def test_msg_loyalty_adjustment_none_text_guard(self):
+        """Verify msg_loyalty_adjustment handles messages with None text safely."""
+        from handlers.admin.management import msg_loyalty_adjustment
+
+        update = MagicMock()
+        update.effective_message.text = None
+        context = MagicMock()
+
+        with patch("handlers.admin.management.delete_user_message", new=AsyncMock()), \
+             patch("handlers.admin.management._reply", new=AsyncMock()) as mock_reply:
+            await msg_loyalty_adjustment(update, context)
+            mock_reply.assert_called_once()
+            assert "Format:" in mock_reply.call_args[0][2]
+
+    @pytest.mark.asyncio
+    async def test_msg_item_name_none_text_guard(self):
+        """Verify msg_item_name handles messages with None text safely without AttributeError."""
+        from handlers.admin.catalog import msg_item_name
+
+        update = MagicMock()
+        update.effective_message.text = None
+        context = MagicMock()
+        context.user_data = {}
+
+        with patch("handlers.admin.catalog.delete_user_message", new=AsyncMock()), \
+             patch("handlers.admin.catalog._reply", new=AsyncMock()) as mock_reply:
+            await msg_item_name(update, context)
+            mock_reply.assert_called_once()
+            assert "valid text name" in mock_reply.call_args[0][2]
+
+    @pytest.mark.asyncio
+    async def test_msg_promo_code_none_text_guard(self):
+        """Verify msg_promo_code handles messages with None text safely without AttributeError."""
+        from handlers.user.checkout import msg_promo_code
+
+        update = MagicMock()
+        update.effective_message.text = None
+        context = MagicMock()
+        context.user_data = {}
+
+        with patch("handlers.user.checkout.delete_user_message", new=AsyncMock()), \
+             patch("handlers.user.checkout.send_or_edit_main_menu", new=AsyncMock()) as mock_menu:
+            await msg_promo_code(update, context)
+            mock_menu.assert_called_once()
+            assert "valid text promo code" in mock_menu.call_args[0][2]
+
+    @pytest.mark.asyncio
+    async def test_cb_use_promo_single_answer(self):
+        """Verify cb_use_promo only answers once when loyalty promo applied."""
+        from handlers.user.checkout import cb_use_promo
+
+        update = MagicMock()
+        update.callback_query.data = "promo:loyalty:50"
+        update.callback_query.answer = AsyncMock()
+        context = MagicMock()
+        context.user_data = {}
+
+        with patch("handlers.user.checkout._show_time_slots", new=AsyncMock()):
+            await cb_use_promo(update, context)
+            assert update.callback_query.answer.call_count == 1
+            assert "50 loyalty points" in update.callback_query.answer.call_args[0][0]

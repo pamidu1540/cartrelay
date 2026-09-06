@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -22,9 +23,20 @@ func (s *Server) CheckHealth(ctx context.Context, _ *pb.Empty) (*pb.HealthStatus
 		dbStatus = fmt.Sprintf("error: %v", err)
 	}
 	maintMode, _ := GetConfigValue(ctx, "maintenance_mode")
+	isMaint := maintMode == "true"
+	if !isMaint {
+		maintUntilStr, _ := GetConfigValue(ctx, "maintenance_until")
+		maintFromStr, _ := GetConfigValue(ctx, "maintenance_from")
+		maintUntil, _ := strconv.ParseInt(maintUntilStr, 10, 64)
+		maintFrom, _ := strconv.ParseInt(maintFromStr, 10, 64)
+		now := time.Now().Unix()
+		if maintUntil > 0 && now >= maintFrom && now < maintUntil {
+			isMaint = true
+		}
+	}
 	return &pb.HealthStatus{
 		IsHealthy:       dbStatus == "ok",
-		MaintenanceMode: maintMode == "true",
+		MaintenanceMode: isMaint,
 		Version:         Version,
 		DbStatus:        dbStatus,
 		UptimeSeconds:   int64(time.Since(startedAt).Seconds()),
@@ -47,6 +59,9 @@ func (s *Server) ToggleMaintenance(ctx context.Context, _ *pb.Empty) (*pb.Status
 	label := "disabled"
 	if next == "true" {
 		label = "enabled"
+	} else {
+		_ = SetConfigValue(ctx, "maintenance_from", "0")
+		_ = SetConfigValue(ctx, "maintenance_until", "0")
 	}
 	DBAuditLog(ctx, actorFromCtx(ctx), "toggle_maintenance", "config", "maintenance="+next)
 	return &pb.StatusResponse{Success: true, Message: "Maintenance mode " + label}, nil
@@ -57,8 +72,11 @@ func (s *Server) ScheduleMaintenance(ctx context.Context, req *pb.MaintenanceWin
 	if req.StartTs <= 0 || req.EndTs <= req.StartTs {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid maintenance window")
 	}
+	if err := SetConfigValue(ctx, "maintenance_from", fmt.Sprintf("%d", req.StartTs)); err != nil {
+		return nil, status.Errorf(codes.Internal, "schedule maintenance from: %v", err)
+	}
 	if err := SetConfigValue(ctx, "maintenance_until", fmt.Sprintf("%d", req.EndTs)); err != nil {
-		return nil, status.Errorf(codes.Internal, "schedule maintenance: %v", err)
+		return nil, status.Errorf(codes.Internal, "schedule maintenance until: %v", err)
 	}
 	DBAuditLog(ctx, actorFromCtx(ctx), "schedule_maintenance", "config",
 		fmt.Sprintf("start=%d end=%d reason=%q", req.StartTs, req.EndTs, req.Reason))

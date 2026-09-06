@@ -309,13 +309,13 @@ def build_application(bot: Any = None) -> Application:
             ],
             STATE_PROFILE_NAME:  [
                 CallbackQueryHandler(cb_profile_edit, pattern=r"^profile_edit:"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_profile_name)
+                MessageHandler(filters.ALL & ~filters.COMMAND, msg_profile_name)
             ],
             STATE_PROFILE_PHONE: [
                 CallbackQueryHandler(cb_profile_edit, pattern=r"^profile_edit:"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, msg_profile_phone)
+                MessageHandler(filters.ALL & ~filters.COMMAND, msg_profile_phone)
             ],
-            STATE_NEW_ADDRESS:   [MessageHandler((filters.TEXT | filters.LOCATION) & ~filters.COMMAND, msg_new_address)],
+            STATE_NEW_ADDRESS:   [MessageHandler(filters.ALL & ~filters.COMMAND, msg_new_address)],
             STATE_PROMO_CODE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_promo_code)],
         },
         fallbacks=[
