@@ -68,7 +68,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             await send_or_edit_main_menu(
                 update,
                 context,
-                "👋 *Welcome to Logistics Engine!*\n\nLet's set up your profile first.\n\n✏️ *Step 1:* Please enter your full display name:",
+                "👋 *Welcome to CartRelay!*\n\nLet's set up your profile first.\n\n✏️ *Step 1:* Please enter your full display name:",
             )
             return STATE_PROFILE_NAME
 
@@ -157,9 +157,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "*Track my delivery*\n"
         "Use /orders to see your current order status and ETA updates.\n\n"
         "*Cancel an order*\n"
-        "Use /orders → tap the order → Cancel (within 5 minutes of placing).\n\n"
+        "Use /orders → tap the order → Cancel (within the storeâ€™s cancellation window).\n\n"
         "*Contact support*\n"
-        "Use /support to open a live support chat with our team.\n\n"
+        "Use /report to report a problem with an order.\n\n"
         "*Promo codes*\n"
         "Enter your promo code at checkout when prompted.\n\n"
         "*Loyalty points*\n"
@@ -178,9 +178,9 @@ async def cb_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "*Track my delivery*\n"
         "Use /orders to see your current order status and ETA updates.\n\n"
         "*Cancel an order*\n"
-        "Use /orders → tap the order → Cancel (within 5 minutes of placing).\n\n"
+        "Use /orders → tap the order → Cancel (within the storeâ€™s cancellation window).\n\n"
         "*Contact support*\n"
-        "Use /support to open a live support chat with our team.\n\n"
+        "Use /report to report a problem with an order.\n\n"
         "*Promo codes*\n"
         "Enter your promo code at checkout when prompted.\n\n"
         "*Loyalty points*\n"
@@ -204,12 +204,12 @@ async def cb_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 @rate_limit
 async def cmd_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """U-046: Live support command."""
+    """Explain how to report an order issue."""
     await _safe_reply(
         update,
         context,
         "🆘 *Support*\n\n"
-        "Our support team will be with you shortly.\n\n"
+        "For an order problem, use /report with your order number.\n\n"
         "Please describe your issue and include your order number if applicable "
         "(e.g. ORD-20260513-0047).\n\n"
         "You can also use /report to report an issue with a specific order.",

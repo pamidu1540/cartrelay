@@ -169,7 +169,7 @@ func RestartContainers() error {
 }
 
 func executeDockerCompose(args ...string) error {
-	base := []string{"compose", "-f", "/opt/logistics-system/deploy/docker-compose.yml"}
+	base := []string{"compose", "-f", "/opt/logistics-system/deploy/docker-compose.yml", "--env-file", os.DevNull}
 	// #nosec G204 -- admin CLI arguments are inherently trusted
 	cmd := exec.Command("docker", append(base, args...)...)
 	cmd.Stdout = os.Stdout
@@ -198,7 +198,7 @@ func (s *statusResponse) ProtoReflect() proto.Message { return nil }
 
 // logisticsSocketPath is the default path to the engine's gRPC socket.
 // It can be overridden in tests.
-var logisticsSocketPath = "/app/sockets/logistics.sock"
+var logisticsSocketPath = "/opt/logistics-system/deploy/sockets/logistics.sock"
 
 // GRPCToggleMaintenance dials the engine socket and calls ToggleMaintenance.
 // Uses google.golang.org/protobuf/types/known/emptypb for the request and a

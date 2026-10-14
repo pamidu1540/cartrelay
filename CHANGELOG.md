@@ -1,11 +1,24 @@
 # Changelog
 
-All notable changes to the Logistics Engine platform will be documented in this file.
+All notable changes to CartRelay (formerly Logistics Engine Core) are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+
+## [Unreleased]
+
+### Changed
+- Renamed the product and repository to CartRelay, reflecting its Telegram ecommerce workflow.
+- Rewrote setup, architecture, deployment, contribution, and security documentation with explicit feature boundaries.
+- Simplified Linux installation to a source build with encrypted configuration and preserved deployment identifiers.
+- CI validates pull requests without pushing generated commits back to main.
+
+### Fixed
+- Host CLI maintenance socket path and encrypted configuration handling.
+- Scoped container environments, removed misleading live-support/privacy promises, and isolated database tests behind TEST_DATABASE_URL.
+- OTA signing reads its private key from the environment rather than command arguments.
 
 ## [v12.8.0] - 2026-09-06
 

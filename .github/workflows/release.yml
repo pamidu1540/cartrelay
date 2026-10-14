@@ -22,9 +22,13 @@ env:
   IMAGE_BOT:    ghcr.io/${{ github.repository }}/bot
 
 jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+
   release:
     name: Build binaries, push images, create release
     runs-on: ubuntu-latest
+    needs: validate
     permissions:
       contents: write    # create GitHub Release + upload assets
       packages: write    # push to GHCR
@@ -113,6 +117,8 @@ jobs:
 
       # ── OTA Package Generation ───────────────────────────────────────────────
       - name: Generate OTA Package
+        env:
+          OTA_PRIVATE_KEY: ${{ secrets.OTA_PRIVATE_KEY }}
         run: |
           mkdir -p ota_payload
           cat > ota_payload/docker-compose.yml << 'COMPOSE'
@@ -180,9 +186,10 @@ jobs:
               driver: bridge
           COMPOSE
           tar -czf update.tar.gz -C ota_payload docker-compose.yml
+          sha256sum dist/* update.tar.gz > SHA256SUMS.txt
           
           # Sign the tarball
-          SIG=$(go run .github/scripts/sign_ota.go update.tar.gz "${{ secrets.OTA_PRIVATE_KEY }}")
+          SIG=$(go run .github/scripts/sign_ota.go update.tar.gz)
           
           # Generate manifest
           cat > manifest.json << MANIFEST
@@ -229,5 +236,5 @@ jobs:
             dist/logistics-supervisor-linux-amd64
             update.tar.gz
             manifest.json
-            install.sh
+            SHA256SUMS.txt
           fail_on_unmatched_files: true

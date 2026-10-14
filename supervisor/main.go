@@ -49,8 +49,8 @@ func main() {
 	loadEnv()
 
 	root := &cobra.Command{
-		Use:   "logistics",
-		Short: "Logistics System Supervisor",
+		Use:   "cartrelay",
+		Short: "CartRelay ecommerce deployment supervisor",
 	}
 
 	// ── start ─────────────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ func main() {
 		Use:   "start",
 		Short: "Start all services",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return executeDockerCompose("up", "-d", "--build")
+			return executeDockerCompose("up", "-d")
 		},
 	})
 
@@ -140,7 +140,7 @@ func main() {
 			if dryRun {
 				manifestURL := os.Getenv("UPDATE_MANIFEST_URL")
 				if manifestURL == "" {
-					manifestURL = "https://github.com/pamidu1540/logistics-engine-core/releases/latest/download/manifest.json"
+					manifestURL = "https://github.com/pamidu1540/cartrelay/releases/latest/download/manifest.json"
 				}
 				m, err := fetchManifest(manifestURL)
 				if err != nil {
@@ -158,7 +158,7 @@ func main() {
 			return nil
 		},
 	}
-	updateCmd.Flags().Bool("dry-run", false, "Fetch and verify manifest without applying")
+	updateCmd.Flags().Bool("dry-run", false, "Fetch manifest metadata without applying or verifying the payload")
 	root.AddCommand(updateCmd)
 
 	// ── rollback ──────────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ func main() {
 		Use:   "version",
 		Short: "Print supervisor version",
 		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Printf("logistics-supervisor %s\n", Version)
+			fmt.Printf("cartrelay %s\n", Version)
 		},
 	})
 

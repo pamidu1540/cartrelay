@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "   🚀 LOGISTICS ENGINE - BOOTSTRAP TASK RUNNER (SOURCE)" -ForegroundColor Cyan
+Write-Host "   🚀 CARTRELAY - BOOTSTRAP TASK RUNNER (SOURCE)" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 $ToolsDir = Join-Path $PSScriptRoot ".tools\bin"

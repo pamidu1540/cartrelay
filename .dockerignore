@@ -3,6 +3,13 @@
 # The build context is the repo root so all Dockerfiles can COPY from the
 # correct relative paths, but irrelevant files are excluded here.
 
+# Unrelated workspace checkout and local tools
+axiom-ai-studio/
+.tools/
+secrets/
+backups/
+deploy/sockets/
+
 # Version control
 .git
 .gitignore

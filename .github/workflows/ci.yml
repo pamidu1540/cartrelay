@@ -1,282 +1,73 @@
-name: CI
-
-# ─────────────────────────────────────────────────────────────────────────────
-# DESIGN: You push source code only. This workflow handles everything else.
-#
-# What you push:          What CI auto-generates & commits back:
-#   engine/*.go             engine/go.sum          (go mod tidy)
-#   engine/go.mod           engine/api/*.pb.go     (protoc)
-#   engine/api/*.proto      supervisor/go.sum      (go mod tidy)
-#   supervisor/*.go         bot/src/api/*_pb2*.py  (protoc)
-#   supervisor/go.mod
-#   bot/src/*.py
-#   bot/pyproject.toml
-#
-# Jobs run in order:   prep → validate → docker
-# Each job checks out ref:main so it always sees prep's committed output.
-# ─────────────────────────────────────────────────────────────────────────────
+name: CartRelay CI
 
 on:
   push:
     branches: [main]
-    # [skip ci] commits from the prep job never re-trigger this workflow.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+  workflow_call:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  REGISTRY: ghcr.io
-  IMAGE_ENGINE: ghcr.io/${{ github.repository }}/engine
-  IMAGE_BOT:    ghcr.io/${{ github.repository }}/bot
+permissions:
+  contents: read
 
-# One run at a time per branch. Cancel the previous run if a new push arrives
-# before it finishes — no point validating stale code.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# ─── Job 1: PREP ─────────────────────────────────────────────────────────────
 jobs:
-  prep:
-    name: Prep — tidy modules + generate proto
+  go:
+    name: Go (${{ matrix.module }})
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+    strategy:
+      matrix:
+        module: [engine, supervisor]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-          check-latest: true
-          cache-dependency-path: |
-            engine/go.mod
-            supervisor/go.mod
+          cache-dependency-path: '${{ matrix.module }}/go.sum'
+      - run: go mod verify
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: go build ./...
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+  bot:
+    name: Python storefront
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --directory bot --all-extras --locked
+      - run: uv run --directory bot --locked ruff check src tests
+      - run: uv run --directory bot --locked pytest tests -q
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install protoc + Go plugins
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends protobuf-compiler
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
-      - name: Install Python gRPC tools
-        run: uv pip install --system --quiet grpcio-tools==1.80.0
-
-      - name: go mod tidy — engine
-        working-directory: engine
-        run: go mod tidy
-
-      - name: go mod tidy — supervisor
-        working-directory: supervisor
-        run: go mod tidy
-
-      - name: Generate Go proto bindings
-        run: |
-          protoc --proto_path=engine/api \
-            --go_out=engine/api     --go_opt=paths=source_relative \
-            --go-grpc_out=engine/api --go-grpc_opt=paths=source_relative \
-            engine/api/logistics.proto
-
-      - name: Generate Python proto bindings
-        run: |
-          mkdir -p bot/src/api
-          python -m grpc_tools.protoc \
-            -Iengine/api \
-            --python_out=bot/src/api \
-            --grpc_python_out=bot/src/api \
-            engine/api/logistics.proto
-          touch bot/src/api/__init__.py
-          sed -i 's/^import logistics_pb2/from . import logistics_pb2/' \
-            bot/src/api/logistics_pb2_grpc.py
-
-      - name: Commit generated files back to main
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add \
-            engine/go.sum \
-            engine/go.mod \
-            engine/api/logistics.pb.go \
-            engine/api/logistics_grpc.pb.go \
-            supervisor/go.sum \
-            supervisor/go.mod \
-            bot/src/api/logistics_pb2.py \
-            bot/src/api/logistics_pb2_grpc.py \
-            bot/src/api/__init__.py
-
-          if git diff --staged --quiet; then
-            echo "Nothing to commit — all generated files are already up to date."
-          else
-            git commit -m "chore: auto-update generated files [skip ci]"
-            git push origin ${{ github.ref_name }}
-          fi
-
-# ─── Job 2: VALIDATE ─────────────────────────────────────────────────────────
-  validate:
-    name: Validate — build, test, lint, vulns
+  containers:
+    name: Container build and installer syntax
     runs-on: ubuntu-latest
-    needs: prep
-
+    needs: [go, bot]
     steps:
-      - name: Checkout (post-prep HEAD)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-          check-latest: true
-          cache-dependency-path: |
-            engine/go.sum
-            supervisor/go.sum
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: go vet — engine
-        working-directory: engine
-        run: go vet ./...
-
-      - name: go build — engine
-        working-directory: engine
-        run: go build -ldflags="-X main.Version=ci-${{ github.sha }}" ./...
-
-      - name: go test — engine
-        working-directory: engine
-        run: |
-          if find . -name '*_test.go' | grep -q .; then
-            go test -v -race ./...
-          else
-            echo "No tests yet — skipping."
-          fi
-
-      - name: go vet — supervisor
-        working-directory: supervisor
-        run: go vet ./...
-
-      - name: go build — supervisor
-        working-directory: supervisor
-        run: go build -ldflags="-X main.Version=ci-${{ github.sha }}" ./...
-
-      - name: go test — supervisor
-        working-directory: supervisor
-        run: |
-          if find . -name '*_test.go' | grep -q .; then
-            go test -v -race ./...
-          else
-            echo "No tests yet — skipping."
-          fi
-
-      - name: Install bot dependencies
-        working-directory: bot
-        run: |
-          uv pip install --system --quiet -e ".[dev]"
-
-      - name: ruff lint — bot
-        working-directory: bot
-        run: ruff check src/ --output-format=github
-
-      - name: pytest — bot
-        working-directory: bot
-        run: |
-          if [ -d tests ]; then pytest tests/ -v; else echo "No tests yet."; fi
-
-      - name: Hadolint — engine Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: engine/Dockerfile
-          failure-threshold: error
-
-      - name: Hadolint — bot Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: bot/Dockerfile
-          failure-threshold: error
-
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-
-      - name: govulncheck — engine
-        working-directory: engine
-        run: govulncheck ./... || true
-
-      - name: govulncheck — supervisor
-        working-directory: supervisor
-        run: govulncheck ./... || true
-
-# ─── Job 3: DOCKER ───────────────────────────────────────────────────────────
-  docker:
-    name: Docker — build & push to GHCR
-    runs-on: ubuntu-latest
-    needs: validate
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout (post-prep HEAD)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-
-
-      - name: Build & push engine image
-        uses: docker/build-push-action@v6
+      - uses: actions/checkout@v4
+      - run: bash -n install.sh
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: engine/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_ENGINE }}:${{ github.ref_name }}
-            ${{ env.IMAGE_ENGINE }}:${{ github.sha }}
-          build-args: BUILD_VERSION=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build & push bot image
-        uses: docker/build-push-action@v6
+          push: false
+          cache-from: type=gha,scope=engine
+          cache-to: type=gha,mode=max,scope=engine
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: bot/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_BOT }}:${{ github.ref_name }}
-            ${{ env.IMAGE_BOT }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          push: false
+          cache-from: type=gha,scope=bot
+          cache-to: type=gha,mode=max,scope=bot

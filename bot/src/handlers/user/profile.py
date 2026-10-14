@@ -503,13 +503,13 @@ async def msg_new_address(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             ]
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text="🎉 *Account Setup Complete!*\n\nWelcome to Logistics Engine! Your profile and default address are now configured. You can start shopping immediately:",
+                text="🎉 *Account Setup Complete!*\n\nWelcome to CartRelay! Your profile and default address are now configured. You can start shopping immediately:",
                 reply_markup=ReplyKeyboardRemove(),
                 parse_mode=ParseMode.MARKDOWN,
             )
             bot_msg = await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=f"👋 Welcome to Logistics Engine, *{update.effective_user.first_name}*!\n\nHow can we help you today?",
+                text=f"👋 Welcome to CartRelay, *{update.effective_user.first_name}*!\n\nHow can we help you today?",
                 reply_markup=InlineKeyboardMarkup(kb),
                 parse_mode=ParseMode.MARKDOWN,
             )
@@ -714,16 +714,16 @@ async def cb_language_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
 @rate_limit
 async def cmd_delete_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await delete_user_message(update, context)
-    """U-036: GDPR data deletion request."""
+    """Clear profile details and saved addresses; existing orders are retained."""
     kb = [
         [InlineKeyboardButton("⚠️ Yes, delete my data", callback_data="confirm_delete")],
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel")],
     ]
     await _safe_reply(update, context,
         "⚠️ *Delete Account*\n\n"
-        "This will anonymise all your personal data (name, phone, addresses).\n"
-        "Your order history will be retained for legal/accounting purposes but "
-        "will no longer be linked to your identity.\n\n"
+        "This clears your profile name, phone, and saved addresses.\n"
+        "Existing orders may retain your Telegram ID and delivery details. "
+        "Contact the store operator for further data removal.\n\n"
         "Are you sure?",
         reply_markup=InlineKeyboardMarkup(kb),
     )
@@ -766,8 +766,9 @@ async def cb_confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 user_id=user_id,
             )
 
+        context.user_data.clear()
         await query.edit_message_text(
-            "✅ Your personal data has been removed. Thank you for using our service."
+            "✅ Your profile and saved addresses have been cleared. Existing order records are retained."
         )
     except Exception as e:
         await send_or_edit_main_menu(update, context, f"⚠️ Could not delete account: {e}")

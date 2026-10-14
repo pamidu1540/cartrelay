@@ -1,5 +1,5 @@
 [Unit]
-Description=Logistics System (Docker Compose stack)
+Description=CartRelay ecommerce platform
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
@@ -8,16 +8,15 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/logistics-system/deploy
-EnvironmentFile=/opt/logistics-system/deploy/.env
 
-# Start compose stack (using already pulled images for robust & fast boot)
-ExecStart=/usr/bin/docker compose up -d
+# Start the previously built application images.
+ExecStart=/usr/local/bin/cartrelay start
 
 # Graceful stop
-ExecStop=/usr/bin/docker compose stop --timeout 30
+ExecStop=/usr/local/bin/cartrelay stop
 
-# Reload — Pull fresh images and recreate only if the image changed
-ExecReload=/bin/bash -c '/usr/bin/docker compose pull && /usr/bin/docker compose up -d'
+# Reload restarts the running application containers.
+ExecReload=/usr/local/bin/cartrelay restart
 
 TimeoutStartSec=180
 TimeoutStopSec=45

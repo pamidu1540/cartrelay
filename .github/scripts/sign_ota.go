@@ -10,12 +10,12 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 3 {
-		fmt.Fprintf(os.Stderr, "Usage: sign_ota <tarball_path> <private_key_hex>\n")
+	if len(os.Args) != 2 {
+		fmt.Fprintf(os.Stderr, "Usage: OTA_PRIVATE_KEY=<private key> sign_ota <tarball_path>\n")
 		os.Exit(1)
 	}
 	tarballPath := os.Args[1]
-	privKeyHex := os.Args[2]
+	privKeyHex := os.Getenv("OTA_PRIVATE_KEY")
 
 	privKeyBytes, err := hex.DecodeString(privKeyHex)
 	if err != nil {

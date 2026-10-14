@@ -1,10 +1,12 @@
+# CartRelay development store. Settings may come from .env or the shell.
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: local_postgres
     restart: unless-stopped
-    command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=32MB", "-c", "work_mem=2MB", "-c", "maintenance_work_mem=8MB", "-c", "effective_cache_size=64MB"]
-    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,14 +21,15 @@ services:
     build:
       context: ..
       dockerfile: engine/Dockerfile
-    container_name: local_engine
     restart: unless-stopped
-    env_file: .env
     environment:
-      - GOMEMLIMIT=48MiB
-      - GOGC=50
-      - DATABASE_URL=postgres://${POSTGRES_USER}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-      - PGPASSWORD=${POSTGRES_PASSWORD}
+      DATABASE_URL: postgres://${POSTGRES_USER}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?Set INTERNAL_TOKEN}
+      ADMIN_USER_IDS: ${ADMIN_USER_IDS:?Set ADMIN_USER_IDS}
+      MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
+      DEPLOY_ENV: local_dev
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - sockets:/app/sockets
       - backups:/app/backups
@@ -45,11 +48,14 @@ services:
     build:
       context: ..
       dockerfile: bot/Dockerfile
-    container_name: local_bot
     restart: unless-stopped
-    env_file: .env
     environment:
-      - ENGINE_SOCKET=/app/sockets/logistics.sock
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?Set INTERNAL_TOKEN}
+      ENGINE_SOCKET: /app/sockets/logistics.sock
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DEFAULT_LAT: ${DEFAULT_LAT:-6.9271}
+      DEFAULT_LON: ${DEFAULT_LON:-79.8612}
     volumes:
       - sockets:/app/sockets:ro
     depends_on:
@@ -58,9 +64,9 @@ services:
     networks: [local_backend]
 
 volumes:
-  postgres_data: {driver: local}
-  sockets:       {driver: local}
-  backups:       {driver: local}
+  postgres_data:
+  sockets:
+  backups:
 
 networks:
   local_backend:

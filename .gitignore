@@ -1,4 +1,15 @@
 # Environments and Secrets
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+/secrets/
+/backups/
+/deploy/sockets/
+/axiom-ai-studio/
+cartrelay
+cartrelay.exe
 .env
 __pycache__/
 *.pyc

@@ -1,5 +1,7 @@
 [project]
-name = "logistics-bot"
+name = "cartrelay-bot"
+description = "Telegram storefront for the CartRelay ecommerce platform"
+license = "MIT"
 version = "12.8.0"
 requires-python = ">=3.13"
 dependencies = [

@@ -1,67 +1,78 @@
 version: '3'
 
 env:
-  PATH: '{{.USER_WORKING_DIR}}/.tools/bin:{{.PATH}}'
+  PATH: '{{.ROOT_DIR}}/.tools/bin:{{.PATH}}'
+  UV_PROJECT_ENVIRONMENT: '{{.ROOT_DIR}}/.tools/.venv'
 
 tasks:
   setup:
-    desc: "Download and bootstrap all necessary development tools into .tools/bin"
+    desc: Set up Python development dependencies (requires uv and Go)
     cmds:
-      - powershell -Command "New-Item -ItemType Directory -Force -Path .tools\bin | Out-Null"
-      - go env -w GOBIN="{{.USER_WORKING_DIR}}\.tools\bin"
-      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-      - go install github.com/securego/gosec/v2/cmd/gosec@latest
-      - powershell -Command "Invoke-WebRequest -Uri https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip -OutFile uv.zip"
-      - powershell -Command "Expand-Archive uv.zip -DestinationPath .tools\bin -Force"
-      - powershell -Command "Remove-Item uv.zip"
       - task: setup-python
 
   setup-python:
-    desc: "Set up the Python virtual environment and install dependencies"
-    env:
-      UV_PROJECT_ENVIRONMENT: "{{.USER_WORKING_DIR}}/.tools/.venv"
+    desc: Install Python 3.13 development dependencies
     cmds:
-      - .tools/bin/uv sync --directory bot --all-extras
+      - uv sync --directory bot --python 3.13 --all-extras --locked
 
   lint:
-    desc: "Run static analysis and linting (Go, Python, Docker)"
-    env:
-      UV_PROJECT_ENVIRONMENT: "{{.USER_WORKING_DIR}}/.tools/.venv"
+    desc: Check Go and Python source
     cmds:
-      - cd engine && ../.tools/bin/golangci-lint run ./...
-      - cd supervisor && ../.tools/bin/golangci-lint run ./...
-      - .tools/bin/uv run --directory bot ruff check src
-      - docker run --rm -i hadolint/hadolint < engine/Dockerfile || true
-      - docker run --rm -i hadolint/hadolint < bot/Dockerfile || true
+      - task: vet-engine
+      - task: vet-supervisor
+      - uv run --directory bot --locked ruff check src tests
+
+  vet-engine:
+    dir: engine
+    cmds: [go vet ./...]
+
+  vet-supervisor:
+    dir: supervisor
+    cmds: [go vet ./...]
 
   test:
-    desc: "Run test suites (Go and Python)"
-    env:
-      UV_PROJECT_ENVIRONMENT: "{{.USER_WORKING_DIR}}/.tools/.venv"
+    desc: Run unit tests (database tests need a disposable TEST_DATABASE_URL)
     cmds:
-      - cd engine && go test -v ./...
-      - cd supervisor && go test -v ./...
-      - .tools/bin/uv run --directory bot pytest tests
+      - task: test-engine
+      - task: test-supervisor
+      - uv run --directory bot --locked pytest tests
+
+  test-engine:
+    dir: engine
+    cmds: [go test ./...]
+
+  test-supervisor:
+    dir: supervisor
+    cmds: [go test ./...]
 
   build:
-    desc: "Build Engine and Supervisor"
+    desc: Build native engine and CartRelay CLI into bin/
     cmds:
-      - cd engine && go build -o ../bin/engine.exe .
-      - cd supervisor && go build -o ../bin/logistics.exe .
+      - task: build-engine
+      - task: build-supervisor
+
+  build-engine:
+    dir: engine
+    cmds: [go build -o ../bin/ ./...]
+
+  build-supervisor:
+    dir: supervisor
+    cmds:
+      - 'go build -o ../bin/cartrelay{{if eq OS "windows"}}.exe{{end}} .'
 
   env:
-    desc: "Generate local_test/.env interactively"
+    desc: Show configuration setup instructions
     cmds:
-      - powershell -Command "$BotToken = Read-Host 'Enter Telegram Bot Token'; $Admin = Read-Host 'Enter Admin User ID'; $Internal = -join ((48..57) + (97..122) | Get-Random -Count 32 | % {[char]$_}); $Content = \"TELEGRAM_BOT_TOKEN=$BotToken`nINTERNAL_TOKEN=$Internal`nADMIN_USER_IDS=$Admin`nDEPLOY_ENV=local_dev`nPOSTGRES_USER=postgres`nPOSTGRES_PASSWORD=postgres`nPOSTGRES_DB=logistics\"; Set-Content local_test/.env $Content"
+      - 'echo "Use local_test/.env.example with your secret manager. Never commit credentials. See README.md."'
 
   up:
-    desc: "Start local development stack"
+    desc: Start the development store using local_test/.env or shell variables
     dir: local_test
     cmds:
       - docker compose up --build -d
 
   down:
-    desc: "Stop local development stack"
+    desc: Stop the development store and preserve data
     dir: local_test
     cmds:
       - docker compose down

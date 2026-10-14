@@ -3,7 +3,7 @@ package main
 // tests/engine_integration_test.go
 //
 // Integration tests for the critical order placement path.
-// Runs against a real PostgreSQL instance (set DATABASE_URL env var).
+// Runs against a real PostgreSQL instance (set TEST_DATABASE_URL env var).
 // Covers:
 //   BUG-012: duplicate order rejected by idempotency key
 //   BUG-029: invalid status transitions rejected
@@ -22,7 +22,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("DATABASE_URL")
+	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn != "" {
 		if err := InitDatabase(dsn); err != nil {
 			fmt.Fprintf(os.Stderr, "db init failed: %v\n", err)
@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, "DATABASE_URL not set — integration tests requiring Postgres will be skipped")
+		fmt.Fprintln(os.Stderr, "TEST_DATABASE_URL not set — integration tests requiring Postgres will be skipped")
 	}
 	code := m.Run()
 	if dsn != "" {
@@ -44,8 +44,8 @@ func TestMain(m *testing.M) {
 
 func skipIfNoDB(t *testing.T) {
 	t.Helper()
-	if os.Getenv("DATABASE_URL") == "" {
-		t.Skip("DATABASE_URL not set — skipping DB integration test")
+	if os.Getenv("TEST_DATABASE_URL") == "" {
+		t.Skip("TEST_DATABASE_URL not set — skipping DB integration test")
 	}
 }
 
