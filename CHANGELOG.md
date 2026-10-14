@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🛡 Proprietary Licensing & Security
 - **Software License:** Updated repository software license to **Proprietary Software License Agreement (All Rights Reserved)**.
-- **Dependency Hardening:** Upgraded 80+ Go dependencies across `engine` and `supervisor` modules (`pgx/v5`, `google.golang.org/grpc`, `datadog-agent`, `opentelemetry`, `zap`, `bubbletea`, `moby/client`).
+- **Dependency Hardening:** Upgraded 80+ Go dependencies across `engine` and `supervisor` modules (`pgx/v5`, `google.golang.org/grpc`, `opentelemetry`, `zap`, `bubbletea`, `moby/client`).
 - **Python Environment:** Synchronized Python virtual environment (`.venv`) via `uv`.
 
 ### 🧪 Testing & Benchmarks

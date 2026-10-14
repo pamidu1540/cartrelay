@@ -15,11 +15,6 @@ import (
 
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/keepalive"
-
-	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	pb "logistics-engine/api"
 )
@@ -37,26 +32,9 @@ func main() {
 		Level:     logLevel(),
 	})))
 
-	// ── Datadog Tracer ──────────────────────────────────────────────────────
-	if os.Getenv("DD_AGENT_HOST") != "" || os.Getenv("DD_API_KEY") != "" {
-		slog.Info("starting Datadog tracer...")
-		tracer.Start(
-			tracer.WithService("logistics-engine"),
-			tracer.WithEnv(os.Getenv("DD_ENV")),
-			tracer.WithServiceVersion(Version),
-		)
-		defer tracer.Stop()
-	}
-
 	// ── Required env vars ───────────────────────────────────────────────────
 	if os.Getenv("INTERNAL_TOKEN") == "" {
 		slog.Error("INTERNAL_TOKEN is not set — refusing to start")
-		os.Exit(1)
-	}
-
-	// ── License check ────────────────────────────────────────────────────────
-	if err := VerifyLicense(); err != nil {
-		slog.Error("license check failed", "err", err)
 		os.Exit(1)
 	}
 
@@ -137,39 +115,15 @@ func main() {
 	listener := newLoggedLimitListener(netutil.LimitListener(raw, lim), lim)
 
 	// ── gRPC server options ──────────────────────────────────────────────────
-	var chain []grpc.UnaryServerInterceptor
-	if os.Getenv("DD_AGENT_HOST") != "" || os.Getenv("DD_API_KEY") != "" {
-		chain = append(chain, grpctrace.UnaryServerInterceptor(grpctrace.WithServiceName("logistics-engine")))
+	chain := []grpc.UnaryServerInterceptor{
+		RecoveryInterceptor,
+		AuthInterceptor,
+		RateLimitInterceptor,
 	}
-	chain = append(chain, RecoveryInterceptor, AuthInterceptor, RateLimitInterceptor)
 
 	srvOpts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(chain...),
 		grpc.MaxConcurrentStreams(256),
-		// Unix socket: keepalive is unnecessary overhead for local communication.
-		// Kept minimal for forward-compatibility with future TCP migration.
-		grpc.KeepaliveParams(keepalive.ServerParameters{
-			MaxConnectionIdle: 60 * time.Second,
-			Time:              30 * time.Second,
-			Timeout:           5 * time.Second,
-		}),
-		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             10 * time.Second,
-			PermitWithoutStream: true,
-		}),
-	}
-
-	// SEC-001: TLS if cert/key paths are set
-	if certFile, keyFile := os.Getenv("TLS_CERT_FILE"), os.Getenv("TLS_KEY_FILE"); certFile != "" && keyFile != "" {
-		creds, err := credentials.NewServerTLSFromFile(certFile, keyFile)
-		if err != nil {
-			slog.Error("TLS credentials load failed", "err", err)
-			os.Exit(1)
-		}
-		srvOpts = append(srvOpts, grpc.Creds(creds))
-		slog.Info("TLS enabled", "cert", certFile)
-	} else {
-		slog.Warn("TLS not configured — plaintext gRPC (set TLS_CERT_FILE + TLS_KEY_FILE for production)")
 	}
 
 	srv := grpc.NewServer(srvOpts...)
@@ -181,8 +135,6 @@ func main() {
 		bgCancel()
 		srv.GracefulStop()
 	}
-
-	StartLicenseBackgroundChecker(shutdown)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)

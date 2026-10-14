@@ -1,48 +1,18 @@
-# bot/Dockerfile — multi-stage build (v5)
-
-# ── Stage 1: proto codegen ────────────────────────────────────────────────────
-FROM python:3.13-slim AS proto-gen
-COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /uvx /bin/
-
-RUN uv pip install --system --no-cache-dir grpcio-tools==1.80.0
-
-WORKDIR /proto
-COPY engine/api/logistics.proto ./logistics.proto
-RUN mkdir -p /out && \
-    python -m grpc_tools.protoc \
-      -I. \
-      --python_out=/out \
-      --grpc_python_out=/out \
-      logistics.proto && \
-    mkdir -p /out/api && \
-    mv /out/logistics_pb2*.py /out/api/ && \
-    touch /out/api/__init__.py
-
-# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+# Telegram bot container image.
 FROM python:3.13-slim AS runtime
 COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /uvx /bin/
 
 RUN useradd -m -u 1001 bot
-
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
-
 WORKDIR /app
 
 RUN uv pip install --system --no-cache-dir \
-        "python-telegram-bot[job-queue]>=22.7.0" \
-        "grpcio>=1.80.0" \
-        "protobuf>=6.31.1,<7.0.0" \
-        "anyio>=4.13.0" \
-        "structlog>=25.5.0" \
-        "ddtrace>=2.12.0"
+    "python-telegram-bot[job-queue]>=22.7.0" \
+    "grpcio>=1.80.0" \
+    "protobuf>=6.31.1,<7.0.0"
 
-COPY --from=proto-gen /out/api /app/api
-COPY bot/src/ /app/
-
-RUN mkdir -p /app/sockets && chown -R bot:bot /app
-
+COPY --chown=bot:bot bot/src/ /app/
 USER bot
-
 CMD ["python", "-m", "main"]

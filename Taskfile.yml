@@ -52,7 +52,7 @@ tasks:
   env:
     desc: "Generate local_test/.env interactively"
     cmds:
-      - powershell -Command "$BotToken = Read-Host 'Enter Telegram Bot Token'; $Admin = Read-Host 'Enter Admin User ID'; $DD = Read-Host 'Enter Datadog API Key (or empty)'; $Internal = -join ((48..57) + (97..122) | Get-Random -Count 32 | % {[char]$_}); $Content = \"TELEGRAM_BOT_TOKEN=$BotToken`nINTERNAL_TOKEN=$Internal`nADMIN_USER_IDS=$Admin`nDD_API_KEY=$DD`nDEPLOY_ENV=local_dev`nPOSTGRES_USER=postgres`nPOSTGRES_PASSWORD=postgres`nPOSTGRES_DB=logistics\"; Set-Content local_test/.env $Content"
+      - powershell -Command "$BotToken = Read-Host 'Enter Telegram Bot Token'; $Admin = Read-Host 'Enter Admin User ID'; $Internal = -join ((48..57) + (97..122) | Get-Random -Count 32 | % {[char]$_}); $Content = \"TELEGRAM_BOT_TOKEN=$BotToken`nINTERNAL_TOKEN=$Internal`nADMIN_USER_IDS=$Admin`nDEPLOY_ENV=local_dev`nPOSTGRES_USER=postgres`nPOSTGRES_PASSWORD=postgres`nPOSTGRES_DB=logistics\"; Set-Content local_test/.env $Content"
 
   up:
     desc: "Start local development stack"

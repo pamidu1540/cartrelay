@@ -19,8 +19,12 @@ local_test/.gopath/
 *.db-journal
 /engine/data/
 
-# Compiled Binaries
+# Compiled Binaries and Packages
 bin/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
 engine_bin
 logistics
 logistics.exe

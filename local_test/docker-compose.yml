@@ -15,47 +15,24 @@ services:
       start_period: 15s
     networks: [local_backend]
 
-  datadog-agent:
-    image: gcr.io/datadoghq/agent:7
-    container_name: local_datadog-agent
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      - DD_API_KEY=${DD_API_KEY}
-      - DD_SITE=${DD_SITE:-datadoghq.com}
-      - DD_ENV=${DEPLOY_ENV:-local_dev}
-      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
-      - DD_APM_ENABLED=true
-      - DD_APM_NON_LOCAL_TRAFFIC=true
-      - DD_LOGS_ENABLED=true
-      - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /proc/:/host/proc/:ro
-      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
-    networks: [local_backend]
-
   engine:
-    build: ../engine
+    build:
+      context: ..
+      dockerfile: engine/Dockerfile
     container_name: local_engine
     restart: unless-stopped
     env_file: .env
     environment:
       - GOMEMLIMIT=48MiB
       - GOGC=50
-      - DD_AGENT_HOST=datadog-agent
-      - DD_ENV=${DEPLOY_ENV:-local_dev}
-      - DD_SERVICE=logistics-engine
-      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      - DATABASE_URL=postgres://${POSTGRES_USER}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      - PGPASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - sockets:/app/sockets
       - backups:/app/backups
     depends_on:
       postgres:
         condition: service_healthy
-      datadog-agent:
-        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "test -S /app/sockets/logistics.sock"]
       interval: 10s
@@ -65,22 +42,19 @@ services:
     networks: [local_backend]
 
   bot:
-    build: ../bot
+    build:
+      context: ..
+      dockerfile: bot/Dockerfile
     container_name: local_bot
     restart: unless-stopped
     env_file: .env
     environment:
       - ENGINE_SOCKET=/app/sockets/logistics.sock
-      - DD_AGENT_HOST=datadog-agent
-      - DD_ENV=${DEPLOY_ENV:-local_dev}
-      - DD_SERVICE=logistics-bot
     volumes:
       - sockets:/app/sockets:ro
     depends_on:
       engine:
         condition: service_healthy
-      datadog-agent:
-        condition: service_started
     networks: [local_backend]
 
 volumes:

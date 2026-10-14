@@ -140,7 +140,7 @@ func main() {
 			if dryRun {
 				manifestURL := os.Getenv("UPDATE_MANIFEST_URL")
 				if manifestURL == "" {
-					manifestURL = "https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/manifest.json"
+					manifestURL = "https://github.com/pamidu1540/logistics-engine-core/releases/latest/download/manifest.json"
 				}
 				m, err := fetchManifest(manifestURL)
 				if err != nil {

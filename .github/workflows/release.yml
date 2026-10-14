@@ -1,13 +1,13 @@
 name: Release
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Triggered when you push a version tag: git tag v4.3.2 && git push --tags
+# Triggered when you push a version tag: git tag v12.8.0 && git push --tags
 #
-# What it does (all automatically, no local work needed):
+# What it does:
 #   1. Builds Linux amd64 binaries for engine and supervisor
-#   2. Pushes versioned Docker images to GHCR  (:v4.3.2 and :latest)
-#   3. Creates a GitHub Release with binaries attached and docker pull cmds
-#   4. Uploads binaries + install.sh to Cloudflare R2
+#   2. Pushes versioned Docker images to GHCR (:v* and :latest)
+#   3. Generates signed OTA package and manifest pointing to GitHub Releases
+#   4. Creates GitHub Release with amd64 binaries, OTA assets, and install.sh
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -57,7 +57,7 @@ jobs:
             --go-grpc_out=engine/api --go-grpc_opt=paths=source_relative \
             engine/api/logistics.proto
 
-      # ── Binaries ──────────────────────────────────────────────────────────
+      # ── Binaries (Linux amd64) ──────────────────────────────────────────────
       - name: Build engine binary (linux/amd64)
         working-directory: engine
         run: |
@@ -67,28 +67,12 @@ jobs:
             -o ../dist/logistics-engine-linux-amd64 \
             .
 
-      - name: Build engine binary (linux/arm64)
-        working-directory: engine
-        run: |
-          GOOS=linux GOARCH=arm64 go build \
-            -ldflags="-w -s -X main.Version=${{ github.ref_name }}" \
-            -o ../dist/logistics-engine-linux-arm64 \
-            .
-
       - name: Build supervisor binary (linux/amd64)
         working-directory: supervisor
         run: |
           GOOS=linux GOARCH=amd64 go build \
             -ldflags="-w -s -X main.Version=${{ github.ref_name }}" \
             -o ../dist/logistics-supervisor-linux-amd64 \
-            .
-
-      - name: Build supervisor binary (linux/arm64)
-        working-directory: supervisor
-        run: |
-          GOOS=linux GOARCH=arm64 go build \
-            -ldflags="-w -s -X main.Version=${{ github.ref_name }}" \
-            -o ../dist/logistics-supervisor-linux-arm64 \
             .
 
       # ── Docker images ──────────────────────────────────────────────────────
@@ -102,8 +86,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-
-
       - name: Build & push engine image
         uses: docker/build-push-action@v6
         with:
@@ -113,7 +95,7 @@ jobs:
           tags: |
             ${{ env.IMAGE_ENGINE }}:${{ github.ref_name }}
             ${{ env.IMAGE_ENGINE }}:latest
-          build-args: BUILD_VERSION=${{ github.ref_name }}
+          build-args: VERSION=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -128,44 +110,6 @@ jobs:
             ${{ env.IMAGE_BOT }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      # ── Changelog ──────────────────────────────────────────────────────────
-      - name: Generate changelog
-        id: changelog
-        run: |
-          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -z "$PREV" ]; then
-            LOG=$(git log --oneline --no-merges | head -30)
-          else
-            LOG=$(git log --oneline --no-merges "${PREV}..HEAD")
-          fi
-          {
-            echo "CHANGELOG<<EOF"
-            echo "$LOG"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-
-      # ── GitHub Release ─────────────────────────────────────────────────────
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          body: |
-            ## What's changed
-            ${{ steps.changelog.outputs.CHANGELOG }}
-
-            ## Docker images
-            ```
-            docker pull ghcr.io/${{ github.repository }}/engine:${{ github.ref_name }}
-            docker pull ghcr.io/${{ github.repository }}/bot:${{ github.ref_name }}
-            ```
-          files: |
-            dist/logistics-engine-linux-amd64
-            dist/logistics-engine-linux-arm64
-            dist/logistics-supervisor-linux-amd64
-            dist/logistics-supervisor-linux-arm64
-          fail_on_unmatched_files: true
 
       # ── OTA Package Generation ───────────────────────────────────────────────
       - name: Generate OTA Package
@@ -194,11 +138,11 @@ jobs:
               container_name: logistics_engine
               restart: unless-stopped
               environment:
-                - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+                - DATABASE_URL=postgres://${POSTGRES_USER}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+                - PGPASSWORD=${POSTGRES_PASSWORD}
                 - INTERNAL_TOKEN=${INTERNAL_TOKEN}
                 - MAPBOX_TOKEN=${MAPBOX_TOKEN}
                 - ADMIN_USER_IDS=${ADMIN_USER_IDS}
-                - LICENSE_PUBLIC_KEY=${LICENSE_PUBLIC_KEY:-}
                 - BUILD_VERSION=${{ github.ref_name }}
               volumes:
                 - sockets:/app/sockets
@@ -244,51 +188,46 @@ jobs:
           cat > manifest.json << MANIFEST
           {
             "version": "${{ github.ref_name }}",
-            "url": "https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/${{ github.ref_name }}/update.tar.gz",
+            "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/update.tar.gz",
             "signature": "$SIG"
           }
           MANIFEST
 
-      # ── Cloudflare R2 Distribution ─────────────────────────────────────────
-      - name: Upload Binaries to Cloudflare R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
+      # ── Changelog ──────────────────────────────────────────────────────────
+      - name: Generate changelog
+        id: changelog
         run: |
-          echo "Initiating secure upload to Cloudflare R2..."
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV" ]; then
+            LOG=$(git log --oneline --no-merges | head -30)
+          else
+            LOG=$(git log --oneline --no-merges "${PREV}..HEAD")
+          fi
+          {
+            echo "CHANGELOG<<EOF"
+            echo "$LOG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
-          ENDPOINT="https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-          BUCKET="s3://${{ secrets.R2_BUCKET_NAME }}/${{ github.ref_name }}"
+      # ── GitHub Release ─────────────────────────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            ## What's changed
+            ${{ steps.changelog.outputs.CHANGELOG }}
 
-          # 1. Upload the engine binaries (amd64 + arm64)
-          aws s3 cp ./dist/logistics-engine-linux-amd64 $BUCKET/logistics-engine-linux-amd64 \
-            --endpoint-url $ENDPOINT
-          aws s3 cp ./dist/logistics-engine-linux-arm64 $BUCKET/logistics-engine-linux-arm64 \
-            --endpoint-url $ENDPOINT
-
-          # 2. Upload the supervisor binaries (amd64 + arm64)
-          aws s3 cp ./dist/logistics-supervisor-linux-amd64 $BUCKET/logistics-supervisor-linux-amd64 \
-            --endpoint-url $ENDPOINT
-          aws s3 cp ./dist/logistics-supervisor-linux-arm64 $BUCKET/logistics-supervisor-linux-arm64 \
-            --endpoint-url $ENDPOINT
-
-          # 3. Upload the installation script
-          aws s3 cp ./install.sh $BUCKET/install.sh \
-            --endpoint-url $ENDPOINT
-
-          # 4. Mirror to a 'latest' folder for static CDN URLs
-          aws s3 cp ./dist/logistics-supervisor-linux-amd64 s3://${{ secrets.R2_BUCKET_NAME }}/latest/supervisor-amd64 \
-            --endpoint-url $ENDPOINT
-          aws s3 cp ./dist/logistics-supervisor-linux-arm64 s3://${{ secrets.R2_BUCKET_NAME }}/latest/supervisor-arm64 \
-            --endpoint-url $ENDPOINT
-          aws s3 cp ./install.sh s3://${{ secrets.R2_BUCKET_NAME }}/latest/install.sh \
-            --endpoint-url $ENDPOINT
-
-          # 5. Upload OTA updates
-          aws s3 cp ./update.tar.gz $BUCKET/update.tar.gz \
-            --endpoint-url $ENDPOINT
-          aws s3 cp ./manifest.json s3://${{ secrets.R2_BUCKET_NAME }}/latest/manifest.json \
-            --endpoint-url $ENDPOINT
-
-          echo "✅ Upload complete!"
+            ## Docker images
+            ```
+            docker pull ghcr.io/${{ github.repository }}/engine:${{ github.ref_name }}
+            docker pull ghcr.io/${{ github.repository }}/bot:${{ github.ref_name }}
+            ```
+          files: |
+            dist/logistics-engine-linux-amd64
+            dist/logistics-supervisor-linux-amd64
+            update.tar.gz
+            manifest.json
+            install.sh
+          fail_on_unmatched_files: true

@@ -15,7 +15,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	pgxtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx.v5"
 )
 
 //go:embed migrations/*.sql
@@ -42,13 +41,7 @@ func InitDatabase(dsn string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	var p *pgxpool.Pool
-	if os.Getenv("DD_AGENT_HOST") != "" || os.Getenv("DD_API_KEY") != "" {
-		slog.Info("initializing database pool with Datadog tracing...")
-		p, err = pgxtrace.NewPoolWithConfig(ctx, cfg, pgxtrace.WithServiceName("logistics-postgres"))
-	} else {
-		p, err = pgxpool.NewWithConfig(ctx, cfg)
-	}
+	p, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("pgxpool.New: %w", err)
 	}
@@ -91,9 +84,11 @@ func RunMigrations() error {
 			continue
 		}
 		var exists bool
-		_ = pool.QueryRow(ctx,
+		if err := pool.QueryRow(ctx,
 			"SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE filename=$1)", e.Name(),
-		).Scan(&exists)
+		).Scan(&exists); err != nil {
+			return fmt.Errorf("check migration %s: %w", e.Name(), err)
+		}
 		if exists {
 			continue
 		}

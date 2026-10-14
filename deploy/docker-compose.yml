@@ -1,8 +1,4 @@
-# deploy/docker-compose.yml — v5
-# BUG-021: healthchecks on every service; bot depends_on engine healthy
-# SEC-013: DEV_BYPASS_SECRET / SKIP_LICENSE_CHECK absent from this file
-# PERF-011: build context is the repo root; .dockerignore trims it
-
+# Production Docker Compose stack.\r?\n
 services:
 
   postgres:
@@ -43,22 +39,16 @@ services:
     container_name: logistics_engine
     restart: unless-stopped
     environment:
-      DATABASE_URL:       postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATABASE_URL:       postgres://${POSTGRES_USER}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      PGPASSWORD:         ${POSTGRES_PASSWORD}
       INTERNAL_TOKEN:     ${INTERNAL_TOKEN}
       MAPBOX_TOKEN:       ${MAPBOX_TOKEN}
       ADMIN_USER_IDS:     ${ADMIN_USER_IDS}
-      LICENSE_PUBLIC_KEY: ${LICENSE_PUBLIC_KEY:-}
-      TLS_CERT_FILE:      ${TLS_CERT_FILE:-}
-      TLS_KEY_FILE:       ${TLS_KEY_FILE:-}
       DEPLOY_ENV:         ${DEPLOY_ENV:-production}
       LOG_LEVEL:          ${LOG_LEVEL:-info}
       DB_MAX_CONNS:       100
       GOMEMLIMIT:         48MiB
       GOGC:               50
-      DD_AGENT_HOST:      ${DD_AGENT_HOST:-}
-      DD_ENV:             ${DEPLOY_ENV:-production}
-      DD_SERVICE:         logistics-engine
-      DD_VERSION:         ${APP_VERSION:-dev}
     volumes:
       - ./sockets:/app/sockets
       - backups:/app/backups
@@ -86,23 +76,16 @@ services:
     build:
       context: ..
       dockerfile: bot/Dockerfile
-      args:
-        VERSION: ${APP_VERSION:-dev}
     container_name: logistics_bot
     restart: unless-stopped
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       INTERNAL_TOKEN:     ${INTERNAL_TOKEN}
       ENGINE_SOCKET:      /app/sockets/logistics.sock
-      TLS_CERT_FILE:      ${TLS_CERT_FILE:-}
       LOG_LEVEL:          ${LOG_LEVEL:-info}
       DEFAULT_LAT:        ${DEFAULT_LAT:-6.9271}
       DEFAULT_LON:        ${DEFAULT_LON:-79.8612}
       PYTHONMALLOC:       malloc
-      DD_AGENT_HOST:      ${DD_AGENT_HOST:-}
-      DD_ENV:             ${DEPLOY_ENV:-production}
-      DD_SERVICE:         logistics-bot
-      DD_VERSION:         ${APP_VERSION:-dev}
     volumes:
       - ./sockets:/app/sockets:ro
     depends_on:
@@ -116,26 +99,6 @@ services:
         reservations:
           cpus: "0.05"
           memory: 32M
-    networks: [backend]
-
-  datadog-agent:
-    image: gcr.io/datadoghq/agent:7
-    container_name: datadog-agent
-    restart: unless-stopped
-    environment:
-      - DD_API_KEY=${DD_API_KEY}
-      - DD_SITE=${DD_SITE:-datadoghq.com}
-      - DD_ENV=${DEPLOY_ENV:-production}
-      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
-      - DD_APM_ENABLED=true
-      - DD_APM_NON_LOCAL_TRAFFIC=true
-      - DD_LOGS_ENABLED=true
-      - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /proc/:/host/proc/:ro
-      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
     networks: [backend]
 
 volumes:

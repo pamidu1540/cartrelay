@@ -12,8 +12,6 @@ readonly SERVICE_NAME="logistics"
 readonly BIN_PATH="/usr/local/bin/logistics"
 readonly MIN_RAM_MB=512
 readonly MIN_DISK_GB=5
-readonly LICENSE_API="https://logistics-license.paminduvidusaka.workers.dev/v1/activate"
-readonly LICENSE_PUBKEY_HEX="2aedb7bd6d094c3e73280d404c064c4f71241059e3189a68528e973bef49b0f4"
 
 if [[ -t 1 ]]; then
   RED='\033[0;31m' YEL='\033[0;33m' GRN='\033[0;32m'
@@ -182,67 +180,11 @@ install_docker() {
   fi
 }
 
-verify_license() {
-  step "License verification"
-  local key="" attempts=0
-  while true; do
-    (( ++attempts > 3 )) && die "Too many failed attempts. Contact support."
-    prompt key "License Key" "" secret
-    local response http_code body
-    response=$(curl -fsSL -w "\n%{http_code}" \
-      -H "Content-Type: application/json" \
-      -d "{\"license_key\":\"${key}\",\"hostname\":\"$(hostname -f 2>/dev/null || hostname)\",\"installer_version\":\"${INSTALLER_VERSION}\"}" \
-      "${LICENSE_API}" 2>/dev/null) || response=$'\n000'
-    http_code=$(echo "$response" | tail -1)
-    body=$(echo "$response" | head -n -1)
-    case "$http_code" in
-      200)
-        LICENSE_CUSTOMER=$(echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('customer','Customer'))" 2>/dev/null || echo "Customer")
-        LICENSE_PLAN=$(echo     "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('plan','standard'))"     2>/dev/null || echo "standard")
-        LICENSE_EXPIRES=$(echo  "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('expires','N/A'))"       2>/dev/null || echo "N/A")
-        LICENSE_KEY="$key"
-        echo
-        echo -e "   ${GRN}${BOLD}✔  License activated${RST}"
-        echo -e "      ${DIM}Customer :${RST} ${LICENSE_CUSTOMER}"
-        echo -e "      ${DIM}Plan     :${RST} ${LICENSE_PLAN}"
-        echo -e "      ${DIM}Expires  :${RST} ${LICENSE_EXPIRES}"
-        return 0
-        ;;
-      401|403)
-        body_err=$(echo "$body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('error','Invalid key'))" 2>/dev/null || echo "Invalid key")
-        echo -e "   ${RED}✘  ${body_err}${RST}"
-        ;;
-      402)
-        body_err=$(echo "$body" | python3 -c "import sys,json; print(json.load(sys.stdin).get('error','License expired'))" 2>/dev/null || echo "License expired")
-        die "${body_err}"
-        ;;
-      429)
-        die "Rate limit exceeded. Please wait 60 seconds and try again."
-        ;;
-      000)
-        warn "Cannot reach license server — check your internet connection."
-        warn "Retrying in 5 s…"
-        sleep 5
-        ;;
-      *)
-        warn "Unexpected server response (HTTP ${http_code}). Retrying…"
-        ;;
-    esac
-  done
-}
-
 collect_config() {
   step "Configuration"
   prompt TELEGRAM_BOT_TOKEN "Telegram Bot Token" "" secret
   prompt ADMIN_USER_IDS "Admin Telegram User ID(s)"
   prompt_optional MAPBOX_TOKEN "Mapbox Public Token"
-  prompt_optional DD_API_KEY "Datadog API Key"
-  if [[ -n "${DD_API_KEY}" ]]; then
-    prompt_optional DD_SITE "Datadog Site (e.g. datadoghq.com)"
-    if [[ -z "${DD_SITE}" ]]; then
-      DD_SITE="datadoghq.com"
-    fi
-  fi
 
   INTERNAL_TOKEN=$(openssl rand -hex 32)
   ok "Internal service token auto-generated"
@@ -256,7 +198,7 @@ collect_config() {
 
 select_version() {
   step "Fetching latest release"
-  SELECTED_VERSION=$(curl -fsSL "https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/manifest.json" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version', 'latest'))" 2>/dev/null || echo "latest")
+  SELECTED_VERSION=$(curl -fsSL "https://api.github.com/repos/pamidu1540/logistics-engine-core/releases/latest" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tag_name', 'latest'))" 2>/dev/null || echo "latest")
   [[ -z "$SELECTED_VERSION" ]] && SELECTED_VERSION="latest"
   ok "Version: ${SELECTED_VERSION}"
 }
@@ -278,19 +220,14 @@ TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 INTERNAL_TOKEN=${INTERNAL_TOKEN}
 MAPBOX_TOKEN=${MAPBOX_TOKEN:-}
 ADMIN_USER_IDS=${ADMIN_USER_IDS}
-LICENSE_KEY=${LICENSE_KEY}
-LICENSE_PUBLIC_KEY=${LICENSE_KEY}
 POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=${POSTGRES_DB}
-DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+DATABASE_URL=postgres://${POSTGRES_USER}@postgres:5432/${POSTGRES_DB}?sslmode=disable
 BUILD_VERSION=${SELECTED_VERSION}
 ENGINE_IMAGE=${IMAGE_ENGINE}:${SELECTED_VERSION}
 BOT_IMAGE=${IMAGE_BOT}:${SELECTED_VERSION}
-UPDATE_MANIFEST_URL="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/manifest.json"
-DD_API_KEY=${DD_API_KEY:-}
-DD_SITE=${DD_SITE:-datadoghq.com}
-DD_AGENT_HOST=$( [[ -n "${DD_API_KEY}" ]] && echo "datadog-agent" || echo "" )
+UPDATE_MANIFEST_URL="https://github.com/pamidu1540/logistics-engine-core/releases/latest/download/manifest.json"
 ENV
   chmod 600 "$f"
   
@@ -327,33 +264,6 @@ except Exception as e:
 
 write_compose() {
   step "Writing docker-compose.yml"
-  
-  local datadog_agent_service=""
-  if [[ -n "${DD_API_KEY}" ]]; then
-    datadog_agent_service=$(cat << 'EOF'
-
-  datadog-agent:
-    image: gcr.io/datadoghq/agent:7
-    container_name: datadog-agent
-    restart: unless-stopped
-    environment:
-      - DD_API_KEY=${DD_API_KEY}
-      - DD_SITE=${DD_SITE:-datadoghq.com}
-      - DD_ENV=${DEPLOY_ENV:-production}
-      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
-      - DD_APM_ENABLED=true
-      - DD_APM_NON_LOCAL_TRAFFIC=true
-      - DD_LOGS_ENABLED=true
-      - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /proc/:/host/proc/:ro
-      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
-    networks: [backend]
-EOF
-)
-  fi
 
   cat > "${INSTALL_DIR}/deploy/docker-compose.yml" << COMPOSE
 services:
@@ -392,16 +302,12 @@ services:
     restart: unless-stopped
     environment:
       - DATABASE_URL
+      - PGPASSWORD=\${POSTGRES_PASSWORD}
       - INTERNAL_TOKEN
       - MAPBOX_TOKEN
       - ADMIN_USER_IDS
-      - LICENSE_PUBLIC_KEY
       - GOMEMLIMIT=48MiB
       - GOGC=50
-      - DD_AGENT_HOST=\${DD_AGENT_HOST:-}
-      - DD_ENV=\${DEPLOY_ENV:-production}
-      - DD_SERVICE=logistics-engine
-      - DD_VERSION=\${BUILD_VERSION:-5.0.0}
     volumes:
       - sockets:/app/sockets
       - backups:/app/backups
@@ -434,10 +340,6 @@ services:
       - INTERNAL_TOKEN
       - ENGINE_SOCKET=/app/sockets/logistics.sock
       - PYTHONMALLOC=malloc
-      - DD_AGENT_HOST=\${DD_AGENT_HOST:-}
-      - DD_ENV=\${DEPLOY_ENV:-production}
-      - DD_SERVICE=logistics-bot
-      - DD_VERSION=\${BUILD_VERSION:-5.0.0}
     volumes:
       - sockets:/app/sockets:ro
     depends_on:
@@ -452,7 +354,6 @@ services:
           cpus: "0.05"
           memory: 32M
     networks: [backend]
-${datadog_agent_service}
 
 volumes:
   postgres_data: {driver: local}
@@ -503,21 +404,10 @@ SERVICE
 
 install_supervisor_binary() {
   step "Installing Logistics Command Line Interface (CLI)"
-  
-  # Detect system architecture for correct binary download
-  local go_arch
-  case "$(uname -m)" in
-    x86_64|amd64)    go_arch="amd64" ;;
-    aarch64|arm64)   go_arch="arm64" ;;
-    *) warn "Unsupported architecture for supervisor: $(uname -m). Skipping."; return 0 ;;
-  esac
 
-  # Default to the specific version folder uploaded by GitHub Actions
-  local bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/${SELECTED_VERSION}/logistics-supervisor-linux-${go_arch}"
-  
-  # Override to the 'latest' folder if no specific version tag was found
-  if [[ "$SELECTED_VERSION" == "latest" ]] || [[ "$SELECTED_VERSION" == "v10-latest" ]]; then
-    bin_url="https://pub-cd7e4ed255b541cfaed526741f32d2f1.r2.dev/latest/supervisor-${go_arch}"
+  local bin_url="https://github.com/pamidu1540/logistics-engine-core/releases/download/${SELECTED_VERSION}/logistics-supervisor-linux-amd64"
+  if [[ "$SELECTED_VERSION" == "latest" ]]; then
+    bin_url="https://github.com/pamidu1540/logistics-engine-core/releases/latest/download/logistics-supervisor-linux-amd64"
   fi
   
   info "Connecting to secure deployment node..."
@@ -536,23 +426,15 @@ install_supervisor_binary() {
     i=$(( (i + 1) % (width + 1) ))
     sleep 0.1
   done
-  wait "$pid"
-  local rc=$?
-  
-  if ((rc == 0)); then
+  if wait "$pid"; then
     local filled=$(printf "%${width}s" | tr ' ' '█')
     printf "\r   ${GRN}✔${RST}  ${CYN}Downloading Logistics CLI${RST}     [%s] 100%%\n" "$filled"
     chmod +x "${BIN_PATH}"
-    ok "Logistics CLI successfully installed at ${BIN_PATH} (${go_arch})"
+    ok "Logistics CLI successfully installed at ${BIN_PATH} (linux-amd64)"
   else
     local empty=$(printf "%${width}s" | tr ' ' '░')
     printf "\r   ${RED}✘${RST}  ${CYN}Downloading Logistics CLI${RST}     [%s] Failed\n" "$empty"
-    warn "Download failed. Installing local placeholder stub."
-    cat > "${BIN_PATH}" << 'STUB'
-#!/usr/bin/env bash
-echo "Logistics CLI not yet installed."
-STUB
-    chmod +x "${BIN_PATH}"
+    die "Supervisor download failed. Details: $(cat /tmp/bin-download.log 2>/dev/null)"
   fi
 }
 
@@ -577,17 +459,14 @@ pull_images() {
     i=$(( (i + 1) % (width + 1) ))
     sleep 0.1
   done
-  wait "$pid" || true
-  local rc=$?
-  
-  if ((rc == 0)); then
+  if wait "$pid"; then
     local filled=$(printf "%${width}s" | tr ' ' '█')
     printf "\r   ${GRN}✔${RST}  ${CYN}Pulling Container Images${RST}    [%s] 100%%\n" "$filled"
-    ok "Container network successfully finalized."
+    ok "Container images pulled successfully."
   else
     local empty=$(printf "%${width}s" | tr ' ' '░')
     printf "\r   ${RED}✘${RST}  ${CYN}Pulling Container Images${RST}    [%s] Failed\n" "$empty"
-    warn "Failed to pull container images. Details: $(cat /tmp/pull.log 2>/dev/null)"
+    die "Failed to pull container images. Details: $(cat /tmp/pull.log 2>/dev/null)"
   fi
 }
 
@@ -831,7 +710,6 @@ print_summary() {
   echo
   hr
   echo -e "   ${BOLD}${GRN}🎉 INSTALLATION COMPLETE${RST}"
-  echo -e "   Customer : ${LICENSE_CUSTOMER}"
   echo -e "   Version  : ${SELECTED_VERSION}"
   echo -e "   Install  : ${INSTALL_DIR}"
   echo
@@ -843,9 +721,11 @@ main() {
   banner
   check_root
   detect_os
+  local arch
+  arch="$(uname -m)"
+  [[ "$arch" == "x86_64" || "$arch" == "amd64" ]] || die "Unsupported architecture ($arch). Releases currently provide linux-amd64 binaries only."
   check_requirements
   install_docker
-  verify_license
   collect_config
   select_version
   create_directories
