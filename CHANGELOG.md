@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI validates pull requests without pushing generated commits back to main.
 
 ### Fixed
+- Updated gRPC to 1.83.2 in both Go modules and AnyIO to 4.14.2; the storefront image now installs the committed dependency lockfile.
 - Host CLI maintenance socket path and encrypted configuration handling.
 - Scoped container environments, removed misleading live-support/privacy promises, and isolated database tests behind TEST_DATABASE_URL.
 - OTA signing reads its private key from the environment rather than command arguments.

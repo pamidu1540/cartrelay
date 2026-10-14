@@ -9,14 +9,14 @@ resolution-markers = [
 
 [[package]]
 name = "anyio"
-version = "4.13.0"
+version = "4.14.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "idna" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/19/14/2c5dd9f512b66549ae92767a9c7b330ae88e1932ca57876909410251fe13/anyio-4.13.0.tar.gz", hash = "sha256:334b70e641fd2221c1505b3890c69882fe4a2df910cba14d97019b90b24439dc", size = 231622, upload-time = "2026-03-24T12:59:09.671Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/cc/a381afa6efea9f496eff839d4a6a1aed3bfafc7b3ab4b0d1b243a12573dd/anyio-4.14.2.tar.gz", hash = "sha256:cfa139f3ed1a23ee8f88a145ddb5ac7605b8bbfd8592baacd7ce3d8bb4313c7f", size = 260176, upload-time = "2026-07-12T20:29:07.082Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/42/e921fccf5015463e32a3cf6ee7f980a6ed0f395ceeaa45060b61d86486c2/anyio-4.13.0-py3-none-any.whl", hash = "sha256:08b310f9e24a9594186fd75b4f73f4a4152069e3853f1ed8bfbf58369f4ad708", size = 114353, upload-time = "2026-03-24T12:59:08.246Z" },
+    { url = "https://files.pythonhosted.org/packages/da/35/f2287558c17e29fafc8ef3daf819bb9834061cfa43bff8014f7df7f63bdc/anyio-4.14.2-py3-none-any.whl", hash = "sha256:9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494", size = 125813, upload-time = "2026-07-12T20:29:05.763Z" },
 ]
 
 [[package]]
@@ -70,6 +70,40 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/41/11/ca5672c7d491825bc4cd6702dea106a6b60d928707712ec257c7833ae476/ast_serialize-0.5.0-cp39-abi3-win_amd64.whl", hash = "sha256:cf25572c526add400f26a4750dc6ce0c3bb93fc1f75e7ae0cad4ce4f2cd5c590", size = 1108931, upload-time = "2026-05-17T17:48:26.591Z" },
     { url = "https://files.pythonhosted.org/packages/45/19/cc8bd127d28a43da249aa955cfd164cf8fd534e79e42cea96c4854d72fd0/ast_serialize-0.5.0-cp39-abi3-win_arm64.whl", hash = "sha256:92a31c9c20d25a076edaeec76b128a3535d74a24f340b9a8a7e96c9b86dc9642", size = 1081181, upload-time = "2026-05-17T17:48:28.122Z" },
 ]
+
+[[package]]
+name = "cartrelay-bot"
+version = "12.8.0"
+source = { editable = "." }
+dependencies = [
+    { name = "grpcio" },
+    { name = "protobuf" },
+    { name = "python-telegram-bot", extra = ["job-queue"] },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "grpcio-tools" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-mock" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grpcio", specifier = ">=1.80.0" },
+    { name = "grpcio-tools", marker = "extra == 'dev'", specifier = ">=1.80.0" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13" },
+    { name = "protobuf", specifier = ">=6.31.1,<7.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14" },
+    { name = "python-telegram-bot", extras = ["job-queue"], specifier = ">=22.7.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "certifi"
@@ -254,40 +288,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/62/4a/7d1415567027286a75ba1093ec4aca11f073e0f559c530cf3e0a757ad55c/librt-0.11.0-cp314-cp314t-win_amd64.whl", hash = "sha256:28edb433edde181112a908c78907af28f964eabc15f4dd16c9d66c834302677c", size = 124327, upload-time = "2026-05-10T18:17:05.465Z" },
     { url = "https://files.pythonhosted.org/packages/ce/62/b40b382fa0c66fee1478073eb8db352a4a6beda4a1adccf1df911d8c289c/librt-0.11.0-cp314-cp314t-win_arm64.whl", hash = "sha256:dee008f20b542e3cd162ba338a7f9ec0f6d23d395f66fe8aeeec3c9d067ea253", size = 102572, upload-time = "2026-05-10T18:17:06.809Z" },
 ]
-
-[[package]]
-name = "cartrelay-bot"
-version = "12.8.0"
-source = { editable = "." }
-dependencies = [
-    { name = "grpcio" },
-    { name = "protobuf" },
-    { name = "python-telegram-bot", extra = ["job-queue"] },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "grpcio-tools" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-mock" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "grpcio", specifier = ">=1.80.0" },
-    { name = "grpcio-tools", marker = "extra == 'dev'", specifier = ">=1.80.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13" },
-    { name = "protobuf", specifier = ">=6.31.1,<7.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14" },
-    { name = "python-telegram-bot", extras = ["job-queue"], specifier = ">=22.7.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "mypy"
